@@ -47,6 +47,15 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven.surefire.version}</version>
             </plugin>
+            
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>io.github.rajami1205.osimulator.presentation.SimulatorApplication</mainClass>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

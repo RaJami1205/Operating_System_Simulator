@@ -1,7 +1,7 @@
-package io.github.rajami1205.osimulator.domain.memory;
+package io.github.rajami1205.osimulator.model.memory;
 
-import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
-import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryConfigurationException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddressException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 
 /**
  * Immutable configuration for the simulated memory layout.

@@ -1,4 +1,4 @@
-package io.github.rajami1205.osimulator.domain.memory.exception;
+package io.github.rajami1205.osimulator.model.memory.exception;
 
 /**
  * Indicates that a memory operation targets a valid but protected region.

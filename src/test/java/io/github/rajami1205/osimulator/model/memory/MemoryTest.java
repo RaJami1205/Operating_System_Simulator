@@ -1,4 +1,4 @@
-package io.github.rajami1205.osimulator.domain.memory;
+package io.github.rajami1205.osimulator.model.memory;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
-import io.github.rajami1205.osimulator.domain.memory.exception.MemoryProtectionException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddressException;
+import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;

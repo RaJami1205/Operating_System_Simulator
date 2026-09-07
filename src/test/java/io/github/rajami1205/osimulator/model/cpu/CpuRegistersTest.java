@@ -374,4 +374,153 @@ class CpuRegistersTest {
 
         assertEquals(Optional.of(42), registers.instructionRegister());
     }
+
+    @Test
+    void shouldResetFullyModifiedRegisterState() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.writeAccumulator(70);
+        registers.writeRegister(RegisterName.AX, -20);
+        registers.writeRegister(RegisterName.BX, 30);
+        registers.writeRegister(RegisterName.CX, 40);
+        registers.writeRegister(RegisterName.DX, -50);
+        registers.setProgramCounter(1000);
+        registers.loadInstructionRegister("instruction");
+
+        registers.reset();
+
+        assertInitialState(registers);
+    }
+
+    @Test
+    void shouldResetInitialStateWithoutChanges() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+
+        assertDoesNotThrow(registers::reset);
+        assertInitialState(registers);
+    }
+
+    @Test
+    void shouldResetIdempotently() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.writeAccumulator(70);
+        registers.writeRegister(RegisterName.AX, -20);
+        registers.setProgramCounter(1000);
+        registers.loadInstructionRegister("instruction");
+
+        registers.reset();
+        registers.reset();
+
+        assertInitialState(registers);
+    }
+
+    @Test
+    void shouldAllowRegisterReuseAfterReset() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.writeAccumulator(70);
+        registers.writeRegister(RegisterName.AX, -20);
+        registers.setProgramCounter(1000);
+        registers.loadInstructionRegister("before reset");
+        registers.reset();
+
+        registers.writeAccumulator(-70);
+        registers.writeRegister(RegisterName.BX, 30);
+        registers.setProgramCounter(2000);
+        registers.loadInstructionRegister("temporary");
+        registers.clearInstructionRegister();
+        registers.loadInstructionRegister("after reset");
+
+        assertAll(
+                () -> assertEquals(-70, registers.accumulator()),
+                () -> assertEquals(30, registers.readRegister(RegisterName.BX)),
+                () -> assertEquals(2000, registers.programCounter()),
+                () -> assertEquals(
+                        Optional.of("after reset"),
+                        registers.instructionRegister()
+                )
+        );
+    }
+
+    @Test
+    void shouldMakeResetStateEquivalentToNewInstance() {
+        CpuRegisters<String> newRegisters = new CpuRegisters<>();
+        CpuRegisters<String> resetRegisters = new CpuRegisters<>();
+        resetRegisters.writeAccumulator(70);
+        resetRegisters.writeRegister(RegisterName.AX, -20);
+        resetRegisters.writeRegister(RegisterName.BX, 30);
+        resetRegisters.writeRegister(RegisterName.CX, 40);
+        resetRegisters.writeRegister(RegisterName.DX, -50);
+        resetRegisters.setProgramCounter(1000);
+        resetRegisters.loadInstructionRegister("instruction");
+
+        resetRegisters.reset();
+
+        assertAll(
+                () -> assertEquals(
+                        newRegisters.accumulator(),
+                        resetRegisters.accumulator()
+                ),
+                () -> assertEquals(
+                        newRegisters.readRegister(RegisterName.AX),
+                        resetRegisters.readRegister(RegisterName.AX)
+                ),
+                () -> assertEquals(
+                        newRegisters.readRegister(RegisterName.BX),
+                        resetRegisters.readRegister(RegisterName.BX)
+                ),
+                () -> assertEquals(
+                        newRegisters.readRegister(RegisterName.CX),
+                        resetRegisters.readRegister(RegisterName.CX)
+                ),
+                () -> assertEquals(
+                        newRegisters.readRegister(RegisterName.DX),
+                        resetRegisters.readRegister(RegisterName.DX)
+                ),
+                () -> assertEquals(
+                        newRegisters.programCounter(),
+                        resetRegisters.programCounter()
+                ),
+                () -> assertEquals(
+                        newRegisters.instructionRegister(),
+                        resetRegisters.instructionRegister()
+                )
+        );
+    }
+
+    @Test
+    void shouldPreserveValidationIntegrityAfterReset() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.writeAccumulator(70);
+        registers.setProgramCounter(1000);
+        registers.reset();
+        registers.writeRegister(RegisterName.AX, 20);
+        registers.setProgramCounter(50);
+
+        assertAll(
+                () -> assertThrows(
+                        InvalidRegisterValueException.class,
+                        () -> registers.writeRegister(RegisterName.AX, 128)
+                ),
+                () -> assertThrows(
+                        InvalidProgramCounterException.class,
+                        () -> registers.setProgramCounter(-1)
+                )
+        );
+
+        assertAll(
+                () -> assertEquals(20, registers.readRegister(RegisterName.AX)),
+                () -> assertEquals(50, registers.programCounter())
+        );
+    }
+
+    private void assertInitialState(CpuRegisters<?> registers) {
+        assertAll(
+                () -> assertEquals(0, registers.accumulator()),
+                () -> assertEquals(0, registers.readRegister(RegisterName.AX)),
+                () -> assertEquals(0, registers.readRegister(RegisterName.BX)),
+                () -> assertEquals(0, registers.readRegister(RegisterName.CX)),
+                () -> assertEquals(0, registers.readRegister(RegisterName.DX)),
+                () -> assertEquals(0, registers.programCounter()),
+                () -> assertEquals(Optional.empty(), registers.instructionRegister())
+        );
+    }
 }

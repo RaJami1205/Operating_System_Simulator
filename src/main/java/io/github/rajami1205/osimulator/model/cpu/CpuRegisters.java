@@ -21,9 +21,7 @@ public final class CpuRegisters<I> {
     private I instructionRegister;
 
     public CpuRegisters() {
-        for (RegisterName register : RegisterName.values()) {
-            generalRegisters.put(register, 0);
-        }
+        restoreInitialState();
     }
 
     public int accumulator() {
@@ -71,6 +69,21 @@ public final class CpuRegisters<I> {
     }
 
     public void clearInstructionRegister() {
+        instructionRegister = null;
+    }
+
+    public void reset() {
+        restoreInitialState();
+    }
+
+    private void restoreInitialState() {
+        accumulator = 0;
+
+        for (RegisterName register : RegisterName.values()) {
+            generalRegisters.put(register, 0);
+        }
+
+        programCounter = 0;
         instructionRegister = null;
     }
 

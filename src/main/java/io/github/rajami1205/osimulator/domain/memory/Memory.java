@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.domain.memory;
 
+import io.github.rajami1205.osimulator.domain.memory.exception.MemoryProtectionException;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -36,6 +37,17 @@ public class Memory<T> {
 
     public boolean isEmpty(int address) {
         return valueAt(address) == null;
+    }
+
+    public void writeUser(int address, T value) {
+        if (regionOf(address) == MemoryRegion.KERNEL) {
+            throw new MemoryProtectionException(
+                    "User write cannot modify Kernel memory address: " + address
+            );
+        }
+
+        T nonNullValue = Objects.requireNonNull(value, "value must not be null");
+        positions[address] = nonNullValue;
     }
 
     @SuppressWarnings("unchecked")

@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
 import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryConfigurationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class MemoryConfigurationTest {
@@ -73,6 +75,43 @@ class MemoryConfigurationTest {
     @Test
     void shouldRejectKernelPositionsGreaterThanTotalPositions() {
         assertInvalidConfiguration(128, 129);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "0, KERNEL",
+            "31, KERNEL",
+            "32, USER",
+            "127, USER"
+    })
+    void shouldClassifyBoundaryAddresses(int address, MemoryRegion expectedRegion) {
+        MemoryConfiguration configuration = new MemoryConfiguration(128, 32);
+
+        assertEquals(expectedRegion, configuration.regionOf(address));
+    }
+
+    @Test
+    void shouldAdaptRegionBoundaryToConfiguration() {
+        MemoryConfiguration configuration = new MemoryConfiguration(256, 64);
+
+        assertAll(
+                () -> assertEquals(MemoryRegion.KERNEL, configuration.regionOf(63)),
+                () -> assertEquals(MemoryRegion.USER, configuration.regionOf(64))
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 128})
+    void shouldRejectAddressesOutsideConfiguredMemory(int address) {
+        MemoryConfiguration configuration = new MemoryConfiguration(128, 32);
+
+        InvalidMemoryAddressException exception = assertThrows(
+                InvalidMemoryAddressException.class,
+                () -> configuration.regionOf(address)
+        );
+
+        assertNotNull(exception.getMessage());
+        assertFalse(exception.getMessage().isBlank());
     }
 
     private void assertInvalidConfiguration(int totalPositions, int kernelReservedPositions) {

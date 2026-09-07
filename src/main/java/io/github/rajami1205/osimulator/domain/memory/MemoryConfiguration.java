@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.domain.memory;
 
+import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
 import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryConfigurationException;
 
 /**
@@ -36,5 +37,18 @@ public record MemoryConfiguration(int totalPositions, int kernelReservedPosition
 
     public int userPositions() {
         return totalPositions - kernelReservedPositions;
+    }
+
+    public MemoryRegion regionOf(int address) {
+        validateAddress(address);
+        return address < kernelReservedPositions ? MemoryRegion.KERNEL : MemoryRegion.USER;
+    }
+
+    private void validateAddress(int address) {
+        if (address < 0 || address >= totalPositions) {
+            throw new InvalidMemoryAddressException(
+                    "Memory address must be between 0 and " + (totalPositions - 1) + ": " + address
+            );
+        }
     }
 }

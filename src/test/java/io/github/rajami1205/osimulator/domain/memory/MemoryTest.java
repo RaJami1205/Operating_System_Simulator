@@ -271,4 +271,104 @@ class MemoryTest {
                 () -> assertEquals("original B", memory.read(127).orElseThrow())
         );
     }
+
+    @Test
+    void shouldClearIndividualWritesAcrossUserSpaceAndPreserveLayout() {
+        MemoryConfiguration configuration = new MemoryConfiguration(128, 32);
+        Memory<String> memory = new Memory<>(configuration);
+        memory.writeUser(32, "first");
+        memory.writeUser(80, "middle");
+        memory.writeUser(127, "last");
+
+        memory.clearUserSpace();
+
+        assertAll(
+                () -> assertTrue(memory.read(32).isEmpty()),
+                () -> assertTrue(memory.isEmpty(32)),
+                () -> assertTrue(memory.read(80).isEmpty()),
+                () -> assertTrue(memory.isEmpty(80)),
+                () -> assertTrue(memory.read(127).isEmpty()),
+                () -> assertTrue(memory.isEmpty(127)),
+                () -> assertSame(configuration, memory.configuration()),
+                () -> assertEquals(128, memory.size()),
+                () -> assertEquals(MemoryRegion.KERNEL, memory.regionOf(0)),
+                () -> assertEquals(MemoryRegion.KERNEL, memory.regionOf(31))
+        );
+    }
+
+    @Test
+    void shouldClearValuesWrittenAsBlock() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUserBlock(32, List.of("A", "B", "C"));
+
+        memory.clearUserSpace();
+
+        assertAll(
+                () -> assertTrue(memory.isEmpty(32)),
+                () -> assertTrue(memory.isEmpty(33)),
+                () -> assertTrue(memory.isEmpty(34))
+        );
+    }
+
+    @Test
+    void shouldClearEntireSmallUserSpaceUsingConfiguredBoundaries() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 126));
+        memory.writeUser(126, "first");
+        memory.writeUser(127, "last");
+
+        memory.clearUserSpace();
+
+        assertAll(
+                () -> assertTrue(memory.isEmpty(126)),
+                () -> assertTrue(memory.isEmpty(127)),
+                () -> assertEquals(MemoryRegion.KERNEL, memory.regionOf(125))
+        );
+    }
+
+    @Test
+    void shouldClearUserSpaceWithSinglePosition() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 127));
+        memory.writeUser(127, "value");
+
+        memory.clearUserSpace();
+
+        assertAll(
+                () -> assertTrue(memory.read(127).isEmpty()),
+                () -> assertTrue(memory.isEmpty(127)),
+                () -> assertEquals(MemoryRegion.KERNEL, memory.regionOf(126))
+        );
+    }
+
+    @Test
+    void shouldClearAlreadyEmptyUserSpace() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+
+        assertDoesNotThrow(memory::clearUserSpace);
+        assertTrue(memory.isEmpty(32));
+    }
+
+    @Test
+    void shouldClearUserSpaceIdempotently() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "value");
+
+        memory.clearUserSpace();
+        memory.clearUserSpace();
+
+        assertTrue(memory.isEmpty(32));
+    }
+
+    @Test
+    void shouldAllowUserWritesAfterClearing() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "old value");
+        memory.clearUserSpace();
+
+        memory.writeUser(32, "new value");
+
+        assertAll(
+                () -> assertEquals("new value", memory.read(32).orElseThrow()),
+                () -> assertFalse(memory.isEmpty(32))
+        );
+    }
 }

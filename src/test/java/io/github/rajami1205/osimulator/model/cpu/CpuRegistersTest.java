@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.rajami1205.osimulator.model.cpu.exception.InvalidProgramCounterException;
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -167,6 +168,95 @@ class CpuRegistersTest {
                 () -> assertEquals(30, registers.readRegister(RegisterName.CX)),
                 () -> assertEquals(40, registers.readRegister(RegisterName.DX)),
                 () -> assertEquals(50, registers.accumulator())
+        );
+    }
+
+    @Test
+    void shouldInitializeProgramCounterToZero() {
+        CpuRegisters registers = new CpuRegisters();
+
+        assertEquals(0, registers.programCounter());
+    }
+
+    @Test
+    void shouldAcceptZeroProgramCounter() {
+        CpuRegisters registers = new CpuRegisters();
+
+        registers.setProgramCounter(0);
+
+        assertEquals(0, registers.programCounter());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 127, 128, 1000})
+    void shouldAcceptPositiveProgramCounterValues(int address) {
+        CpuRegisters registers = new CpuRegisters();
+
+        registers.setProgramCounter(address);
+
+        assertEquals(address, registers.programCounter());
+    }
+
+    @Test
+    void shouldAcceptMaximumIntegerAsProgramCounter() {
+        CpuRegisters registers = new CpuRegisters();
+
+        registers.setProgramCounter(Integer.MAX_VALUE);
+
+        assertEquals(Integer.MAX_VALUE, registers.programCounter());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, Integer.MIN_VALUE})
+    void shouldRejectNegativeProgramCounterValues(int address) {
+        CpuRegisters registers = new CpuRegisters();
+
+        InvalidProgramCounterException exception = assertThrows(
+                InvalidProgramCounterException.class,
+                () -> registers.setProgramCounter(address)
+        );
+
+        assertNotNull(exception.getMessage());
+        assertFalse(exception.getMessage().isBlank());
+    }
+
+    @Test
+    void shouldPreserveProgramCounterAfterFailedWrite() {
+        CpuRegisters registers = new CpuRegisters();
+        registers.setProgramCounter(100);
+
+        assertThrows(
+                InvalidProgramCounterException.class,
+                () -> registers.setProgramCounter(-1)
+        );
+
+        assertEquals(100, registers.programCounter());
+    }
+
+    @Test
+    void shouldKeepProgramCounterIndependentFromDataRegisters() {
+        CpuRegisters registers = new CpuRegisters();
+        registers.writeRegister(RegisterName.AX, 10);
+        registers.writeRegister(RegisterName.BX, 20);
+        registers.writeRegister(RegisterName.CX, 30);
+        registers.writeRegister(RegisterName.DX, 40);
+        registers.writeAccumulator(50);
+
+        registers.setProgramCounter(1000);
+
+        assertAll(
+                () -> assertEquals(10, registers.readRegister(RegisterName.AX)),
+                () -> assertEquals(20, registers.readRegister(RegisterName.BX)),
+                () -> assertEquals(30, registers.readRegister(RegisterName.CX)),
+                () -> assertEquals(40, registers.readRegister(RegisterName.DX)),
+                () -> assertEquals(50, registers.accumulator())
+        );
+
+        registers.writeRegister(RegisterName.AX, -10);
+
+        assertAll(
+                () -> assertEquals(-10, registers.readRegister(RegisterName.AX)),
+                () -> assertEquals(1000, registers.programCounter())
         );
     }
 }

@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.model.cpu;
 
+import io.github.rajami1205.osimulator.model.cpu.exception.InvalidProgramCounterException;
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
 import java.util.EnumMap;
 import java.util.Objects;
@@ -15,6 +16,7 @@ public class CpuRegisters {
     private final EnumMap<RegisterName, Integer> generalRegisters =
             new EnumMap<>(RegisterName.class);
     private int accumulator;
+    private int programCounter;
 
     public CpuRegisters() {
         for (RegisterName register : RegisterName.values()) {
@@ -39,6 +41,20 @@ public class CpuRegisters {
         RegisterName nonNullRegister = requireRegister(register);
         validateDataValue(value);
         generalRegisters.put(nonNullRegister, value);
+    }
+
+    public int programCounter() {
+        return programCounter;
+    }
+
+    public void setProgramCounter(int address) {
+        if (address < 0) {
+            throw new InvalidProgramCounterException(
+                    "Program Counter address must not be negative: " + address
+            );
+        }
+
+        programCounter = address;
     }
 
     private RegisterName requireRegister(RegisterName register) {

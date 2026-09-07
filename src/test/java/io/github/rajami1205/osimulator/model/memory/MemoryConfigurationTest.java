@@ -1,4 +1,4 @@
-package io.github.rajami1205.osimulator.domain.memory;
+package io.github.rajami1205.osimulator.model.memory;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
-import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryConfigurationException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddressException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;

@@ -1,4 +1,4 @@
-package io.github.rajami1205.osimulator.domain.memory;
+package io.github.rajami1205.osimulator.model.memory;
 
 /**
  * Semantic regions of the simulated memory address space.

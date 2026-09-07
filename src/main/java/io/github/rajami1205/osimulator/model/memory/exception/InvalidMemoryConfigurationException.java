@@ -1,4 +1,4 @@
-package io.github.rajami1205.osimulator.domain.memory.exception;
+package io.github.rajami1205.osimulator.model.memory.exception;
 
 /**
  * Indicates that a simulated memory configuration violates its required invariants.

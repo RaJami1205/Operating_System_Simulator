@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.model.cpu;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -8,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidProgramCounterException;
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -17,7 +19,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldInitializeAllDataRegistersToZero() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         assertAll(
                 () -> assertEquals(0, registers.accumulator()),
@@ -36,7 +38,7 @@ class CpuRegistersTest {
             "DX, 40"
     })
     void shouldReadAndWriteEachGeneralRegister(RegisterName register, int value) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.writeRegister(register, value);
 
@@ -46,7 +48,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-127, 127})
     void shouldAcceptBoundaryValuesForGeneralRegisters(int value) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.writeRegister(RegisterName.AX, value);
 
@@ -56,7 +58,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-128, 128})
     void shouldRejectValuesOutsideGeneralRegisterRange(int value) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         InvalidRegisterValueException exception = assertThrows(
                 InvalidRegisterValueException.class,
@@ -69,7 +71,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldOverwriteGeneralRegisterValue() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeRegister(RegisterName.AX, 10);
 
         registers.writeRegister(RegisterName.AX, 20);
@@ -80,7 +82,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-128, 128})
     void shouldPreserveGeneralRegisterAfterFailedWrite(int invalidValue) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeRegister(RegisterName.AX, 50);
 
         assertThrows(
@@ -93,7 +95,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldRejectNullRegisterName() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         assertAll(
                 () -> assertThrows(NullPointerException.class, () -> registers.readRegister(null)),
@@ -106,7 +108,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldWriteAndOverwriteAccumulator() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeAccumulator(25);
 
         registers.writeAccumulator(-20);
@@ -117,7 +119,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-127, 127})
     void shouldAcceptAccumulatorBoundaryValues(int value) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.writeAccumulator(value);
 
@@ -127,7 +129,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-128, 128})
     void shouldRejectValuesOutsideAccumulatorRange(int value) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         InvalidRegisterValueException exception = assertThrows(
                 InvalidRegisterValueException.class,
@@ -141,7 +143,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-128, 128})
     void shouldPreserveAccumulatorAfterFailedWrite(int invalidValue) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeAccumulator(-20);
 
         assertThrows(
@@ -154,7 +156,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldKeepDataRegistersIndependent() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.writeRegister(RegisterName.AX, 10);
         registers.writeRegister(RegisterName.BX, 20);
@@ -173,14 +175,14 @@ class CpuRegistersTest {
 
     @Test
     void shouldInitializeProgramCounterToZero() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         assertEquals(0, registers.programCounter());
     }
 
     @Test
     void shouldAcceptZeroProgramCounter() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.setProgramCounter(0);
 
@@ -190,7 +192,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {1, 127, 128, 1000})
     void shouldAcceptPositiveProgramCounterValues(int address) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.setProgramCounter(address);
 
@@ -199,7 +201,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldAcceptMaximumIntegerAsProgramCounter() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         registers.setProgramCounter(Integer.MAX_VALUE);
 
@@ -209,7 +211,7 @@ class CpuRegistersTest {
     @ParameterizedTest
     @ValueSource(ints = {-1, Integer.MIN_VALUE})
     void shouldRejectNegativeProgramCounterValues(int address) {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
 
         InvalidProgramCounterException exception = assertThrows(
                 InvalidProgramCounterException.class,
@@ -222,7 +224,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldPreserveProgramCounterAfterFailedWrite() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.setProgramCounter(100);
 
         assertThrows(
@@ -235,7 +237,7 @@ class CpuRegistersTest {
 
     @Test
     void shouldKeepProgramCounterIndependentFromDataRegisters() {
-        CpuRegisters registers = new CpuRegisters();
+        CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeRegister(RegisterName.AX, 10);
         registers.writeRegister(RegisterName.BX, 20);
         registers.writeRegister(RegisterName.CX, 30);
@@ -258,5 +260,118 @@ class CpuRegistersTest {
                 () -> assertEquals(-10, registers.readRegister(RegisterName.AX)),
                 () -> assertEquals(1000, registers.programCounter())
         );
+    }
+
+    @Test
+    void shouldInitializeInstructionRegisterEmpty() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+
+        assertEquals(Optional.empty(), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldLoadInstructionRegister() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+
+        registers.loadInstructionRegister("A");
+
+        assertEquals(Optional.of("A"), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldReplaceInstructionRegisterContent() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.loadInstructionRegister("A");
+
+        registers.loadInstructionRegister("B");
+
+        assertEquals(Optional.of("B"), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldClearInstructionRegister() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.loadInstructionRegister("A");
+
+        registers.clearInstructionRegister();
+
+        assertEquals(Optional.empty(), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldClearAlreadyEmptyInstructionRegister() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+
+        assertDoesNotThrow(registers::clearInstructionRegister);
+        assertEquals(Optional.empty(), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldClearInstructionRegisterIdempotently() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.loadInstructionRegister("A");
+
+        registers.clearInstructionRegister();
+        registers.clearInstructionRegister();
+
+        assertEquals(Optional.empty(), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldRejectNullInstructionRegisterContent() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+
+        assertThrows(NullPointerException.class, () -> registers.loadInstructionRegister(null));
+        assertEquals(Optional.empty(), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldPreserveInstructionRegisterAfterFailedReplacement() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.loadInstructionRegister("A");
+
+        assertThrows(NullPointerException.class, () -> registers.loadInstructionRegister(null));
+
+        assertEquals(Optional.of("A"), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldKeepInstructionRegisterIndependentFromNumericRegisters() {
+        CpuRegisters<String> registers = new CpuRegisters<>();
+        registers.writeAccumulator(50);
+        registers.writeRegister(RegisterName.AX, 10);
+        registers.writeRegister(RegisterName.BX, 20);
+        registers.writeRegister(RegisterName.CX, 30);
+        registers.writeRegister(RegisterName.DX, 40);
+        registers.setProgramCounter(1000);
+
+        registers.loadInstructionRegister("A");
+        registers.loadInstructionRegister("B");
+        registers.clearInstructionRegister();
+
+        assertAll(
+                () -> assertEquals(50, registers.accumulator()),
+                () -> assertEquals(10, registers.readRegister(RegisterName.AX)),
+                () -> assertEquals(20, registers.readRegister(RegisterName.BX)),
+                () -> assertEquals(30, registers.readRegister(RegisterName.CX)),
+                () -> assertEquals(40, registers.readRegister(RegisterName.DX)),
+                () -> assertEquals(1000, registers.programCounter())
+        );
+
+        registers.loadInstructionRegister("instruction");
+        registers.writeAccumulator(-50);
+        registers.writeRegister(RegisterName.AX, -10);
+        registers.setProgramCounter(2000);
+
+        assertEquals(Optional.of("instruction"), registers.instructionRegister());
+    }
+
+    @Test
+    void shouldSupportDifferentInstructionRegisterTypes() {
+        CpuRegisters<Integer> registers = new CpuRegisters<>();
+
+        registers.loadInstructionRegister(42);
+
+        assertEquals(Optional.of(42), registers.instructionRegister());
     }
 }

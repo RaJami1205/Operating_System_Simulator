@@ -4,11 +4,12 @@ import io.github.rajami1205.osimulator.model.cpu.exception.InvalidProgramCounter
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
 import java.util.EnumMap;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Mutable and validated state of the simulated CPU data registers.
+ * Mutable and validated state of the simulated CPU registers.
  */
-public class CpuRegisters {
+public final class CpuRegisters<I> {
 
     private static final int MIN_DATA_VALUE = -127;
     private static final int MAX_DATA_VALUE = 127;
@@ -17,6 +18,7 @@ public class CpuRegisters {
             new EnumMap<>(RegisterName.class);
     private int accumulator;
     private int programCounter;
+    private I instructionRegister;
 
     public CpuRegisters() {
         for (RegisterName register : RegisterName.values()) {
@@ -55,6 +57,21 @@ public class CpuRegisters {
         }
 
         programCounter = address;
+    }
+
+    public Optional<I> instructionRegister() {
+        return Optional.ofNullable(instructionRegister);
+    }
+
+    public void loadInstructionRegister(I instruction) {
+        instructionRegister = Objects.requireNonNull(
+                instruction,
+                "instruction must not be null"
+        );
+    }
+
+    public void clearInstructionRegister() {
+        instructionRegister = null;
     }
 
     private RegisterName requireRegister(RegisterName register) {

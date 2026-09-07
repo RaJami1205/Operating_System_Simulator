@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.domain.memory;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -9,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
 import io.github.rajami1205.osimulator.domain.memory.exception.MemoryProtectionException;
+import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -142,5 +145,130 @@ class MemoryTest {
         Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
 
         assertThrows(MemoryProtectionException.class, () -> memory.writeUser(0, null));
+    }
+
+    @Test
+    void shouldWriteUserBlockFromInclusiveStartAddress() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+
+        memory.writeUserBlock(32, List.of("A", "B", "C"));
+
+        assertAll(
+                () -> assertEquals("A", memory.read(32).orElseThrow()),
+                () -> assertEquals("B", memory.read(33).orElseThrow()),
+                () -> assertEquals("C", memory.read(34).orElseThrow()),
+                () -> assertFalse(memory.isEmpty(32)),
+                () -> assertFalse(memory.isEmpty(33)),
+                () -> assertFalse(memory.isEmpty(34))
+        );
+    }
+
+    @Test
+    void shouldWriteBlockEndingAtLastMemoryAddress() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+
+        memory.writeUserBlock(125, List.of("A", "B", "C"));
+
+        assertAll(
+                () -> assertEquals("A", memory.read(125).orElseThrow()),
+                () -> assertEquals("B", memory.read(126).orElseThrow()),
+                () -> assertEquals("C", memory.read(127).orElseThrow())
+        );
+    }
+
+    @Test
+    void shouldOverwriteExistingValuesWithUserBlock() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "old A");
+        memory.writeUser(33, "old B");
+
+        memory.writeUserBlock(32, List.of("new A", "new B"));
+
+        assertAll(
+                () -> assertEquals("new A", memory.read(32).orElseThrow()),
+                () -> assertEquals("new B", memory.read(33).orElseThrow())
+        );
+    }
+
+    @Test
+    void shouldAcceptEmptyBlockWithoutModifyingMemory() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "original");
+
+        assertDoesNotThrow(() -> memory.writeUserBlock(32, List.of()));
+
+        assertAll(
+                () -> assertEquals("original", memory.read(32).orElseThrow()),
+                () -> assertTrue(memory.isEmpty(33))
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 128})
+    void shouldRejectInvalidBlockStartEvenWhenBlockIsEmpty(int startAddress) {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+
+        assertThrows(
+                InvalidMemoryAddressException.class,
+                () -> memory.writeUserBlock(startAddress, List.of())
+        );
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 31})
+    void shouldProtectKernelFromBlockWritesEvenWhenBlockIsEmpty(int startAddress) {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "user value");
+
+        assertThrows(
+                MemoryProtectionException.class,
+                () -> memory.writeUserBlock(startAddress, List.of())
+        );
+
+        assertAll(
+                () -> assertTrue(memory.read(startAddress).isEmpty()),
+                () -> assertEquals("user value", memory.read(32).orElseThrow())
+        );
+    }
+
+    @Test
+    void shouldRejectNullBlockWithoutModifyingMemory() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(32, "original");
+
+        assertThrows(NullPointerException.class, () -> memory.writeUserBlock(32, null));
+
+        assertEquals("original", memory.read(32).orElseThrow());
+    }
+
+    @Test
+    void shouldRejectNullBlockElementBeforeWritingAnyValue() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        List<String> values = Arrays.asList("A", null, "C");
+
+        assertThrows(NullPointerException.class, () -> memory.writeUserBlock(32, values));
+
+        assertAll(
+                () -> assertTrue(memory.isEmpty(32)),
+                () -> assertTrue(memory.isEmpty(33)),
+                () -> assertTrue(memory.isEmpty(34))
+        );
+    }
+
+    @Test
+    void shouldPreserveExistingValuesWhenBlockExceedsMemory() {
+        Memory<String> memory = new Memory<>(new MemoryConfiguration(128, 32));
+        memory.writeUser(126, "original A");
+        memory.writeUser(127, "original B");
+
+        assertThrows(
+                InvalidMemoryAddressException.class,
+                () -> memory.writeUserBlock(126, List.of("new A", "new B", "overflow"))
+        );
+
+        assertAll(
+                () -> assertEquals("original A", memory.read(126).orElseThrow()),
+                () -> assertEquals("original B", memory.read(127).orElseThrow())
+        );
     }
 }

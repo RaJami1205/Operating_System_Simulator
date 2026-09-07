@@ -1,6 +1,8 @@
 package io.github.rajami1205.osimulator.domain.memory;
 
+import io.github.rajami1205.osimulator.domain.memory.exception.InvalidMemoryAddressException;
 import io.github.rajami1205.osimulator.domain.memory.exception.MemoryProtectionException;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -40,14 +42,39 @@ public class Memory<T> {
     }
 
     public void writeUser(int address, T value) {
+        validateUserAddress(address);
+        T nonNullValue = Objects.requireNonNull(value, "value must not be null");
+        positions[address] = nonNullValue;
+    }
+
+    public void writeUserBlock(int startAddress, List<? extends T> values) {
+        validateUserAddress(startAddress);
+        List<? extends T> snapshot = List.copyOf(
+                Objects.requireNonNull(values, "values must not be null")
+        );
+        validateBlockRange(startAddress, snapshot.size());
+
+        int address = startAddress;
+        for (T value : snapshot) {
+            positions[address] = value;
+            address++;
+        }
+    }
+
+    private void validateUserAddress(int address) {
         if (regionOf(address) == MemoryRegion.KERNEL) {
             throw new MemoryProtectionException(
                     "User write cannot modify Kernel memory address: " + address
             );
         }
+    }
 
-        T nonNullValue = Objects.requireNonNull(value, "value must not be null");
-        positions[address] = nonNullValue;
+    private void validateBlockRange(int startAddress, int blockSize) {
+        if (blockSize > size() - startAddress) {
+            throw new InvalidMemoryAddressException(
+                    "Memory block exceeds the configured address space"
+            );
+        }
     }
 
     @SuppressWarnings("unchecked")

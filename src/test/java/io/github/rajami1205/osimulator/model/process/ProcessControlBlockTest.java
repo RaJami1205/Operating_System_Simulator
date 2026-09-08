@@ -8,9 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessConfigurationException;
+import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessProgramCounterException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ProcessControlBlockTest {
@@ -145,6 +147,142 @@ class ProcessControlBlockTest {
         );
     }
 
+    @ParameterizedTest
+    @EnumSource(ProcessState.class)
+    void shouldAcceptEveryProcessState(ProcessState state) {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+
+        pcb.changeState(state);
+
+        assertEquals(state, pcb.state());
+    }
+
+    @Test
+    void shouldSupportSequentialStateChangesWithoutTransitionPolicy() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+
+        pcb.changeState(ProcessState.READY);
+        assertEquals(ProcessState.READY, pcb.state());
+
+        pcb.changeState(ProcessState.RUNNING);
+        assertEquals(ProcessState.RUNNING, pcb.state());
+
+        pcb.changeState(ProcessState.BLOCKED);
+        assertEquals(ProcessState.BLOCKED, pcb.state());
+
+        pcb.changeState(ProcessState.READY);
+        assertEquals(ProcessState.READY, pcb.state());
+
+        pcb.changeState(ProcessState.RUNNING);
+        assertEquals(ProcessState.RUNNING, pcb.state());
+
+        pcb.changeState(ProcessState.TERMINATED);
+        assertEquals(ProcessState.TERMINATED, pcb.state());
+    }
+
+    @Test
+    void shouldAllowAssigningTheCurrentStateAgain() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+
+        pcb.changeState(ProcessState.NEW);
+
+        assertEquals(ProcessState.NEW, pcb.state());
+    }
+
+    @Test
+    void shouldRejectNullStateAndPreservePreviousState() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+        pcb.changeState(ProcessState.READY);
+
+        assertThrows(NullPointerException.class, () -> pcb.changeState(null));
+
+        assertEquals(ProcessState.READY, pcb.state());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {100, 101, 102, 103, 104, 105})
+    void shouldAcceptProgramCounterThroughoutInclusiveSavedRange(int programCounter) {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+
+        pcb.setProgramCounter(programCounter);
+
+        assertEquals(programCounter, pcb.programCounter());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {99, 106, Integer.MIN_VALUE, Integer.MAX_VALUE})
+    void shouldRejectProgramCounterOutsideSavedRange(int programCounter) {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+
+        assertInvalidProgramCounter(pcb, programCounter);
+    }
+
+    @Test
+    void shouldRejectNegativeProgramCounterForZeroStartAddress() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 0, 1);
+
+        assertInvalidProgramCounter(pcb, -1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {99, 106})
+    void shouldPreserveProgramCounterAfterFailedMutation(int invalidProgramCounter) {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+        pcb.setProgramCounter(102);
+
+        assertInvalidProgramCounter(pcb, invalidProgramCounter);
+
+        assertEquals(102, pcb.programCounter());
+    }
+
+    @Test
+    void shouldAcceptMaximumIntegerAsEndExclusiveProgramCounter() {
+        ProcessControlBlock pcb = new ProcessControlBlock(
+                1,
+                Integer.MAX_VALUE - 1,
+                1
+        );
+
+        pcb.setProgramCounter(Integer.MAX_VALUE);
+
+        assertEquals(Integer.MAX_VALUE, pcb.programCounter());
+    }
+
+    @Test
+    void shouldKeepProgramCounterUnchangedWhenStateChanges() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+        pcb.setProgramCounter(102);
+
+        pcb.changeState(ProcessState.TERMINATED);
+
+        assertEquals(102, pcb.programCounter());
+    }
+
+    @Test
+    void shouldKeepStateUnchangedAtEndExclusiveProgramCounter() {
+        ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
+        pcb.changeState(ProcessState.READY);
+
+        pcb.setProgramCounter(105);
+
+        assertEquals(ProcessState.READY, pcb.state());
+    }
+
+    @Test
+    void shouldPreserveMetadataWhenRuntimeStateChanges() {
+        ProcessControlBlock pcb = new ProcessControlBlock(7, 100, 5);
+
+        pcb.changeState(ProcessState.RUNNING);
+        pcb.setProgramCounter(103);
+
+        assertAll(
+                () -> assertEquals(7, pcb.processId()),
+                () -> assertEquals(100, pcb.programStartAddress()),
+                () -> assertEquals(5, pcb.instructionCount()),
+                () -> assertEquals(105, pcb.programEndAddressExclusive())
+        );
+    }
+
     private void assertInvalidConfiguration(
             int processId,
             int programStartAddress,
@@ -157,6 +295,21 @@ class ProcessControlBlockTest {
                         programStartAddress,
                         instructionCount
                 )
+        );
+
+        assertAll(
+                () -> assertNotNull(exception.getMessage()),
+                () -> assertFalse(exception.getMessage().isBlank())
+        );
+    }
+
+    private void assertInvalidProgramCounter(
+            ProcessControlBlock pcb,
+            int programCounter
+    ) {
+        InvalidProcessProgramCounterException exception = assertThrows(
+                InvalidProcessProgramCounterException.class,
+                () -> pcb.setProgramCounter(programCounter)
         );
 
         assertAll(

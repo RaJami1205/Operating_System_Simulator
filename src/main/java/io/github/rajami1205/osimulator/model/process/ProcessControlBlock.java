@@ -1,6 +1,8 @@
 package io.github.rajami1205.osimulator.model.process;
 
 import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessConfigurationException;
+import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessProgramCounterException;
+import java.util.Objects;
 
 /**
  * Process identity, program placement, and initial runtime state.
@@ -59,8 +61,32 @@ public final class ProcessControlBlock {
         return state;
     }
 
+    public void changeState(ProcessState newState) {
+        ProcessState nonNullState = Objects.requireNonNull(
+                newState,
+                "newState must not be null"
+        );
+        state = nonNullState;
+    }
+
     public int programCounter() {
         return programCounter;
+    }
+
+    public void setProgramCounter(int programCounter) {
+        if (programCounter < programStartAddress
+                || programCounter > programEndAddressExclusive) {
+            throw new InvalidProcessProgramCounterException(
+                    "Process Program Counter must be between "
+                            + programStartAddress
+                            + " and "
+                            + programEndAddressExclusive
+                            + ": "
+                            + programCounter
+            );
+        }
+
+        this.programCounter = programCounter;
     }
 
     private static void validateProcessId(int processId) {

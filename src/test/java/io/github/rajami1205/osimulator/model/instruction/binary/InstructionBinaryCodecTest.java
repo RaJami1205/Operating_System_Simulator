@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -89,6 +90,14 @@ class InstructionBinaryCodecTest {
         );
     }
 
+    @ParameterizedTest
+    @EnumSource(RegisterName.class)
+    void shouldEncodeCanonicalZeroForEveryDestination(RegisterName destination) {
+        EncodedInstruction encoded = codec.encode(new MovInstruction(destination, 0));
+
+        assertEquals("00000000", encoded.words().get(1).bits());
+    }
+
     @Test
     void shouldRejectNullInstruction() {
         assertThrows(NullPointerException.class, () -> codec.encode(null));
@@ -118,14 +127,28 @@ class InstructionBinaryCodecTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"00100001", "00100010", "00100111"})
+    @ValueSource(strings = {
+        "00100001",
+        "00100010",
+        "00100011",
+        "00100100",
+        "00100101",
+        "00100110",
+        "00100111"
+    })
     void shouldRejectNonZeroReservedHeaderBits(String header) {
         assertCodecFailure(encoded(header));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"00000000", "00001000", "00010000", "00011000"})
+    void shouldRejectNegativeZeroForEveryDestination(String header) {
+        assertCodecFailure(encoded(header, "10000000"));
+    }
+
     @Test
-    void shouldRejectNegativeZero() {
-        assertCodecFailure(encoded("00000000", "10000000"));
+    void shouldRejectHeaderWithReservedOpcodeAndReservedBits() {
+        assertCodecFailure(encoded("10111001"));
     }
 
     @ParameterizedTest
@@ -144,10 +167,49 @@ class InstructionBinaryCodecTest {
 
         assertAll(
                 () -> assertEquals(firstEncoding, codec.encode(first)),
+                () -> assertEquals(firstEncoding, codec.encode(first)),
+                () -> assertEquals(secondEncoding, codec.encode(second)),
                 () -> assertEquals(secondEncoding, codec.encode(second)),
                 () -> assertEquals(first, codec.decode(firstEncoding)),
                 () -> assertEquals(second, codec.decode(secondEncoding))
         );
+    }
+
+    @Test
+    void shouldReuseOneCodecAcrossEveryOpcode() {
+        List<Instruction> instructions = List.of(
+                new MovInstruction(RegisterName.AX, -127),
+                new LoadInstruction(RegisterName.BX),
+                new StoreInstruction(RegisterName.CX),
+                new AddInstruction(RegisterName.DX),
+                new SubInstruction(RegisterName.AX)
+        );
+
+        for (Instruction instruction : instructions) {
+            assertEquals(instruction, codec.decode(codec.encode(instruction)));
+        }
+    }
+
+    @Test
+    void shouldRemainReusableAfterDecodeFailure() {
+        EncodedInstruction firstValid = encoded("00100000");
+        EncodedInstruction secondValid = encoded("10011000");
+
+        assertEquals(new LoadInstruction(RegisterName.AX), codec.decode(firstValid));
+        assertCodecFailure(encoded("00100001"));
+        assertEquals(new SubInstruction(RegisterName.DX), codec.decode(secondValid));
+    }
+
+    @Test
+    void shouldKeepGenericValuesSeparateFromCurrentCodecWidth() {
+        BinaryWord widerWord = new BinaryWord("1111111111111111");
+        EncodedInstruction genericEncoding = new EncodedInstruction(List.of(widerWord));
+
+        assertAll(
+                () -> assertEquals(16, widerWord.width()),
+                () -> assertEquals(List.of(widerWord), genericEncoding.words())
+        );
+        assertCodecFailure(genericEncoding);
     }
 
     @Test
@@ -222,6 +284,8 @@ class InstructionBinaryCodecTest {
                 Arguments.of(-1, "10000001"),
                 Arguments.of(5, "00000101"),
                 Arguments.of(-5, "10000101"),
+                Arguments.of(126, "01111110"),
+                Arguments.of(-126, "11111110"),
                 Arguments.of(127, "01111111"),
                 Arguments.of(-127, "11111111")
         );
@@ -244,9 +308,15 @@ class InstructionBinaryCodecTest {
 
     private static Stream<Arguments> wrongWidthEncodings() {
         return Stream.of(
+                Arguments.of(encoded("0")),
                 Arguments.of(encoded("0010000")),
                 Arguments.of(encoded("001000000")),
-                Arguments.of(encoded("00000000", "0000101"))
+                Arguments.of(encoded("0010000000000000")),
+                Arguments.of(encoded("00000000", "0")),
+                Arguments.of(encoded("00000000", "0000000")),
+                Arguments.of(encoded("00000000", "000000000")),
+                Arguments.of(encoded("00000000", "0000000000000000")),
+                Arguments.of(encoded("00100000", "0"))
         );
     }
 
@@ -254,7 +324,14 @@ class InstructionBinaryCodecTest {
         return Stream.of(
                 Arguments.of(encoded("00000000")),
                 Arguments.of(encoded("00000000", "00000101", "00000000")),
+                Arguments.of(encoded(
+                        "00000000",
+                        "00000101",
+                        "00000000",
+                        "00000000"
+                )),
                 Arguments.of(encoded("00100000", "00000000")),
+                Arguments.of(encoded("00100000", "00000000", "00000000")),
                 Arguments.of(encoded("01000000", "00000000")),
                 Arguments.of(encoded("01100000", "00000000")),
                 Arguments.of(encoded("10000000", "00000000"))
@@ -265,6 +342,9 @@ class InstructionBinaryCodecTest {
         return Stream.of(
                 Arguments.of(encoded("00000000", "00000101")),
                 Arguments.of(encoded("00001000", "10000101")),
+                Arguments.of(encoded("00010000", "00000000")),
+                Arguments.of(encoded("00011000", "01111111")),
+                Arguments.of(encoded("00001000", "11111111")),
                 Arguments.of(encoded("00100000")),
                 Arguments.of(encoded("01001000")),
                 Arguments.of(encoded("01110000")),

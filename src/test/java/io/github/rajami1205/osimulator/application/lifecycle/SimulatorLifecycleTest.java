@@ -60,8 +60,77 @@ class SimulatorLifecycleTest {
         lifecycle.resumeExecution();
         lifecycle.pauseExecution();
         lifecycle.resumeExecution();
+        lifecycle.pauseExecution();
+        lifecycle.resumeExecution();
 
         assertEquals(SimulatorState.RUNNING, lifecycle.state());
+    }
+
+    @Test
+    void shouldContinueFromConfiguringAfterInvalidTransition() {
+        SimulatorLifecycle lifecycle = new SimulatorLifecycle();
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::startExecution);
+
+        lifecycle.initialize();
+        assertEquals(SimulatorState.INITIALIZED, lifecycle.state());
+    }
+
+    @Test
+    void shouldContinueFromInitializedAfterInvalidTransition() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.INITIALIZED);
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::finishExecution);
+
+        lifecycle.markProgramLoaded();
+        assertEquals(SimulatorState.PROGRAM_LOADED, lifecycle.state());
+    }
+
+    @Test
+    void shouldContinueFromProgramLoadedAfterInvalidTransition() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.PROGRAM_LOADED);
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::pauseExecution);
+
+        lifecycle.startExecution();
+        assertEquals(SimulatorState.RUNNING, lifecycle.state());
+    }
+
+    @Test
+    void shouldContinueFromRunningAfterInvalidTransition() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.RUNNING);
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::initialize);
+
+        lifecycle.pauseExecution();
+        assertEquals(SimulatorState.PAUSED, lifecycle.state());
+    }
+
+    @Test
+    void shouldResumeAndFinishAfterInvalidFinishFromPaused() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.PAUSED);
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::finishExecution);
+
+        lifecycle.resumeExecution();
+        assertEquals(SimulatorState.RUNNING, lifecycle.state());
+
+        lifecycle.finishExecution();
+        assertEquals(SimulatorState.FINISHED, lifecycle.state());
+    }
+
+    @Test
+    void shouldRecoverFromErrorAfterInvalidNormalTransition() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.ERROR);
+
+        assertInvalidTransitionPreservesState(lifecycle, lifecycle::startExecution);
+
+        lifecycle.markError();
+        assertEquals(SimulatorState.ERROR, lifecycle.state());
+
+        lifecycle.reset();
+        lifecycle.initialize();
+        assertEquals(SimulatorState.INITIALIZED, lifecycle.state());
     }
 
     @ParameterizedTest
@@ -163,6 +232,7 @@ class SimulatorLifecycleTest {
         lifecycle.markError();
         lifecycle.markError();
         lifecycle.markError();
+        lifecycle.markError();
 
         assertEquals(SimulatorState.ERROR, lifecycle.state());
     }
@@ -171,6 +241,7 @@ class SimulatorLifecycleTest {
     void shouldKeepResetIdempotent() {
         SimulatorLifecycle lifecycle = new SimulatorLifecycle();
 
+        lifecycle.reset();
         lifecycle.reset();
         lifecycle.reset();
         lifecycle.reset();
@@ -210,6 +281,61 @@ class SimulatorLifecycleTest {
 
         lifecycle.reset();
         assertEquals(SimulatorState.CONFIGURING, lifecycle.state());
+
+        lifecycle.initialize();
+        assertEquals(SimulatorState.INITIALIZED, lifecycle.state());
+    }
+
+    @Test
+    void shouldComposeResetAndMarkErrorWithoutRestoringPreviousState() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.PAUSED);
+
+        lifecycle.reset();
+        assertEquals(SimulatorState.CONFIGURING, lifecycle.state());
+
+        lifecycle.markError();
+        assertEquals(SimulatorState.ERROR, lifecycle.state());
+
+        lifecycle.reset();
+        assertEquals(SimulatorState.CONFIGURING, lifecycle.state());
+    }
+
+    @Test
+    void shouldReuseSameLifecycleAcrossMultipleCompleteSessions() {
+        SimulatorLifecycle lifecycle = new SimulatorLifecycle();
+
+        lifecycle.initialize();
+        lifecycle.markProgramLoaded();
+        lifecycle.startExecution();
+        lifecycle.finishExecution();
+        assertEquals(SimulatorState.FINISHED, lifecycle.state());
+
+        lifecycle.reset();
+        lifecycle.initialize();
+        lifecycle.markProgramLoaded();
+        lifecycle.startExecution();
+        lifecycle.pauseExecution();
+        lifecycle.resumeExecution();
+        lifecycle.finishExecution();
+        assertEquals(SimulatorState.FINISHED, lifecycle.state());
+
+        lifecycle.reset();
+        lifecycle.initialize();
+        assertEquals(SimulatorState.INITIALIZED, lifecycle.state());
+    }
+
+    @Test
+    void shouldRecoverFromErrorBetweenSessions() {
+        SimulatorLifecycle lifecycle = lifecycleIn(SimulatorState.FINISHED);
+
+        lifecycle.reset();
+        lifecycle.initialize();
+        lifecycle.markError();
+        assertEquals(SimulatorState.ERROR, lifecycle.state());
+
+        lifecycle.reset();
+        lifecycle.initialize();
+        assertEquals(SimulatorState.INITIALIZED, lifecycle.state());
     }
 
     private static SimulatorLifecycle lifecycleIn(SimulatorState state) {

@@ -1,22 +1,30 @@
 package io.github.rajami1205.osimulator.presentation;
 
+import java.io.IOException;
+import java.net.URL;
+import java.util.Objects;
 import javafx.application.Application;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Label;
-import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
 public class SimulatorApplication extends Application {
 
     @Override
-    public void start(Stage primaryStage) {
-        Label label = new Label("Operating System Simulator");
-
-        StackPane root = new StackPane(label);
-        Scene scene = new Scene(root, 800, 500);
+    public void start(Stage primaryStage) throws IOException {
+        URL viewResource = Objects.requireNonNull(
+                SimulatorApplication.class.getResource(
+                        "/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"),
+                "SimulatorView.fxml resource is required");
+        Parent root = FXMLLoader.load(viewResource);
+        Scene scene = new Scene(root, 1280, 720);
 
         primaryStage.setTitle("Operating System Simulator");
         primaryStage.setScene(scene);
+        primaryStage.setResizable(true);
+        primaryStage.setMinWidth(1100);
+        primaryStage.setMinHeight(650);
         primaryStage.show();
     }
 

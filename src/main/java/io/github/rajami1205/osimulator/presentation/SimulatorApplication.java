@@ -1,5 +1,12 @@
 package io.github.rajami1205.osimulator.presentation;
 
+import io.github.rajami1205.osimulator.application.program.ProgramImporter;
+import io.github.rajami1205.osimulator.application.program.ProgramLoader;
+import io.github.rajami1205.osimulator.application.simulator.SimulatorOrchestrator;
+import io.github.rajami1205.osimulator.infrastructure.asm.AsmFileProgramImporter;
+import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
+import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
+import io.github.rajami1205.osimulator.model.instruction.binary.InstructionBinaryCodec;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Objects;
@@ -17,7 +24,13 @@ public class SimulatorApplication extends Application {
                 SimulatorApplication.class.getResource(
                         "/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"),
                 "SimulatorView.fxml resource is required");
-        Parent root = FXMLLoader.load(viewResource);
+        SimulatorOrchestrator orchestrator = new SimulatorOrchestrator(
+                new ProgramLoader(), new ExecutionEngine(), new InstructionBinaryCodec());
+        ProgramImporter programImporter = new AsmFileProgramImporter(new AsmParser());
+        SimulatorController controller = new SimulatorController(orchestrator, programImporter);
+        FXMLLoader loader = new FXMLLoader(viewResource);
+        loader.setController(controller);
+        Parent root = loader.load();
         Scene scene = new Scene(root, 1280, 720);
 
         primaryStage.setTitle("Operating System Simulator");

@@ -99,7 +99,7 @@
                                    styleClass="helper-text"
                                    GridPane.columnSpan="2"
                                    GridPane.rowIndex="2" />
-                            <Button fx:id="initializeButton"
+                            <Button fx:id="initializeButton" onAction="#handleInitialize"
                                     text="Initialize"
                                     maxWidth="Infinity"
                                     styleClass="primary-button"
@@ -124,12 +124,12 @@
                                        promptText="No program selected"
                                        styleClass="input-field"
                                        GridPane.columnIndex="1" />
-                            <Button fx:id="browseProgramButton"
+                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram"
                                     text="Browse"
                                     maxWidth="Infinity"
                                     styleClass="secondary-button"
                                     GridPane.rowIndex="1" />
-                            <Button fx:id="loadProgramButton"
+                            <Button fx:id="loadProgramButton" onAction="#handleLoadProgram"
                                     text="Load Program"
                                     disable="true"
                                     maxWidth="Infinity"
@@ -146,12 +146,12 @@
                                 <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS" />
                                 <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS" />
                             </columnConstraints>
-                            <Button fx:id="startButton"
+                            <Button fx:id="startButton" onAction="#handleStart"
                                     text="Start"
                                     disable="true"
                                     maxWidth="Infinity"
                                     styleClass="primary-button" />
-                            <Button fx:id="stepButton"
+                            <Button fx:id="stepButton" onAction="#handleStep"
                                     text="Step"
                                     disable="true"
                                     maxWidth="Infinity"
@@ -163,20 +163,20 @@
                                     maxWidth="Infinity"
                                     styleClass="secondary-button"
                                     GridPane.rowIndex="1" />
-                            <Button fx:id="pauseButton"
+                            <Button fx:id="pauseButton" onAction="#handlePause"
                                     text="Pause"
                                     disable="true"
                                     maxWidth="Infinity"
                                     styleClass="secondary-button"
                                     GridPane.columnIndex="1"
                                     GridPane.rowIndex="1" />
-                            <Button fx:id="resumeButton"
+                            <Button fx:id="resumeButton" onAction="#handleResume"
                                     text="Resume"
                                     disable="true"
                                     maxWidth="Infinity"
                                     styleClass="secondary-button"
                                     GridPane.rowIndex="2" />
-                            <Button fx:id="resetButton"
+                            <Button fx:id="resetButton" onAction="#handleReset"
                                     text="Reset"
                                     maxWidth="Infinity"
                                     styleClass="reset-button"
@@ -278,14 +278,14 @@
                         <HBox fx:id="binaryWordsContainer" spacing="6.0">
                             <VBox spacing="1.0" styleClass="binary-word" HBox.hgrow="ALWAYS">
                                 <Label text="Word 1" styleClass="metric-label" />
-                                <Label text="—" styleClass="binary-value" />
+                                <Label fx:id="word1ValueLabel" text="—" styleClass="binary-value" />
                             </VBox>
                             <VBox spacing="1.0" styleClass="binary-word" HBox.hgrow="ALWAYS">
                                 <Label text="Word 2 (MOV)" styleClass="metric-label" />
-                                <Label text="—" styleClass="binary-value" />
+                                <Label fx:id="word2ValueLabel" text="—" styleClass="binary-value" />
                             </VBox>
                         </HBox>
-                        <Label text="Waiting for execution" styleClass="helper-text" />
+                        <Label fx:id="executionStatusLabel" text="Waiting for execution" styleClass="helper-text" />
                     </VBox>
                 </VBox>
 

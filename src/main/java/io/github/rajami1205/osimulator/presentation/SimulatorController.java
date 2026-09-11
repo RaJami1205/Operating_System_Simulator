@@ -12,6 +12,8 @@ import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngine
 import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 import java.nio.file.Path;
 import java.util.Objects;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.beans.property.ReadOnlyIntegerWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
@@ -23,9 +25,13 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.stage.FileChooser;
+import javafx.util.Duration;
 
 /** Handles manual UI actions and renders immutable application snapshots. */
 public final class SimulatorController {
+    private static final Duration AUTOMATIC_STEP_INTERVAL = Duration.millis(750);
+    private Timeline automaticTimeline;
+    private boolean automaticMode;
     private final SimulatorOrchestrator orchestrator;
     private final ProgramImporter programImporter;
     private Path selectedProgramPath;
@@ -77,6 +83,12 @@ public final class SimulatorController {
 
     @FXML
     private void initialize() {
+        automaticTimeline = new Timeline(new KeyFrame(AUTOMATIC_STEP_INTERVAL, event -> {
+            if (automaticMode && orchestrator.snapshot().simulatorState() == SimulatorState.RUNNING) {
+                executeSingleStep();
+            }
+        }));
+        automaticTimeline.setCycleCount(Timeline.INDEFINITE);
         programAddressColumn.setCellValueFactory(cell -> new ReadOnlyIntegerWrapper(cell.getValue().address()));
         programInstructionColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(cell.getValue().instruction()));
         memoryAddressColumn.setCellValueFactory(cell -> new ReadOnlyIntegerWrapper(cell.getValue().address()));
@@ -143,29 +155,73 @@ public final class SimulatorController {
 
     @FXML
     private void handleStep() {
+        executeSingleStep();
+    }
+
+    @FXML
+    private void handleAutomatic() {
+        var snapshot = orchestrator.snapshot();
+        if (snapshot.simulatorState() != SimulatorState.RUNNING || automaticMode) {
+            return;
+        }
+        automaticMode = true;
+        render(snapshot);
+        automaticTimeline.playFromStart();
+    }
+
+    private void executeSingleStep() {
         try {
             orchestrator.step();
         } catch (ExecutionEngineException exception) {
-            showError("Execution failed. " + exception.getMessage());
-        } catch (IllegalStateException exception) {
-            showError("Operation unavailable. " + exception.getMessage());
-        } finally {
+            stopAutomaticExecution();
             render(orchestrator.snapshot());
+            showError("Execution failed. " + exception.getMessage());
+            return;
+        } catch (IllegalStateException exception) {
+            stopAutomaticExecution();
+            render(orchestrator.snapshot());
+            showError("Operation unavailable. " + exception.getMessage());
+            return;
         }
+        var snapshot = orchestrator.snapshot();
+        if (snapshot.simulatorState() == SimulatorState.FINISHED) {
+            stopAutomaticExecution();
+        }
+        render(snapshot);
+    }
+
+    private void stopAutomaticExecution() {
+        automaticTimeline.stop();
+        automaticMode = false;
     }
 
     @FXML
     private void handlePause() {
+        if (automaticMode) {
+            automaticTimeline.pause();
+        }
         runStateOperation(orchestrator::pause);
     }
 
     @FXML
     private void handleResume() {
-        runStateOperation(orchestrator::resume);
+        try {
+            orchestrator.resume();
+        } catch (IllegalStateException exception) {
+            stopAutomaticExecution();
+            render(orchestrator.snapshot());
+            showError("Operation unavailable. " + exception.getMessage());
+            return;
+        }
+        if (automaticMode) {
+            automaticTimeline.play();
+        }
+        render(orchestrator.snapshot());
     }
 
     @FXML
     private void handleReset() {
+        stopAutomaticExecution();
         orchestrator.reset();
         selectedProgramPath = null;
         programPathField.clear();
@@ -212,9 +268,14 @@ public final class SimulatorController {
         operandValueLabel.setText(instruction.map(value -> value.operand()).orElse("—"));
         word1ValueLabel.setText(instruction.map(value -> value.word1()).orElse("—"));
         word2ValueLabel.setText(instruction.flatMap(value -> value.word2()).orElse("—"));
-        executionStatusLabel.setText(instruction.isEmpty() ? "Waiting for execution"
-                : snapshot.simulatorState() == SimulatorState.ERROR
-                        ? "Last attempted instruction" : "Last executed instruction");
+        executionStatusLabel.setText(switch (snapshot.simulatorState()) {
+            case ERROR -> "Execution error";
+            case FINISHED -> "Execution finished";
+            case PAUSED -> "Execution paused";
+            case RUNNING -> automaticMode ? "Automatic execution"
+                    : instruction.isPresent() ? "Last executed instruction" : "Waiting for execution";
+            default -> "Waiting for execution";
+        });
     }
 
     private void renderProcess(SimulatorSnapshot snapshot) {
@@ -234,11 +295,11 @@ public final class SimulatorController {
         browseProgramButton.setDisable(!configuring && state != SimulatorState.INITIALIZED);
         loadProgramButton.setDisable(state != SimulatorState.INITIALIZED || selectedProgramPath == null);
         startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
-        stepButton.setDisable(state != SimulatorState.RUNNING);
+        stepButton.setDisable(state != SimulatorState.RUNNING || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING);
         resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false);
-        automaticButton.setDisable(true);
+        automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode);
         totalMemoryField.setDisable(!configuring);
         kernelReservedField.setDisable(!configuring);
         programPathField.setEditable(false);

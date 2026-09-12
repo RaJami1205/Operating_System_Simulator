@@ -157,7 +157,7 @@
                                     maxWidth="Infinity"
                                     styleClass="secondary-button"
                                     GridPane.columnIndex="1" />
-                            <Button fx:id="automaticButton"
+                            <Button fx:id="automaticButton" onAction="#handleAutomatic"
                                     text="Automatic"
                                     disable="true"
                                     maxWidth="Infinity"

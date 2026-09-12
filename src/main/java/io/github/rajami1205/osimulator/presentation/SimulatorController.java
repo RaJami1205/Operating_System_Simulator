@@ -311,6 +311,6 @@ public final class SimulatorController {
         alert.setTitle("Operating System Simulator");
         alert.setHeaderText(null);
         alert.setContentText(message);
-        alert.showAndWait();
+        alert.show();
     }
 }

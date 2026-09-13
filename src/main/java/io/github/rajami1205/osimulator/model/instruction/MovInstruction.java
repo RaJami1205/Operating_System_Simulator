@@ -5,13 +5,14 @@ import io.github.rajami1205.osimulator.model.instruction.exception.InvalidImmedi
 import java.util.Objects;
 
 /**
- * Instruction that assigns an immediate value to a destination register when executed later.
+ * Representa la instrucción que asigna un inmediato a un registro destino al ejecutarse.
  */
 public record MovInstruction(RegisterName destination, int immediate) implements Instruction {
 
     private static final int MIN_IMMEDIATE_VALUE = -127;
     private static final int MAX_IMMEDIATE_VALUE = 127;
 
+    // Valida el registro destino y el rango lógico del inmediato.
     public MovInstruction {
         Objects.requireNonNull(destination, "destination must not be null");
 
@@ -28,6 +29,7 @@ public record MovInstruction(RegisterName destination, int immediate) implements
     }
 
     @Override
+    // Identifica la operación semántica representada.
     public Opcode opcode() {
         return Opcode.MOV;
     }

@@ -1,7 +1,7 @@
 package io.github.rajami1205.osimulator.model.memory;
 
 /**
- * Semantic regions of the simulated memory address space.
+ * Define las regiones semánticas del espacio de memoria simulada.
  */
 public enum MemoryRegion {
     KERNEL,

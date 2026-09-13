@@ -1,7 +1,7 @@
 package io.github.rajami1205.osimulator.model.cpu;
 
 /**
- * General-purpose data registers of the simulated CPU.
+ * Define los registros de datos de propósito general de la CPU simulada.
  */
 public enum RegisterName {
     AX,

@@ -5,14 +5,14 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Imports semantic instructions without loading them into a simulator session. */
+/** Importa instrucciones semánticas sin cargarlas en una sesión del simulador. */
 public interface ProgramImporter {
 
     /**
-     * Returns an immutable instruction list, which may be empty.
+     * Devuelve una lista inmutable de instrucciones, que puede estar vacía.
      *
-     * @throws NullPointerException if path is null
-     * @throws ProgramImportException if the source cannot be read or parsed
+     * @throws NullPointerException si path es nulo
+     * @throws ProgramImportException si no se puede leer o analizar el archivo de origen
      */
     List<Instruction> importProgram(Path path) throws ProgramImportException;
 }

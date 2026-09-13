@@ -15,10 +15,11 @@ import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
 
 /**
- * Executes one semantic instruction step for a simulated process.
+ * Ejecuta un paso de instrucción semántica para un proceso simulado.
  */
 public final class ExecutionEngine {
 
+    // Ejecuta como máximo una instrucción y actualiza CPU, PC y estado del proceso.
     public void executeNext(
             Memory<Instruction> memory,
             CpuRegisters<Instruction> cpu,
@@ -60,6 +61,7 @@ public final class ExecutionEngine {
         }
     }
 
+    // Permite ejecutar únicamente procesos READY o RUNNING.
     private void validateExecutableState(ProcessControlBlock pcb) {
         if (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.RUNNING) {
             throw new ExecutionEngineException(
@@ -68,6 +70,7 @@ public final class ExecutionEngine {
         }
     }
 
+    // Comprueba que el programa del proceso esté contenido en User Memory.
     private void validateMemoryCompatibility(
             Memory<Instruction> memory,
             ProcessControlBlock pcb
@@ -87,6 +90,7 @@ public final class ExecutionEngine {
         }
     }
 
+    // Aplica la semántica de la instrucción y traduce fallos de rango de la CPU.
     private void executeInstruction(
             Instruction instruction,
             CpuRegisters<Instruction> cpu

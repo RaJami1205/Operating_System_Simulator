@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Converts semantic instructions to and from the strict Binary Format v1.
+ * Convierte instrucciones semánticas al formato estricto Binary Format v1 y viceversa.
  */
 public final class InstructionBinaryCodec {
 
@@ -27,9 +27,11 @@ public final class InstructionBinaryCodec {
     private static final String SUB_OPCODE = "100";
     private static final String RESERVED_BITS = "000";
 
+    // Crea el conversor de instrucciones para Binary Format v1.
     public InstructionBinaryCodec() {
     }
 
+    // Convierte una instrucción semántica a Binary Format v1.
     public EncodedInstruction encode(Instruction instruction) {
         Objects.requireNonNull(instruction, "instruction must not be null");
 
@@ -42,6 +44,7 @@ public final class InstructionBinaryCodec {
         };
     }
 
+    // Valida la representación binaria y reconstruye su instrucción semántica.
     public Instruction decode(EncodedInstruction encoded) {
         Objects.requireNonNull(encoded, "encoded must not be null");
 
@@ -86,12 +89,14 @@ public final class InstructionBinaryCodec {
         };
     }
 
+    // Genera la cabecera y la palabra inmediata que representan MOV.
     private static EncodedInstruction encodeMov(MovInstruction instruction) {
         BinaryWord header = encodeHeader(MOV_OPCODE, instruction.destination());
         BinaryWord immediate = encodeImmediate(instruction.immediate());
         return new EncodedInstruction(List.of(header, immediate));
     }
 
+    // Genera una única palabra para una operación con registro.
     private static EncodedInstruction encodeRegisterOnly(
             String opcodeBits,
             RegisterName register
@@ -99,10 +104,12 @@ public final class InstructionBinaryCodec {
         return new EncodedInstruction(List.of(encodeHeader(opcodeBits, register)));
     }
 
+    // Combina operación, registro y bits reservados en la cabecera.
     private static BinaryWord encodeHeader(String opcodeBits, RegisterName register) {
         return new BinaryWord(opcodeBits + encodeRegister(register) + RESERVED_BITS);
     }
 
+    // Representa el inmediato mediante signo y magnitud en ocho bits.
     private static BinaryWord encodeImmediate(int immediate) {
         int magnitude = Math.abs(immediate);
         String magnitudeBits = toFixedWidthBinary(magnitude, WORD_WIDTH - 1);
@@ -110,11 +117,13 @@ public final class InstructionBinaryCodec {
         return new BinaryWord(signBit + magnitudeBits);
     }
 
+    // Completa con ceros la representación binaria hasta el ancho requerido.
     private static String toFixedWidthBinary(int value, int width) {
         String binary = Integer.toBinaryString(value);
         return "0".repeat(width - binary.length()) + binary;
     }
 
+    // Asigna a cada registro su identificador binario de dos bits.
     private static String encodeRegister(RegisterName register) {
         return switch (register) {
             case AX -> "00";
@@ -124,6 +133,7 @@ public final class InstructionBinaryCodec {
         };
     }
 
+    // Exige palabras de ocho bits para Binary Format v1.
     private static void validateWordWidths(List<BinaryWord> words) {
         for (int index = 0; index < words.size(); index++) {
             BinaryWord word = words.get(index);
@@ -140,6 +150,7 @@ public final class InstructionBinaryCodec {
         }
     }
 
+    // Comprueba la cantidad de palabras requerida por la operación.
     private static void validateWordCount(
             List<BinaryWord> words,
             int expectedCount,
@@ -156,6 +167,7 @@ public final class InstructionBinaryCodec {
         }
     }
 
+    // Resuelve el registro representado por sus dos bits.
     private static RegisterName decodeRegister(String registerBits) {
         return switch (registerBits) {
             case "00" -> RegisterName.AX;
@@ -168,6 +180,7 @@ public final class InstructionBinaryCodec {
         };
     }
 
+    // Reconstruye MOV a partir del inmediato y rechaza el cero negativo.
     private static MovInstruction decodeMov(RegisterName register, BinaryWord immediateWord) {
         String bits = immediateWord.bits();
         boolean negative = bits.charAt(0) == '1';

@@ -27,7 +27,7 @@ import javafx.scene.control.TextField;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
 
-/** Handles manual UI actions and renders immutable application snapshots. */
+/** Gestiona las acciones manuales de la interfaz y renderiza snapshots inmutables de la aplicación. */
 public final class SimulatorController {
     private static final Duration AUTOMATIC_STEP_INTERVAL = Duration.millis(750);
     private Timeline automaticTimeline;
@@ -76,12 +76,14 @@ public final class SimulatorController {
     @FXML private TableColumn<MemoryEntry, String> memoryRegionColumn;
     @FXML private TableColumn<MemoryEntry, String> memoryContentColumn;
 
+    // Recibe las dependencias de aplicación utilizadas por la vista.
     public SimulatorController(SimulatorOrchestrator orchestrator, ProgramImporter programImporter) {
         this.orchestrator = Objects.requireNonNull(orchestrator, "orchestrator must not be null");
         this.programImporter = Objects.requireNonNull(programImporter, "programImporter must not be null");
     }
 
     @FXML
+    // Configura el Timeline y las tablas antes de renderizar la sesión inicial.
     private void initialize() {
         automaticTimeline = new Timeline(new KeyFrame(AUTOMATIC_STEP_INTERVAL, event -> {
             if (automaticMode && orchestrator.snapshot().simulatorState() == SimulatorState.RUNNING) {
@@ -98,6 +100,7 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Valida la entrada de memoria e inicializa la sesión, mostrando errores recuperables.
     private void handleInitialize() {
         try {
             int total = Integer.parseInt(totalMemoryField.getText().strip());
@@ -115,6 +118,7 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Permite seleccionar el archivo ASM que se importará.
     private void handleBrowseProgram() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Select ASM program");
@@ -128,6 +132,7 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Importa y carga el programa seleccionado, conservando la sesión si se rechaza.
     private void handleLoadProgram() {
         if (selectedProgramPath == null) {
             showError("Select an ASM program first.");
@@ -149,16 +154,19 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Pasa a RUNNING sin adelantar ninguna instrucción.
     private void handleStart() {
         runStateOperation(orchestrator::start);
     }
 
     @FXML
+    // Solicita una instrucción mediante el camino compartido de ejecución.
     private void handleStep() {
         executeSingleStep();
     }
 
     @FXML
+    // Activa el avance periódico cuando la sesión está en RUNNING manual.
     private void handleAutomatic() {
         var snapshot = orchestrator.snapshot();
         if (snapshot.simulatorState() != SimulatorState.RUNNING || automaticMode) {
@@ -169,6 +177,7 @@ public final class SimulatorController {
         automaticTimeline.playFromStart();
     }
 
+    // Ejecuta un paso, actualiza la vista y detiene Automatic al finalizar o fallar.
     private void executeSingleStep() {
         try {
             orchestrator.step();
@@ -190,12 +199,14 @@ public final class SimulatorController {
         render(snapshot);
     }
 
+    // Detiene el Timeline y descarta el modo de reproducción automática.
     private void stopAutomaticExecution() {
         automaticTimeline.stop();
         automaticMode = false;
     }
 
     @FXML
+    // Pausa la sesión y el Timeline conservando el modo de ejecución.
     private void handlePause() {
         if (automaticMode) {
             automaticTimeline.pause();
@@ -204,6 +215,7 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Reanuda la sesión y retoma el Timeline solo si el modo era automático.
     private void handleResume() {
         try {
             orchestrator.resume();
@@ -220,6 +232,7 @@ public final class SimulatorController {
     }
 
     @FXML
+    // Detiene Automatic y limpia la sesión, la selección y las entradas de la vista.
     private void handleReset() {
         stopAutomaticExecution();
         orchestrator.reset();
@@ -230,6 +243,7 @@ public final class SimulatorController {
         render(orchestrator.snapshot());
     }
 
+    // Aplica una transición de sesión y refleja su resultado o error en la vista.
     private void runStateOperation(Runnable operation) {
         try {
             operation.run();
@@ -240,6 +254,7 @@ public final class SimulatorController {
         }
     }
 
+    // Actualiza los valores y controles visibles a partir de un snapshot.
     private void render(SimulatorSnapshot snapshot) {
         simulatorStateLabel.setText(snapshot.simulatorState().name());
         renderCpu(snapshot);
@@ -250,6 +265,7 @@ public final class SimulatorController {
         updateControls(snapshot);
     }
 
+    // Muestra los registros reales de la CPU o su ausencia en la sesión.
     private void renderCpu(SimulatorSnapshot snapshot) {
         var cpu = snapshot.cpu();
         pcValueLabel.setText(cpu.map(value -> Integer.toString(value.programCounter())).orElse("—"));
@@ -261,6 +277,7 @@ public final class SimulatorController {
         dxValueLabel.setText(cpu.map(value -> Integer.toString(value.dx())).orElse("—"));
     }
 
+    // Muestra la instrucción, sus palabras binarias y el estado de ejecución.
     private void renderCurrentInstruction(SimulatorSnapshot snapshot) {
         var instruction = snapshot.currentInstruction();
         currentInstructionLabel.setText(instruction.map(value -> value.semanticInstruction()).orElse("—"));
@@ -278,6 +295,7 @@ public final class SimulatorController {
         });
     }
 
+    // Muestra los metadatos y el estado del PCB disponible.
     private void renderProcess(SimulatorSnapshot snapshot) {
         var process = snapshot.process();
         processIdValueLabel.setText(process.map(value -> Integer.toString(value.processId())).orElse("—"));
@@ -288,6 +306,7 @@ public final class SimulatorController {
         processSavedPcValueLabel.setText(process.map(value -> Integer.toString(value.savedProgramCounter())).orElse("—"));
     }
 
+    // Habilita las acciones permitidas por el estado de sesión y el modo automático.
     private void updateControls(SimulatorSnapshot snapshot) {
         SimulatorState state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
@@ -305,6 +324,7 @@ public final class SimulatorController {
         programPathField.setEditable(false);
     }
 
+    // Presenta un error sin bloquear el callback de JavaFX.
     private void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.initOwner(simulatorStateLabel.getScene().getWindow());

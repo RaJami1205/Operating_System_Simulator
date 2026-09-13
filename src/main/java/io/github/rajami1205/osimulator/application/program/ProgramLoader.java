@@ -10,10 +10,11 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Coordinates loading a semantic program into simulated User Memory.
+ * Coordina la carga de un programa semántico en la memoria User simulada.
  */
 public final class ProgramLoader {
 
+    // Valida el programa y lo carga en User Memory con un PCB en READY.
     public ProcessControlBlock load(
             Memory<Instruction> memory,
             int processId,
@@ -58,6 +59,7 @@ public final class ProgramLoader {
         return pcb;
     }
 
+    // Crea los metadatos del proceso y traduce errores de configuración a errores de carga.
     private ProcessControlBlock createProcessControlBlock(
             int processId,
             int programStartAddress,
@@ -77,6 +79,7 @@ public final class ProgramLoader {
         }
     }
 
+    // Comprueba que la carga no sobrescriba posiciones ocupadas.
     private void validateTargetRangeIsEmpty(
             Memory<Instruction> memory,
             int startAddress,

@@ -1,7 +1,7 @@
 package io.github.rajami1205.osimulator.application.lifecycle;
 
 /**
- * Logical states of a simulator session.
+ * Define los estados lógicos de una sesión del simulador.
  */
 public enum SimulatorState {
     CONFIGURING,

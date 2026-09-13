@@ -1,7 +1,7 @@
 package io.github.rajami1205.osimulator.model.instruction;
 
 /**
- * Semantic operations supported by the simulated instruction set.
+ * Define las operaciones semánticas admitidas por el conjunto de instrucciones simulado.
  */
 public enum Opcode {
     MOV,

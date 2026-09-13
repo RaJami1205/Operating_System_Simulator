@@ -4,10 +4,11 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable ordered binary representation of one semantic instruction.
+ * Representa una instrucción semántica mediante una secuencia binaria ordenada e inmutable.
  */
 public record EncodedInstruction(List<BinaryWord> words) {
 
+    // Conserva una copia inmutable y no vacía de las palabras de la instrucción.
     public EncodedInstruction {
         Objects.requireNonNull(words, "words must not be null");
 

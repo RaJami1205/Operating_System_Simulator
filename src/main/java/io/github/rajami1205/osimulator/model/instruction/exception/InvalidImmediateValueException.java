@@ -1,10 +1,11 @@
 package io.github.rajami1205.osimulator.model.instruction.exception;
 
 /**
- * Indicates that an immediate operand is outside the supported logical data range.
+ * Indica que un operando inmediato está fuera del rango lógico de datos admitido.
  */
 public class InvalidImmediateValueException extends IllegalArgumentException {
 
+    // Conserva el diagnóstico de la condición inválida.
     public InvalidImmediateValueException(String message) {
         super(message);
     }

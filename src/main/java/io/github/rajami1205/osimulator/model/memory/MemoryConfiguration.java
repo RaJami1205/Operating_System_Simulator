@@ -4,13 +4,15 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddre
 import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 
 /**
- * Immutable configuration for the simulated memory layout.
+ * Define la configuración inmutable de la distribución de memoria simulada.
  *
- * @param totalPositions total number of simulated memory positions
- * @param kernelReservedPositions number of positions reserved for the Kernel
+ * @param totalPositions cantidad total de posiciones de memoria simulada
+ * @param kernelReservedPositions cantidad de posiciones reservadas para el Kernel
  */
+// Valida el mínimo de memoria y una reserva Kernel que deje espacio User.
 public record MemoryConfiguration(int totalPositions, int kernelReservedPositions) {
 
+    // Valida el mínimo de memoria y una reserva Kernel que deje espacio User.
     public MemoryConfiguration {
         if (totalPositions < 128) {
             throw new InvalidMemoryConfigurationException(
@@ -31,19 +33,23 @@ public record MemoryConfiguration(int totalPositions, int kernelReservedPosition
         }
     }
 
+    // Obtiene la primera posición posterior a la reserva Kernel.
     public int userStartAddress() {
         return kernelReservedPositions;
     }
 
+    // Calcula la capacidad disponible para programas de usuario.
     public int userPositions() {
         return totalPositions - kernelReservedPositions;
     }
 
+    // Determina la región Kernel o User de una dirección válida.
     public MemoryRegion regionOf(int address) {
         validateAddress(address);
         return address < kernelReservedPositions ? MemoryRegion.KERNEL : MemoryRegion.USER;
     }
 
+    // Rechaza direcciones fuera del espacio de memoria configurado.
     private void validateAddress(int address) {
         if (address < 0 || address >= totalPositions) {
             throw new InvalidMemoryAddressException(

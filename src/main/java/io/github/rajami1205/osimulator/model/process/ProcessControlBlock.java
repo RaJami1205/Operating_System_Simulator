@@ -5,7 +5,7 @@ import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessPro
 import java.util.Objects;
 
 /**
- * Process identity, program placement, and initial runtime state.
+ * Representa la identidad, ubicación del programa y estado inicial del proceso.
  */
 public final class ProcessControlBlock {
 
@@ -16,6 +16,7 @@ public final class ProcessControlBlock {
     private ProcessState state;
     private int programCounter;
 
+    // Valida y fija los metadatos del proceso con su PC inicial y estado NEW.
     public ProcessControlBlock(
             int processId,
             int programStartAddress,
@@ -41,26 +42,32 @@ public final class ProcessControlBlock {
         this.programCounter = programStartAddress;
     }
 
+    // Expone el identificador del proceso.
     public int processId() {
         return processId;
     }
 
+    // Expone la dirección inicial del programa cargado.
     public int programStartAddress() {
         return programStartAddress;
     }
 
+    // Expone la cantidad de instrucciones del proceso.
     public int instructionCount() {
         return instructionCount;
     }
 
+    // Expone el límite exclusivo del programa en memoria.
     public int programEndAddressExclusive() {
         return programEndAddressExclusive;
     }
 
+    // Expone el estado actual del proceso.
     public ProcessState state() {
         return state;
     }
 
+    // Actualiza el estado del proceso rechazando valores nulos.
     public void changeState(ProcessState newState) {
         ProcessState nonNullState = Objects.requireNonNull(
                 newState,
@@ -69,10 +76,12 @@ public final class ProcessControlBlock {
         state = nonNullState;
     }
 
+    // Expone el PC guardado para el proceso.
     public int programCounter() {
         return programCounter;
     }
 
+    // Mantiene el PC guardado dentro del programa o en su límite final exclusivo.
     public void setProgramCounter(int programCounter) {
         if (programCounter < programStartAddress
                 || programCounter > programEndAddressExclusive) {
@@ -89,6 +98,7 @@ public final class ProcessControlBlock {
         this.programCounter = programCounter;
     }
 
+    // Exige un identificador positivo para el proceso.
     private static void validateProcessId(int processId) {
         if (processId <= 0) {
             throw new InvalidProcessConfigurationException(
@@ -97,6 +107,7 @@ public final class ProcessControlBlock {
         }
     }
 
+    // Impide direcciones iniciales negativas.
     private static void validateProgramStartAddress(int programStartAddress) {
         if (programStartAddress < 0) {
             throw new InvalidProcessConfigurationException(
@@ -105,6 +116,7 @@ public final class ProcessControlBlock {
         }
     }
 
+    // Exige que el proceso contenga al menos una instrucción.
     private static void validateInstructionCount(int instructionCount) {
         if (instructionCount <= 0) {
             throw new InvalidProcessConfigurationException(

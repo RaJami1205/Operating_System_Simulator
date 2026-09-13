@@ -1,10 +1,11 @@
 package io.github.rajami1205.osimulator.model.process.exception;
 
 /**
- * Indicates that a saved process Program Counter is outside its program range.
+ * Indica que el Program Counter guardado está fuera del rango del programa del proceso.
  */
 public final class InvalidProcessProgramCounterException extends IllegalArgumentException {
 
+    // Conserva el diagnóstico de la condición inválida.
     public InvalidProcessProgramCounterException(String message) {
         super(message);
     }

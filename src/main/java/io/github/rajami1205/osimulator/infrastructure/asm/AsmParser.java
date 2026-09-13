@@ -17,7 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Converts textual ASM source lines into semantic instructions.
+ * Convierte líneas de texto ASM en instrucciones semánticas.
  */
 public final class AsmParser {
 
@@ -26,6 +26,7 @@ public final class AsmParser {
     );
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("[+-]?[0-9]+");
 
+    // Convierte las líneas no vacías en una lista inmutable de instrucciones.
     public List<Instruction> parse(List<String> sourceLines) {
         Objects.requireNonNull(sourceLines, "sourceLines must not be null");
         List<Instruction> instructions = new ArrayList<>();
@@ -46,6 +47,7 @@ public final class AsmParser {
         return List.copyOf(instructions);
     }
 
+    // Identifica la operación ASM y delega la validación de sus operandos.
     private Instruction parseLine(String sourceLine, int lineNumber) {
         String normalizedLine = sourceLine.strip();
         String[] tokens = normalizedLine.split("\\s+");
@@ -72,6 +74,7 @@ public final class AsmParser {
         };
     }
 
+    // Exige un único registro como operando de la instrucción.
     private RegisterName parseSingleRegisterOperand(
             String[] tokens,
             String mnemonic,
@@ -87,6 +90,7 @@ public final class AsmParser {
         return parseRegister(tokens[1], lineNumber);
     }
 
+    // Valida la sintaxis de MOV y construye su representación semántica.
     private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
         Matcher matcher = MOV_SYNTAX.matcher(sourceLine);
 
@@ -111,6 +115,7 @@ public final class AsmParser {
         }
     }
 
+    // Interpreta un entero decimal y conserva la línea de origen en los errores.
     private int parseImmediate(String immediateToken, int lineNumber) {
         if (!DECIMAL_INTEGER.matcher(immediateToken).matches()) {
             throw new AsmParseException(
@@ -130,6 +135,7 @@ public final class AsmParser {
         }
     }
 
+    // Resuelve el registro sin distinguir mayúsculas y reporta nombres inválidos.
     private RegisterName parseRegister(String registerToken, int lineNumber) {
 
         try {

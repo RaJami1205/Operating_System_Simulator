@@ -8,46 +8,54 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Fixed-size, generic storage for the simulated memory address space.
+ * Proporciona almacenamiento genérico de tamaño fijo para la memoria simulada.
  *
- * @param <T> type of content stored in memory positions
+ * @param <T> tipo de contenido almacenado en las posiciones de memoria
  */
 public class Memory<T> {
 
     private final MemoryConfiguration configuration;
     private final Object[] positions;
 
+    // Reserva el almacenamiento fijo definido por la configuración de memoria.
     public Memory(MemoryConfiguration configuration) {
         this.configuration = Objects.requireNonNull(configuration, "configuration must not be null");
         this.positions = new Object[this.configuration.totalPositions()];
     }
 
+    // Expone la configuración inmutable de esta memoria.
     public MemoryConfiguration configuration() {
         return configuration;
     }
 
+    // Expone la cantidad fija de posiciones de la sesión.
     public int size() {
         return configuration.totalPositions();
     }
 
+    // Determina la región Kernel o User de una dirección válida.
     public MemoryRegion regionOf(int address) {
         return configuration.regionOf(address);
     }
 
+    // Consulta el contenido opcional de una posición válida.
     public Optional<T> read(int address) {
         return Optional.ofNullable(valueAt(address));
     }
 
+    // Indica si una posición válida carece de contenido.
     public boolean isEmpty(int address) {
         return valueAt(address) == null;
     }
 
+    // Escribe contenido no nulo en una posición protegida por las reglas User.
     public void writeUser(int address, T value) {
         validateUserAddress(address);
         T nonNullValue = Objects.requireNonNull(value, "value must not be null");
         positions[address] = nonNullValue;
     }
 
+    // Valida el bloque completo antes de escribir sus elementos en posiciones consecutivas.
     public void writeUserBlock(int startAddress, List<? extends T> values) {
         validateUserAddress(startAddress);
         List<? extends T> snapshot = List.copyOf(
@@ -62,10 +70,12 @@ public class Memory<T> {
         }
     }
 
+    // Vacía la región User conservando la reserva Kernel.
     public void clearUserSpace() {
         Arrays.fill(positions, configuration.userStartAddress(), size(), null);
     }
 
+    // Impide escrituras de usuario en la región Kernel.
     private void validateUserAddress(int address) {
         if (regionOf(address) == MemoryRegion.KERNEL) {
             throw new MemoryProtectionException(
@@ -74,6 +84,7 @@ public class Memory<T> {
         }
     }
 
+    // Comprueba que el bloque quepa desde su dirección inicial.
     private void validateBlockRange(int startAddress, int blockSize) {
         if (blockSize > size() - startAddress) {
             throw new InvalidMemoryAddressException(
@@ -83,6 +94,7 @@ public class Memory<T> {
     }
 
     @SuppressWarnings("unchecked")
+    // Valida la dirección antes de consultar el almacenamiento interno.
     private T valueAt(int address) {
         configuration.regionOf(address);
         return (T) positions[address];

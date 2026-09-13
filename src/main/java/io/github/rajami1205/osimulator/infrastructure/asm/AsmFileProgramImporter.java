@@ -11,16 +11,18 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 
-/** Reads UTF-8 ASM files and delegates their syntax entirely to the parser. */
+/** Lee archivos ASM en UTF-8 y delega toda su sintaxis al parser. */
 public final class AsmFileProgramImporter implements ProgramImporter {
 
     private final AsmParser asmParser;
 
+    // Recibe el parser al que se delegará toda la sintaxis ASM.
     public AsmFileProgramImporter(AsmParser asmParser) {
         this.asmParser = Objects.requireNonNull(asmParser, "asmParser must not be null");
     }
 
     @Override
+    // Lee el archivo en UTF-8 y delega su análisis, traduciendo errores de lectura o sintaxis.
     public List<Instruction> importProgram(Path path) throws ProgramImportException {
         Objects.requireNonNull(path, "path must not be null");
         try {

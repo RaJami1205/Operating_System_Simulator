@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Coordinates one process session; mutable model objects remain private. */
+/** Coordina una sesión de un proceso y mantiene privados los objetos mutables del modelo. */
 public final class SimulatorOrchestrator {
     private final ProgramLoader programLoader;
     private final ExecutionEngine executionEngine;
@@ -38,6 +38,7 @@ public final class SimulatorOrchestrator {
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
 
+    // Recibe los servicios que coordinan la carga, ejecución y representación binaria.
     public SimulatorOrchestrator(
             ProgramLoader programLoader,
             ExecutionEngine executionEngine,
@@ -48,6 +49,7 @@ public final class SimulatorOrchestrator {
         this.binaryCodec = Objects.requireNonNull(binaryCodec, "binaryCodec must not be null");
     }
 
+    // Crea Memory y CPU válidas antes de publicar la sesión inicializada.
     public void initialize(int totalPositions, int kernelReservedPositions) {
         requireState("initialize", SimulatorState.CONFIGURING);
         MemoryConfiguration configuration = new MemoryConfiguration(totalPositions, kernelReservedPositions);
@@ -58,6 +60,7 @@ public final class SimulatorOrchestrator {
         cpu = newCpu;
     }
 
+    // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
     public void loadProgram(List<Instruction> instructions) {
         requireState("loadProgram", SimulatorState.INITIALIZED);
         List<Instruction> program = List.copyOf(
@@ -66,10 +69,12 @@ public final class SimulatorOrchestrator {
         lifecycle.markProgramLoaded();
     }
 
+    // Inicia la ejecución lógica sin ejecutar instrucciones.
     public void start() {
         lifecycle.startExecution();
     }
 
+    // Ejecuta una instrucción y propaga al lifecycle la finalización o el fallo.
     public void step() {
         requireState("step", SimulatorState.RUNNING);
         if (memory == null || cpu == null || pcb == null) {
@@ -86,14 +91,17 @@ public final class SimulatorOrchestrator {
         }
     }
 
+    // Pausa la sesión sin modificar el estado del proceso.
     public void pause() {
         lifecycle.pauseExecution();
     }
 
+    // Devuelve la sesión pausada al estado RUNNING.
     public void resume() {
         lifecycle.resumeExecution();
     }
 
+    // Descarta Memory, CPU y PCB y devuelve la sesión a CONFIGURING.
     public void reset() {
         lifecycle.reset();
         memory = null;
@@ -101,6 +109,7 @@ public final class SimulatorOrchestrator {
         pcb = null;
     }
 
+    // Construye una vista inmutable de la CPU, el proceso y la memoria de la sesión.
     public SimulatorSnapshot snapshot() {
         Optional<CpuSnapshot> cpuSnapshot = Optional.empty();
         Optional<InstructionSnapshot> currentInstruction = Optional.empty();
@@ -133,6 +142,7 @@ public final class SimulatorOrchestrator {
                 process, program, memoryEntries);
     }
 
+    // Obtiene la representación semántica y binaria de una instrucción.
     private InstructionSnapshot instructionSnapshot(Instruction instruction) {
         var words = binaryCodec.encode(instruction).words();
         return new InstructionSnapshot(semanticText(instruction), instruction.opcode().name(),
@@ -140,10 +150,12 @@ public final class SimulatorOrchestrator {
                 words.size() == 2 ? Optional.of(words.get(1).bits()) : Optional.empty());
     }
 
+    // Compone el texto de una instrucción para su visualización.
     private String semanticText(Instruction instruction) {
         return instruction.opcode().name() + " " + operandText(instruction);
     }
 
+    // Describe los operandos según el tipo de instrucción.
     private String operandText(Instruction instruction) {
         return switch (instruction) {
             case MovInstruction mov -> mov.destination().name() + ", " + mov.immediate();
@@ -154,6 +166,7 @@ public final class SimulatorOrchestrator {
         };
     }
 
+    // Rechaza operaciones que no corresponden al estado actual de la sesión.
     private void requireState(String operation, SimulatorState expected) {
         if (lifecycle.state() != expected) {
             throw new IllegalStateException("Cannot " + operation + " while simulator state is " + lifecycle.state());

@@ -1,3 +1,6 @@
+/*
+ * Compone el simulador y presenta su ventana principal con JavaFX.
+ */
 package io.github.rajami1205.osimulator.presentation;
 
 import io.github.rajami1205.osimulator.application.program.ProgramImporter;
@@ -19,6 +22,7 @@ import javafx.stage.Stage;
 public class SimulatorApplication extends Application {
 
     @Override
+    // Compone las dependencias, carga el FXML y muestra la ventana principal.
     public void start(Stage primaryStage) throws IOException {
         URL viewResource = Objects.requireNonNull(
                 SimulatorApplication.class.getResource(
@@ -41,6 +45,7 @@ public class SimulatorApplication extends Application {
         primaryStage.show();
     }
 
+    // Inicia la aplicación de escritorio mediante JavaFX.
     public static void main(String[] args) {
         launch(args);
     }

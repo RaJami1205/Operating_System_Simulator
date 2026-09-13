@@ -1,0 +1,370 @@
+/* Root tokens */
+.root {
+    -app-background: #050B2D;
+    -app-background-deep: #030720;
+    -app-surface: #0B153A;
+    -app-surface-elevated: #101E4B;
+    -app-border: #23376F;
+    -app-electric-blue: #2F6BFF;
+    -app-cyan: #22D3EE;
+    -app-violet: #8B5CF6;
+    -app-lime: #B8FF3D;
+    -app-text-primary: #F8FAFC;
+    -app-text-secondary: #AAB7D4;
+    -app-text-muted: #7181A7;
+    -app-warning: #F59E0B;
+    -app-error: #EF4444;
+
+    -fx-font-family: "System";
+    -fx-font-size: 12px;
+    -fx-text-fill: -app-text-primary;
+    -fx-accent: -app-cyan;
+    -fx-focus-color: -app-cyan;
+    -fx-faint-focus-color: transparent;
+}
+
+.app-root {
+    -fx-background-color:
+        linear-gradient(to bottom right,
+            -app-background-deep 0%,
+            -app-background 58%,
+            derive(-app-surface, -22%) 100%);
+}
+
+.label {
+    -fx-text-fill: -app-text-primary;
+}
+
+/* Header and typography */
+.header {
+    -fx-padding: 9px 16px 9px 16px;
+    -fx-background-color:
+        linear-gradient(to right, -app-surface-elevated 0%, -app-surface 60%, -app-background-deep 100%);
+    -fx-border-color: transparent transparent -app-border transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.header-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -app-text-primary;
+}
+
+.header-subtitle {
+    -fx-font-size: 11px;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.panel-header {
+    -fx-font-size: 12px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -app-text-primary;
+}
+
+.section-title {
+    -fx-font-size: 10px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -app-cyan;
+}
+
+.section-label,
+.pcb-label {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.helper-text {
+    -fx-font-size: 10px;
+    -fx-text-fill: -app-text-muted;
+}
+
+/* Layout and panels */
+.dashboard-grid {
+    -fx-background-color: transparent;
+}
+
+.dashboard-panel,
+.instruction-panel {
+    -fx-padding: 8px;
+    -fx-background-color: -app-surface;
+    -fx-background-radius: 8px;
+    -fx-border-color: -app-border;
+    -fx-border-radius: 8px;
+    -fx-border-width: 1px;
+    -fx-effect: dropshadow(gaussian, derive(-app-background-deep, -20%), 10, 0.12, 0, 2);
+}
+
+.instruction-panel {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: derive(-app-cyan, -34%);
+    -fx-effect: dropshadow(gaussian, derive(-app-cyan, -62%), 10, 0.08, 0, 1);
+}
+
+.control-section {
+    -fx-padding: 4px 0 0 0;
+    -fx-border-color: -app-border transparent transparent transparent;
+    -fx-border-width: 1px 0 0 0;
+}
+
+/* Simulator state */
+.state-badge {
+    -fx-padding: 6px 11px 6px 11px;
+    -fx-background-color: -app-background-deep;
+    -fx-background-radius: 7px;
+    -fx-border-color: -app-cyan;
+    -fx-border-radius: 7px;
+    -fx-border-width: 1px;
+    -fx-effect: dropshadow(gaussian, derive(-app-cyan, -44%), 10, 0.12, 0, 0);
+}
+
+.state-caption {
+    -fx-font-size: 9px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.state-value {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 13px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -app-cyan;
+}
+
+/* Inputs */
+.input-field {
+    -fx-min-height: 27px;
+    -fx-pref-height: 27px;
+    -fx-padding: 4px 7px 4px 7px;
+    -fx-background-color: -app-border, -app-background-deep;
+    -fx-background-insets: 0, 1px;
+    -fx-background-radius: 6px, 5px;
+    -fx-text-fill: -app-text-primary;
+    -fx-prompt-text-fill: -app-text-muted;
+    -fx-highlight-fill: derive(-app-electric-blue, -18%);
+    -fx-highlight-text-fill: -app-text-primary;
+}
+
+.input-field:focused {
+    -fx-background-color: -app-cyan, -app-background-deep;
+    -fx-effect: dropshadow(gaussian, derive(-app-cyan, -48%), 8, 0.08, 0, 0);
+}
+
+.input-field:readonly {
+    -fx-text-fill: -app-text-secondary;
+}
+
+/* Buttons */
+.button {
+    -fx-min-height: 27px;
+    -fx-pref-height: 27px;
+    -fx-padding: 4px 10px 4px 10px;
+    -fx-background-radius: 6px;
+    -fx-border-radius: 6px;
+    -fx-border-width: 1px;
+    -fx-font-size: 10.5px;
+    -fx-font-weight: 700;
+    -fx-cursor: hand;
+}
+
+.primary-button {
+    -fx-background-color: -app-electric-blue;
+    -fx-border-color: derive(-app-electric-blue, 22%);
+    -fx-text-fill: -app-text-primary;
+    -fx-effect: dropshadow(gaussian, derive(-app-electric-blue, -28%), 8, 0.14, 0, 1);
+}
+
+.primary-button:hover {
+    -fx-background-color: derive(-app-electric-blue, 12%);
+    -fx-border-color: -app-cyan;
+}
+
+.secondary-button {
+    -fx-background-color: -app-surface-elevated;
+    -fx-border-color: -app-border;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.secondary-button:hover {
+    -fx-background-color: derive(-app-surface-elevated, 10%);
+    -fx-border-color: derive(-app-cyan, -22%);
+    -fx-text-fill: -app-text-primary;
+}
+
+.reset-button {
+    -fx-background-color: derive(-app-error, -68%);
+    -fx-border-color: derive(-app-error, -28%);
+    -fx-text-fill: derive(-app-error, 38%);
+}
+
+.reset-button:hover {
+    -fx-background-color: derive(-app-error, -56%);
+    -fx-border-color: -app-error;
+    -fx-text-fill: -app-text-primary;
+}
+
+.button:focused {
+    -fx-border-color: -app-cyan;
+    -fx-border-width: 2px;
+    -fx-border-insets: -1px;
+}
+
+.button:disabled {
+    -fx-opacity: 0.46;
+    -fx-effect: null;
+    -fx-border-color: -app-text-muted;
+    -fx-cursor: default;
+}
+
+/* CPU and instruction values */
+.metric-card,
+.instruction-detail,
+.binary-word {
+    -fx-padding: 5px 7px 5px 7px;
+    -fx-background-color: -app-background-deep;
+    -fx-background-radius: 6px;
+    -fx-border-color: derive(-app-border, -8%);
+    -fx-border-radius: 6px;
+    -fx-border-width: 1px;
+}
+
+.metric-label {
+    -fx-font-size: 9px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-text-muted;
+}
+
+.technical-value,
+.instruction-value,
+.binary-value,
+.pcb-value {
+    -fx-font-family: "Monospaced";
+    -fx-text-fill: -app-text-primary;
+}
+
+.technical-value {
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+}
+
+.instruction-value {
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-lime;
+}
+
+.instruction-detail {
+    -fx-min-width: 0;
+}
+
+.binary-word {
+    -fx-border-color: derive(-app-violet, -28%);
+}
+
+.binary-value {
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+    -fx-text-fill: derive(-app-violet, 28%);
+}
+
+.pcb-value {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-text-primary;
+}
+
+/* Tables */
+.table-view {
+    -fx-background-color: -app-background-deep;
+    -fx-background-radius: 6px;
+    -fx-border-color: derive(-app-border, -8%);
+    -fx-border-radius: 6px;
+    -fx-border-width: 1px;
+    -fx-padding: 0;
+    -fx-table-cell-border-color: transparent;
+    -fx-control-inner-background: -app-background-deep;
+    -fx-control-inner-background-alt: derive(-app-background-deep, 7%);
+    -fx-selection-bar: derive(-app-electric-blue, -34%);
+    -fx-selection-bar-non-focused: derive(-app-surface-elevated, 6%);
+}
+
+.table-view .column-header-background {
+    -fx-background-color: -app-surface-elevated;
+    -fx-background-radius: 5px 5px 0 0;
+}
+
+.table-view .column-header,
+.table-view .filler {
+    -fx-size: 27px;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent -app-border transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.table-view .column-header .label {
+    -fx-alignment: CENTER_LEFT;
+    -fx-font-size: 10px;
+    -fx-font-weight: 800;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.table-row-cell {
+    -fx-background-color: -app-background-deep;
+    -fx-border-color: transparent transparent derive(-app-border, -28%) transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: derive(-app-background-deep, 6%);
+}
+
+.table-row-cell:filled:hover {
+    -fx-background-color: derive(-app-surface-elevated, 4%);
+}
+
+.table-row-cell:filled:selected,
+.table-row-cell:filled:selected .table-cell {
+    -fx-background-color: derive(-app-electric-blue, -38%);
+    -fx-text-fill: -app-text-primary;
+}
+
+.table-cell {
+    -fx-padding: 4px 7px 4px 7px;
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 10.5px;
+    -fx-text-fill: -app-text-secondary;
+}
+
+.table-view .placeholder {
+    -fx-background-color: -app-background-deep;
+}
+
+.empty-state,
+.table-view .placeholder .label {
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
+    -fx-text-fill: -app-text-muted;
+}
+
+.table-row-cell.kernel-row {
+    -fx-border-color: transparent transparent transparent -app-violet;
+    -fx-border-width: 0 0 0 3px;
+}
+
+.table-row-cell.user-row {
+    -fx-border-color: transparent transparent transparent -app-cyan;
+    -fx-border-width: 0 0 0 3px;
+}
+
+.table-view .scroll-bar:vertical,
+.table-view .scroll-bar:horizontal {
+    -fx-background-color: -app-background-deep;
+}
+
+.table-view .scroll-bar .thumb {
+    -fx-background-color: -app-border;
+    -fx-background-radius: 6px;
+}
+
+.table-view .scroll-bar .thumb:hover {
+    -fx-background-color: derive(-app-cyan, -28%);
+}

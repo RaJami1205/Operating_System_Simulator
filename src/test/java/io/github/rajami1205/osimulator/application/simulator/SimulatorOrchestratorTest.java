@@ -14,7 +14,6 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.instruction.binary.InstructionBinaryCodec;
 import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,16 +23,14 @@ import org.junit.jupiter.api.Test;
 
 class SimulatorOrchestratorTest {
     private final SimulatorOrchestrator simulator = new SimulatorOrchestrator(
-            new ProgramLoader(), new ExecutionEngine(), new InstructionBinaryCodec());
+            new ProgramLoader(), new ExecutionEngine());
 
     @Test
     void requiresAllDependencies() {
         assertThrows(NullPointerException.class, () -> new SimulatorOrchestrator(
-                null, new ExecutionEngine(), new InstructionBinaryCodec()));
+                null, new ExecutionEngine()));
         assertThrows(NullPointerException.class, () -> new SimulatorOrchestrator(
-                new ProgramLoader(), null, new InstructionBinaryCodec()));
-        assertThrows(NullPointerException.class, () -> new SimulatorOrchestrator(
-                new ProgramLoader(), new ExecutionEngine(), null));
+                new ProgramLoader(), null));
     }
 
     @Test
@@ -125,7 +122,7 @@ class SimulatorOrchestratorTest {
         assertEquals("RUNNING", first.process().orElseThrow().processState());
         assertEquals(Optional.of("MOV AX, 5"), first.cpu().orElseThrow().instructionRegister());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
-                "MOV AX, 5", "MOV", "AX, 5", "00000000", Optional.of("00000101")),
+                "MOV AX, 5", "MOV", "AX, 5"),
                 first.currentInstruction().orElseThrow());
 
         simulator.step();
@@ -136,7 +133,7 @@ class SimulatorOrchestratorTest {
         assertEquals(18, last.process().orElseThrow().savedProgramCounter());
         assertEquals(5, last.cpu().orElseThrow().accumulator());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
-                "LOAD AX", "LOAD", "AX", "00100000", Optional.empty()),
+                "LOAD AX", "LOAD", "AX"),
                 last.currentInstruction().orElseThrow());
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(last, simulator.snapshot());
@@ -148,7 +145,8 @@ class SimulatorOrchestratorTest {
                 new StoreInstruction(RegisterName.BX), new AddInstruction(RegisterName.CX),
                 new SubInstruction(RegisterName.DX)));
         var expected = List.of("MOV AX, -5", "LOAD AX", "STORE BX", "ADD CX", "SUB DX");
-        var words = List.of("00000000", "00100000", "01001000", "01110000", "10011000");
+        var opcodes = List.of("MOV", "LOAD", "STORE", "ADD", "SUB");
+        var operands = List.of("AX, -5", "AX", "BX", "CX", "DX");
         simulator.start();
         for (int index = 0; index < expected.size(); index++) {
             simulator.step();
@@ -158,8 +156,8 @@ class SimulatorOrchestratorTest {
             assertEquals(Optional.of(expected.get(index)), snapshot.cpu().orElseThrow().instructionRegister());
             assertEquals(expected.get(index), snapshot.program().get(index).instruction());
             assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(16 + index).content());
-            assertEquals(words.get(index), instruction.word1());
-            assertEquals(index == 0 ? Optional.of("10000101") : Optional.empty(), instruction.word2());
+            assertEquals(opcodes.get(index), instruction.opcode());
+            assertEquals(operands.get(index), instruction.operand());
         }
     }
 
@@ -260,7 +258,11 @@ class SimulatorOrchestratorTest {
         assertThrows(NullPointerException.class,
                 () -> new SimulatorSnapshot.CpuSnapshot(0, 0, 0, 0, 0, 0, null));
         assertThrows(NullPointerException.class,
-                () -> new SimulatorSnapshot.InstructionSnapshot("LOAD AX", "LOAD", "AX", "00100000", null));
+                () -> new SimulatorSnapshot.InstructionSnapshot(null, "LOAD", "AX"));
+        assertThrows(NullPointerException.class,
+                () -> new SimulatorSnapshot.InstructionSnapshot("LOAD AX", null, "AX"));
+        assertThrows(NullPointerException.class,
+                () -> new SimulatorSnapshot.InstructionSnapshot("LOAD AX", "LOAD", null));
         assertThrows(NullPointerException.class,
                 () -> new SimulatorSnapshot.MemoryEntry(0, "KERNEL", null));
     }

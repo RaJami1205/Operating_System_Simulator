@@ -33,16 +33,13 @@ public record SimulatorSnapshot(
         }
     }
     public record InstructionSnapshot(
-            String semanticInstruction, String opcode, String operand,
-            String word1, Optional<String> word2
+            String semanticInstruction, String opcode, String operand
     ) {
-        // Valida los textos y la segunda palabra opcional de la instrucción.
+        // Valida los textos semánticos de la instrucción.
         public InstructionSnapshot {
             Objects.requireNonNull(semanticInstruction, "semanticInstruction must not be null");
             Objects.requireNonNull(opcode, "opcode must not be null");
             Objects.requireNonNull(operand, "operand must not be null");
-            Objects.requireNonNull(word1, "word1 must not be null");
-            Objects.requireNonNull(word2, "word2 must not be null");
         }
     }
     public record ProcessSnapshot(

@@ -217,8 +217,7 @@
 
 /* CPU and instruction values */
 .metric-card,
-.instruction-detail,
-.binary-word {
+.instruction-detail {
     -fx-padding: 5px 7px 5px 7px;
     -fx-background-color: -app-background-deep;
     -fx-background-radius: 6px;
@@ -235,7 +234,6 @@
 
 .technical-value,
 .instruction-value,
-.binary-value,
 .pcb-value {
     -fx-font-family: "Monospaced";
     -fx-text-fill: -app-text-primary;
@@ -254,16 +252,6 @@
 
 .instruction-detail {
     -fx-min-width: 0;
-}
-
-.binary-word {
-    -fx-border-color: derive(-app-violet, -28%);
-}
-
-.binary-value {
-    -fx-font-size: 13px;
-    -fx-font-weight: 700;
-    -fx-text-fill: derive(-app-violet, 28%);
 }
 
 .pcb-value {

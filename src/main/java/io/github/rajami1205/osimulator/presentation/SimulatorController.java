@@ -47,8 +47,6 @@ public final class SimulatorController {
     @FXML private Label currentInstructionLabel;
     @FXML private Label opcodeValueLabel;
     @FXML private Label operandValueLabel;
-    @FXML private Label word1ValueLabel;
-    @FXML private Label word2ValueLabel;
     @FXML private Label executionStatusLabel;
     @FXML private Label processIdValueLabel;
     @FXML private Label processStateValueLabel;
@@ -277,14 +275,12 @@ public final class SimulatorController {
         dxValueLabel.setText(cpu.map(value -> Integer.toString(value.dx())).orElse("—"));
     }
 
-    // Muestra la instrucción, sus palabras binarias y el estado de ejecución.
+    // Muestra la instrucción semántica y el estado de ejecución.
     private void renderCurrentInstruction(SimulatorSnapshot snapshot) {
         var instruction = snapshot.currentInstruction();
         currentInstructionLabel.setText(instruction.map(value -> value.semanticInstruction()).orElse("—"));
         opcodeValueLabel.setText(instruction.map(value -> value.opcode()).orElse("—"));
         operandValueLabel.setText(instruction.map(value -> value.operand()).orElse("—"));
-        word1ValueLabel.setText(instruction.map(value -> value.word1()).orElse("—"));
-        word2ValueLabel.setText(instruction.flatMap(value -> value.word2()).orElse("—"));
         executionStatusLabel.setText(switch (snapshot.simulatorState()) {
             case ERROR -> "Execution error";
             case FINISHED -> "Execution finished";

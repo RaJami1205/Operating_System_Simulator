@@ -18,7 +18,6 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.instruction.binary.InstructionBinaryCodec;
 import io.github.rajami1205.osimulator.model.memory.Memory;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
@@ -32,21 +31,18 @@ import java.util.Optional;
 public final class SimulatorOrchestrator {
     private final ProgramLoader programLoader;
     private final ExecutionEngine executionEngine;
-    private final InstructionBinaryCodec binaryCodec;
     private final SimulatorLifecycle lifecycle = new SimulatorLifecycle();
     private Memory<Instruction> memory;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
 
-    // Recibe los servicios que coordinan la carga, ejecución y representación binaria.
+    // Recibe los servicios que coordinan la carga y ejecución.
     public SimulatorOrchestrator(
             ProgramLoader programLoader,
-            ExecutionEngine executionEngine,
-            InstructionBinaryCodec binaryCodec
+            ExecutionEngine executionEngine
     ) {
         this.programLoader = Objects.requireNonNull(programLoader, "programLoader must not be null");
         this.executionEngine = Objects.requireNonNull(executionEngine, "executionEngine must not be null");
-        this.binaryCodec = Objects.requireNonNull(binaryCodec, "binaryCodec must not be null");
     }
 
     // Crea Memory y CPU válidas antes de publicar la sesión inicializada.
@@ -142,12 +138,10 @@ public final class SimulatorOrchestrator {
                 process, program, memoryEntries);
     }
 
-    // Obtiene la representación semántica y binaria de una instrucción.
+    // Obtiene la representación semántica de una instrucción.
     private InstructionSnapshot instructionSnapshot(Instruction instruction) {
-        var words = binaryCodec.encode(instruction).words();
         return new InstructionSnapshot(semanticText(instruction), instruction.opcode().name(),
-                operandText(instruction), words.get(0).bits(),
-                words.size() == 2 ? Optional.of(words.get(1).bits()) : Optional.empty());
+                operandText(instruction));
     }
 
     // Compone el texto de una instrucción para su visualización.

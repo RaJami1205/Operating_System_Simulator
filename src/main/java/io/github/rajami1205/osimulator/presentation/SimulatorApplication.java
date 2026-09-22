@@ -9,7 +9,6 @@ import io.github.rajami1205.osimulator.application.simulator.SimulatorOrchestrat
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmFileProgramImporter;
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
-import io.github.rajami1205.osimulator.model.instruction.binary.InstructionBinaryCodec;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Objects;
@@ -29,7 +28,7 @@ public class SimulatorApplication extends Application {
                         "/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"),
                 "SimulatorView.fxml resource is required");
         SimulatorOrchestrator orchestrator = new SimulatorOrchestrator(
-                new ProgramLoader(), new ExecutionEngine(), new InstructionBinaryCodec());
+                new ProgramLoader(), new ExecutionEngine());
         ProgramImporter programImporter = new AsmFileProgramImporter(new AsmParser());
         SimulatorController controller = new SimulatorController(orchestrator, programImporter);
         FXMLLoader loader = new FXMLLoader(viewResource);

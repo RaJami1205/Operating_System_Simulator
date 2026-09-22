@@ -274,17 +274,6 @@
                                 <Label fx:id="operandValueLabel" text="—" styleClass="technical-value" />
                             </VBox>
                         </HBox>
-                        <Label text="BINARY FORMAT V1" styleClass="section-title" />
-                        <HBox fx:id="binaryWordsContainer" spacing="6.0">
-                            <VBox spacing="1.0" styleClass="binary-word" HBox.hgrow="ALWAYS">
-                                <Label text="Word 1" styleClass="metric-label" />
-                                <Label fx:id="word1ValueLabel" text="—" styleClass="binary-value" />
-                            </VBox>
-                            <VBox spacing="1.0" styleClass="binary-word" HBox.hgrow="ALWAYS">
-                                <Label text="Word 2 (MOV)" styleClass="metric-label" />
-                                <Label fx:id="word2ValueLabel" text="—" styleClass="binary-value" />
-                            </VBox>
-                        </HBox>
                         <Label fx:id="executionStatusLabel" text="Waiting for execution" styleClass="helper-text" />
                     </VBox>
                 </VBox>

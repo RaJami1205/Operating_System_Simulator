@@ -109,7 +109,7 @@ class AsmParserTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-127, 127})
+    @ValueSource(ints = {-32768, 32767})
     void shouldParseValidMovImmediateBoundaries(int immediate) {
         List<Instruction> result = parser.parse(List.of("MOV AX, " + immediate));
 
@@ -136,7 +136,7 @@ class AsmParserTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldWrapMovImmediateValuesRejectedByModel(int immediate) {
         AsmParseException exception = assertThrows(
                 AsmParseException.class,
@@ -251,7 +251,7 @@ class AsmParserTest {
                         "   ",
                         "ADD BX",
                         "",
-                        "MOV CX, 128"
+                        "MOV CX, 32768"
                 ))
         );
 
@@ -544,7 +544,7 @@ class AsmParserTest {
                         "LOAD AX",
                         "MOV BX, 25",
                         "ADD CX",
-                        "MOV DX, 128",
+                        "MOV DX, 32768",
                         "STORE AX"
                 ))
         );

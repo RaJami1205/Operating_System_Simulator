@@ -203,7 +203,7 @@ class SimulatorOrchestratorTest {
 
     @Test
     void executionFailureRetainsInspectableSessionAndResetRecovers() {
-        load(List.of(new MovInstruction(RegisterName.AX, 127), new LoadInstruction(RegisterName.AX),
+        load(List.of(new MovInstruction(RegisterName.AX, 32767), new LoadInstruction(RegisterName.AX),
                 new AddInstruction(RegisterName.AX)));
         simulator.start();
         simulator.step();
@@ -215,7 +215,7 @@ class SimulatorOrchestratorTest {
         assertEquals(before.memory(), failed.memory());
         assertEquals(before.program(), failed.program());
         assertEquals(before.process(), failed.process());
-        assertEquals(127, failed.cpu().orElseThrow().accumulator());
+        assertEquals(32767, failed.cpu().orElseThrow().accumulator());
         assertEquals(18, failed.cpu().orElseThrow().programCounter());
         assertEquals("ADD AX", failed.currentInstruction().orElseThrow().semanticInstruction());
         assertThrows(IllegalStateException.class, simulator::step);

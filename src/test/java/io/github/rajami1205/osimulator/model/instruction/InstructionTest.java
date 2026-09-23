@@ -103,7 +103,7 @@ class InstructionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-127, 127})
+    @ValueSource(ints = {-32768, 32767})
     void shouldAcceptMovImmediateBoundaryValues(int immediate) {
         MovInstruction instruction = new MovInstruction(RegisterName.AX, immediate);
 
@@ -111,7 +111,7 @@ class InstructionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldRejectMovImmediateValuesOutsideRange(int immediate) {
         InvalidImmediateValueException exception = assertThrows(
                 InvalidImmediateValueException.class,
@@ -133,7 +133,7 @@ class InstructionTest {
                 ),
                 () -> assertThrows(
                         NullPointerException.class,
-                        () -> new MovInstruction(null, 128)
+                        () -> new MovInstruction(null, 32768)
                 )
         );
     }

@@ -13,6 +13,16 @@ public record CpuContext<I>(
         int accumulator, int ax, int bx, int cx, int dx, int ah, int al,
         ConditionFlags conditionFlags
 ) {
+    public static <I> CpuContext<I> initial() {
+        return new CpuContext<>(0, Optional.empty(), 0, 0, 0, 0, 0, 0, 0, ConditionFlags.CLEAR);
+    }
+
+    /** Copia el contexto conservando todos los valores salvo el PC. */
+    public CpuContext<I> withProgramCounter(int programCounter) {
+        return new CpuContext<>(programCounter, instructionRegister, accumulator,
+                ax, bx, cx, dx, ah, al, conditionFlags);
+    }
+
     public CpuContext {
         if (programCounter < 0) {
             throw new InvalidProgramCounterException("Program Counter address must not be negative: " + programCounter);

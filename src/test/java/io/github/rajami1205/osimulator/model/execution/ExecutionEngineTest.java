@@ -61,7 +61,7 @@ class ExecutionEngineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ProcessState.class, names = {"NEW", "BLOCKED", "TERMINATED"})
+    @EnumSource(value = ProcessState.class, names = {"NEW", "BLOCKED", "READY_SUSPENDED", "BLOCKED_SUSPENDED", "TERMINATED"})
     void shouldRejectNonExecutableStateWithoutChangingMachine(ProcessState state) {
         Instruction instruction = new MovInstruction(RegisterName.AX, 5);
         Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
@@ -85,7 +85,7 @@ class ExecutionEngineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ProcessState.class, names = {"NEW", "BLOCKED", "TERMINATED"})
+    @EnumSource(value = ProcessState.class, names = {"NEW", "BLOCKED", "READY_SUSPENDED", "BLOCKED_SUSPENDED", "TERMINATED"})
     void shouldRejectNonExecutableStateEvenAtEndMarkerWithoutChangingMachine(
             ProcessState state
     ) {
@@ -752,6 +752,7 @@ class ExecutionEngineTest {
                 programStartAddress,
                 instructionCount
         );
+        pcb.setProgramCounter(programStartAddress);
         pcb.changeState(state);
         return pcb;
     }

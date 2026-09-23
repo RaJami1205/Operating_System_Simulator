@@ -55,6 +55,8 @@ public final class ProgramLoader {
         );
 
         nonNullMemory.writeUserBlock(userStartAddress, program);
+        // Bridge temporal: el engine del baseline todavía utiliza direcciones físicas.
+        pcb.setProgramCounter(userStartAddress);
         pcb.changeState(ProcessState.READY);
         return pcb;
     }

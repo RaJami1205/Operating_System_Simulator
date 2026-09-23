@@ -39,6 +39,8 @@ class ProgramLoaderTest {
 
         ProcessControlBlock pcb = new ProgramLoader().load(memory, 7, program);
 
+        assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.<Instruction>initial()
+                .withProgramCounter(32), pcb.cpuContext());
         assertProgramStoredAt(memory, 32, program);
         assertAll(
                 () -> assertEquals(7, pcb.processId()),
@@ -288,6 +290,8 @@ class ProgramLoaderTest {
                 () -> assertEquals(ProcessState.READY, pcb.state()),
                 () -> assertSame(unrelatedInstruction, memory.read(90).orElseThrow())
         );
+        assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.<Instruction>initial()
+                .withProgramCounter(32), pcb.cpuContext());
         assertProgramStoredAt(memory, 32, program);
     }
 

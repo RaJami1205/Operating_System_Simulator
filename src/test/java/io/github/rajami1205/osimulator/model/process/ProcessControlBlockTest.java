@@ -25,6 +25,8 @@ class ProcessControlBlockTest {
                     ProcessState.READY,
                     ProcessState.RUNNING,
                     ProcessState.BLOCKED,
+                    ProcessState.READY_SUSPENDED,
+                    ProcessState.BLOCKED_SUSPENDED,
                     ProcessState.TERMINATED
                 },
                 ProcessState.values()
@@ -41,7 +43,7 @@ class ProcessControlBlockTest {
                 () -> assertEquals(5, pcb.instructionCount()),
                 () -> assertEquals(105, pcb.programEndAddressExclusive()),
                 () -> assertEquals(ProcessState.NEW, pcb.state()),
-                () -> assertEquals(100, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
     }
 
@@ -117,7 +119,7 @@ class ProcessControlBlockTest {
 
         assertAll(
                 () -> assertEquals(Integer.MAX_VALUE, pcb.programEndAddressExclusive()),
-                () -> assertEquals(programStartAddress, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
     }
 
@@ -142,8 +144,8 @@ class ProcessControlBlockTest {
 
         assertAll(
                 () -> assertEquals(ProcessState.NEW, pcb.state()),
-                () -> assertEquals(programStartAddress, pcb.programCounter()),
-                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.initial(), pcb.cpuContext())
         );
     }
 

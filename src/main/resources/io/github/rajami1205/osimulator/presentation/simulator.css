@@ -356,3 +356,67 @@
 .table-view .scroll-bar .thumb:hover {
     -fx-background-color: derive(-app-cyan, -28%);
 }
+
+/* Machine configuration controls */
+.configuration-scroll,
+.configuration-scroll > .viewport {
+    -fx-background-color: -app-surface;
+}
+.configuration-scroll {
+    -fx-background-radius: 8px;
+    -fx-padding: 0;
+}
+.configuration-scroll > .scroll-bar:vertical,
+.configuration-scroll > .scroll-bar:vertical > .track,
+.configuration-scroll > .scroll-bar:vertical > .track-background {
+    -fx-background-color: -app-background-deep;
+}
+.configuration-scroll > .scroll-bar:vertical > .thumb {
+    -fx-background-color: -app-text-secondary;
+}
+.configuration-scroll > .scroll-bar:vertical > .thumb:hover {
+    -fx-background-color: derive(-app-text-secondary, 15%);
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button {
+    -fx-background-color: -app-surface;
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button:hover,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button:hover {
+    -fx-background-color: -app-surface-elevated;
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button > .increment-arrow,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button > .decrement-arrow {
+    -fx-background-color: -app-cyan;
+}
+.configuration-setting {
+    -fx-padding: 6px 2px;
+}
+.configuration-label {
+    -fx-font-size: 12px;
+}
+.configuration-value {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-cyan;
+}
+.configuration-range {
+    -fx-font-size: 11px;
+    -fx-text-fill: -app-text-secondary;
+}
+.configuration-slider .track {
+    -fx-background-color: -app-border;
+    -fx-pref-height: 5px;
+}
+.configuration-slider .thumb {
+    -fx-background-color: -app-electric-blue;
+    -fx-padding: 7px;
+}
+.configuration-slider:focused .thumb {
+    -fx-background-color: -app-cyan;
+    -fx-effect: dropshadow(gaussian, -app-electric-blue, 8, 0.15, 0, 0);
+}
+.configuration-slider:disabled {
+    -fx-opacity: 0.5;
+}

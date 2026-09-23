@@ -19,7 +19,7 @@ import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
 import io.github.rajami1205.osimulator.model.memory.Memory;
-import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.ArrayList;
@@ -35,6 +35,7 @@ public final class SimulatorOrchestrator {
     private Memory<Instruction> memory;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
+    private SimulatorConfiguration configuration;
 
     // Recibe los servicios que coordinan la carga y ejecución.
     public SimulatorOrchestrator(
@@ -46,14 +47,20 @@ public final class SimulatorOrchestrator {
     }
 
     // Crea Memory y CPU válidas antes de publicar la sesión inicializada.
-    public void initialize(int totalPositions, int kernelReservedPositions) {
+    public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
-        MemoryConfiguration configuration = new MemoryConfiguration(totalPositions, kernelReservedPositions);
-        Memory<Instruction> newMemory = new Memory<>(configuration);
+        Objects.requireNonNull(configuration, "configuration must not be null");
+        Memory<Instruction> newMemory = new Memory<>(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
+        this.configuration = configuration;
+    }
+
+    /** Configuración inmutable de la sesión, ausente antes de Initialize y después de Reset. */
+    public Optional<SimulatorConfiguration> configuration() {
+        return Optional.ofNullable(configuration);
     }
 
     // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
@@ -103,6 +110,7 @@ public final class SimulatorOrchestrator {
         memory = null;
         cpu = null;
         pcb = null;
+        configuration = null;
     }
 
     // Construye una vista inmutable de la CPU, el proceso y la memoria de la sesión.

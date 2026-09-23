@@ -9,7 +9,10 @@ import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.ProgramEntry;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.MemoryEntry;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
-import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
+import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
+import javafx.beans.binding.Bindings;
+import javafx.scene.control.Slider;
 import java.nio.file.Path;
 import java.util.Objects;
 import javafx.animation.KeyFrame;
@@ -54,8 +57,18 @@ public final class SimulatorController {
     @FXML private Label processInstructionCountValueLabel;
     @FXML private Label processEndValueLabel;
     @FXML private Label processSavedPcValueLabel;
-    @FXML private TextField totalMemoryField;
-    @FXML private TextField kernelReservedField;
+    @FXML private Slider mainMemorySlider;
+    @FXML private Slider kernelMemorySlider;
+    @FXML private Slider secondaryStorageSlider;
+    @FXML private Slider virtualMemorySlider;
+    @FXML private Label mainMemoryValue;
+    @FXML private Label kernelMemoryValue;
+    @FXML private Label secondaryStorageValue;
+    @FXML private Label virtualMemoryValue;
+    @FXML private Label mainMemoryRange;
+    @FXML private Label kernelMemoryRange;
+    @FXML private Label secondaryStorageRange;
+    @FXML private Label virtualMemoryRange;
     @FXML private TextField programPathField;
     @FXML private Button initializeButton;
     @FXML private Button browseProgramButton;
@@ -83,6 +96,15 @@ public final class SimulatorController {
     @FXML
     // Configura el Timeline y las tablas antes de renderizar la sesión inicial.
     private void initialize() {
+        configureSlider(mainMemorySlider, mainMemoryValue, mainMemoryRange);
+        configureSlider(kernelMemorySlider, kernelMemoryValue, kernelMemoryRange);
+        configureSlider(secondaryStorageSlider, secondaryStorageValue, secondaryStorageRange);
+        configureSlider(virtualMemorySlider, virtualMemoryValue, virtualMemoryRange);
+        mainMemorySlider.valueProperty().addListener((observable, oldValue, newValue) ->
+                updateDependentRange(kernelMemorySlider, mainMemorySlider));
+        secondaryStorageSlider.valueProperty().addListener((observable, oldValue, newValue) ->
+                updateDependentRange(virtualMemorySlider, secondaryStorageSlider));
+        restoreConfigurationDefaults();
         automaticTimeline = new Timeline(new KeyFrame(AUTOMATIC_STEP_INTERVAL, event -> {
             if (automaticMode && orchestrator.snapshot().simulatorState() == SimulatorState.RUNNING) {
                 executeSingleStep();
@@ -101,13 +123,11 @@ public final class SimulatorController {
     // Valida la entrada de memoria e inicializa la sesión, mostrando errores recuperables.
     private void handleInitialize() {
         try {
-            int total = Integer.parseInt(totalMemoryField.getText().strip());
-            int kernel = Integer.parseInt(kernelReservedField.getText().strip());
-            orchestrator.initialize(total, kernel);
-        } catch (NumberFormatException exception) {
-            showError("Memory values must be integers.");
-        } catch (InvalidMemoryConfigurationException exception) {
-            showError("Invalid memory configuration. " + exception.getMessage());
+            orchestrator.initialize(new SimulatorConfiguration(
+                    new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
+                    sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider)));
+        } catch (IllegalArgumentException exception) {
+            showError("Invalid simulator configuration. " + exception.getMessage());
         } catch (IllegalStateException exception) {
             showError("Operation unavailable. " + exception.getMessage());
         } finally {
@@ -236,8 +256,7 @@ public final class SimulatorController {
         orchestrator.reset();
         selectedProgramPath = null;
         programPathField.clear();
-        totalMemoryField.clear();
-        kernelReservedField.clear();
+        restoreConfigurationDefaults();
         render(orchestrator.snapshot());
     }
 
@@ -315,11 +334,46 @@ public final class SimulatorController {
         resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false);
         automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode);
-        totalMemoryField.setDisable(!configuring);
-        kernelReservedField.setDisable(!configuring);
+        mainMemorySlider.setDisable(!configuring);
+        kernelMemorySlider.setDisable(!configuring);
+        secondaryStorageSlider.setDisable(!configuring);
+        virtualMemorySlider.setDisable(!configuring);
         programPathField.setEditable(false);
     }
 
+    private static int sliderValue(Slider slider) {
+        return (int) Math.round(slider.getValue());
+    }
+
+    // Normaliza también el arrastre y mantiene el valor mostrado igual al enviado.
+    private static void configureSlider(Slider slider, Label value, Label range) {
+        slider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            double integer = Math.round(newValue.doubleValue());
+            if (integer != newValue.doubleValue()) {
+                slider.setValue(integer);
+            }
+        });
+        value.textProperty().bind(Bindings.createStringBinding(
+                () -> Integer.toString(sliderValue(slider)), slider.valueProperty()));
+        range.textProperty().bind(Bindings.createStringBinding(
+                () -> (int) slider.getMin() + " – " + (int) slider.getMax(),
+                slider.minProperty(), slider.maxProperty()));
+    }
+
+    private static void updateDependentRange(Slider dependent, Slider capacity) {
+        dependent.setMax(sliderValue(capacity) - 1);
+        dependent.setValue(Math.min(sliderValue(dependent), dependent.getMax()));
+    }
+
+    private void restoreConfigurationDefaults() {
+        var defaults = SimulatorConfiguration.defaults();
+        mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
+        secondaryStorageSlider.setValue(defaults.secondaryStoragePositions());
+        updateDependentRange(kernelMemorySlider, mainMemorySlider);
+        updateDependentRange(virtualMemorySlider, secondaryStorageSlider);
+        kernelMemorySlider.setValue(defaults.mainMemory().kernelReservedPositions());
+        virtualMemorySlider.setValue(defaults.virtualMemoryPositions());
+    }
     // Presenta un error sin bloquear el callback de JavaFX.
     private void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);

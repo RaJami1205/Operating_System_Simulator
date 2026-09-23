@@ -20,6 +20,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
+import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 
 class SimulatorOrchestratorTest {
     private final SimulatorOrchestrator simulator = new SimulatorOrchestrator(
@@ -36,7 +38,7 @@ class SimulatorOrchestratorTest {
     @Test
     void startsWithoutSessionAndInitializesRealCpuAndMemory() {
         assertEmptySession(simulator.snapshot());
-        simulator.initialize(128, 16);
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 16), 512, 64));
         var snapshot = simulator.snapshot();
         assertEquals(SimulatorState.INITIALIZED, snapshot.simulatorState());
         assertEquals(new SimulatorSnapshot.CpuSnapshot(0, 0, 0, 0, 0, 0, Optional.empty()),
@@ -56,17 +58,20 @@ class SimulatorOrchestratorTest {
     @Test
     void invalidConfigurationIsRecoverable() {
         var before = simulator.snapshot();
-        assertThrows(InvalidMemoryConfigurationException.class, () -> simulator.initialize(127, 16));
+        assertThrows(NullPointerException.class, () -> simulator.initialize(null));
+        assertTrue(simulator.configuration().isEmpty());
         assertEquals(before, simulator.snapshot());
-        assertThrows(InvalidMemoryConfigurationException.class, () -> simulator.initialize(128, 0));
+        assertThrows(InvalidMemoryConfigurationException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(127, 16), 512, 64)));
         assertEquals(before, simulator.snapshot());
-        simulator.initialize(128, 16);
+        assertThrows(InvalidMemoryConfigurationException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 0), 512, 64)));
+        assertEquals(before, simulator.snapshot());
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 16), 512, 64));
         assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
     }
 
     @Test
     void loadsAtUserStartAndDefensivelyAcceptsProgram() {
-        simulator.initialize(128, 16);
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 16), 512, 64));
         List<Instruction> input = new ArrayList<>(List.of(
                 new MovInstruction(RegisterName.AX, 5), new LoadInstruction(RegisterName.AX)));
         simulator.loadProgram(input);
@@ -85,7 +90,7 @@ class SimulatorOrchestratorTest {
 
     @Test
     void rejectedLoadsPreserveInitializedSessionAndAllowRetry() {
-        simulator.initialize(128, 127);
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 127), 512, 64));
         var before = simulator.snapshot();
         assertThrows(NullPointerException.class, () -> simulator.loadProgram(null));
         assertEquals(before, simulator.snapshot());
@@ -189,7 +194,7 @@ class SimulatorOrchestratorTest {
         assertEquals(configuring, simulator.snapshot());
         load(List.of(new LoadInstruction(RegisterName.AX)));
         var loaded = simulator.snapshot();
-        assertThrows(IllegalStateException.class, () -> simulator.initialize(256, 32));
+        assertThrows(IllegalStateException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 32), 512, 64)));
         assertThrows(IllegalStateException.class,
                 () -> simulator.loadProgram(List.of(new LoadInstruction(RegisterName.BX))));
         assertThrows(IllegalStateException.class, simulator::step);
@@ -217,7 +222,7 @@ class SimulatorOrchestratorTest {
         assertEquals(failed, simulator.snapshot());
         simulator.reset();
         assertEmptySession(simulator.snapshot());
-        simulator.initialize(128, 16);
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 16), 512, 64));
         assertTrue(simulator.snapshot().memory().stream().allMatch(row -> row.content().isEmpty()));
     }
 
@@ -267,12 +272,32 @@ class SimulatorOrchestratorTest {
                 () -> new SimulatorSnapshot.MemoryEntry(0, "KERNEL", null));
     }
 
+    @Test
+    void retainsConfigurationUntilResetAndAcceptsNewSession() {
+        var first = SimulatorConfiguration.defaults();
+        simulator.initialize(first);
+        assertEquals(first, simulator.configuration().orElseThrow());
+        var second = new SimulatorConfiguration(new MemoryConfiguration(512, 64), 1024, 128);
+        var before = simulator.snapshot();
+        assertThrows(IllegalStateException.class, () -> simulator.initialize(second));
+        assertEquals(first, simulator.configuration().orElseThrow());
+        assertEquals(before, simulator.snapshot());
+        simulator.reset();
+        assertEmptySession(simulator.snapshot());
+        simulator.initialize(second);
+        assertEquals(second, simulator.configuration().orElseThrow());
+        assertEquals(512, simulator.snapshot().memory().size());
+        assertEquals("KERNEL", simulator.snapshot().memory().get(63).region());
+        assertEquals("USER", simulator.snapshot().memory().get(64).region());
+    }
+
     private void load(List<Instruction> instructions) {
-        simulator.initialize(128, 16);
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 16), 512, 64));
         simulator.loadProgram(instructions);
     }
 
     private void assertEmptySession(SimulatorSnapshot snapshot) {
+        assertTrue(simulator.configuration().isEmpty());
         assertEquals(SimulatorState.CONFIGURING, snapshot.simulatorState());
         assertTrue(snapshot.cpu().isEmpty());
         assertTrue(snapshot.currentInstruction().isEmpty());

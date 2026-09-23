@@ -6,6 +6,8 @@
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.Slider?>
+<?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
@@ -61,6 +63,8 @@
                 </rowConstraints>
 
                 <!-- Simulator Control -->
+                <ScrollPane fitToWidth="true" hbarPolicy="NEVER"
+                            styleClass="configuration-scroll" GridPane.columnIndex="0">
                 <VBox spacing="4.0"
                       maxWidth="Infinity"
                       maxHeight="Infinity"
@@ -68,46 +72,55 @@
                       GridPane.columnIndex="0">
                     <Label text="SIMULATOR CONTROL" styleClass="panel-header" />
 
-                    <VBox spacing="4.0" styleClass="control-section" VBox.vgrow="ALWAYS">
-                        <Label text="MEMORY CONFIGURATION" styleClass="section-title" />
-                        <GridPane hgap="6.0" vgap="4.0">
-                            <columnConstraints>
-                                <ColumnConstraints percentWidth="52.0" hgrow="SOMETIMES" />
-                                <ColumnConstraints percentWidth="48.0" hgrow="ALWAYS" />
-                            </columnConstraints>
-                            <Label text="Total Memory Positions"
-                                   wrapText="true"
-                                   styleClass="section-label"
-                                   GridPane.rowIndex="0" />
-                            <TextField fx:id="totalMemoryField"
-                                       maxWidth="Infinity"
-                                       promptText="Enter total positions"
-                                       styleClass="input-field"
-                                       GridPane.columnIndex="1"
-                                       GridPane.rowIndex="0" />
-                            <Label text="Kernel Reserved Positions"
-                                   wrapText="true"
-                                   styleClass="section-label"
-                                   GridPane.rowIndex="1" />
-                            <TextField fx:id="kernelReservedField"
-                                       maxWidth="Infinity"
-                                       promptText="Enter kernel positions"
-                                       styleClass="input-field"
-                                       GridPane.columnIndex="1"
-                                       GridPane.rowIndex="1" />
-                            <Label text="Minimum: 128 positions"
-                                   styleClass="helper-text"
-                                   GridPane.columnSpan="2"
-                                   GridPane.rowIndex="2" />
-                            <Button fx:id="initializeButton" onAction="#handleInitialize"
-                                    text="Initialize"
-                                    maxWidth="Infinity"
-                                    styleClass="primary-button"
-                                    GridPane.columnSpan="2"
-                                    GridPane.rowIndex="3" />
-                        </GridPane>
+                    <VBox spacing='10.0' styleClass='control-section'>
+                        <Label text='MEMORY CONFIGURATION' styleClass='section-title' />
+                        <VBox spacing="5.0" styleClass="configuration-setting">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <Label text="Main Memory" styleClass="configuration-label" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Label fx:id="mainMemoryValue" styleClass="configuration-value" />
+                            </HBox>
+                            <Slider fx:id="mainMemorySlider" min="128" max="1024" value="256"
+                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
+                                    snapToTicks="true" styleClass="configuration-slider" />
+                            <Label fx:id="mainMemoryRange" styleClass="configuration-range" />
+                        </VBox>
+                        <VBox spacing="5.0" styleClass="configuration-setting">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <Label text="Kernel Memory" styleClass="configuration-label" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Label fx:id="kernelMemoryValue" styleClass="configuration-value" />
+                            </HBox>
+                            <Slider fx:id="kernelMemorySlider" min="1" max="255" value="32"
+                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
+                                    snapToTicks="true" styleClass="configuration-slider" />
+                            <Label fx:id="kernelMemoryRange" styleClass="configuration-range" />
+                        </VBox>
+                        <VBox spacing="5.0" styleClass="configuration-setting">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <Label text="Secondary Storage" styleClass="configuration-label" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Label fx:id="secondaryStorageValue" styleClass="configuration-value" />
+                            </HBox>
+                            <Slider fx:id="secondaryStorageSlider" min="128" max="2048" value="512"
+                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
+                                    snapToTicks="true" styleClass="configuration-slider" />
+                            <Label fx:id="secondaryStorageRange" styleClass="configuration-range" />
+                        </VBox>
+                        <VBox spacing="5.0" styleClass="configuration-setting">
+                            <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                <Label text="Virtual Memory" styleClass="configuration-label" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <Label fx:id="virtualMemoryValue" styleClass="configuration-value" />
+                            </HBox>
+                            <Slider fx:id="virtualMemorySlider" min="1" max="511" value="64"
+                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
+                                    snapToTicks="true" styleClass="configuration-slider" />
+                            <Label fx:id="virtualMemoryRange" styleClass="configuration-range" />
+                        </VBox>
+                        <Button fx:id="initializeButton" onAction="#handleInitialize"
+                                text="Initialize" maxWidth="Infinity" styleClass="primary-button" />
                     </VBox>
-
                     <VBox spacing="4.0" styleClass="control-section">
                         <Label text="PROGRAM" styleClass="section-title" />
                         <GridPane hgap="6.0" vgap="4.0">
@@ -185,6 +198,8 @@
                         </GridPane>
                     </VBox>
                 </VBox>
+
+                </ScrollPane>
 
                 <!-- CPU Status and Current Instruction -->
                 <VBox spacing="8.0"

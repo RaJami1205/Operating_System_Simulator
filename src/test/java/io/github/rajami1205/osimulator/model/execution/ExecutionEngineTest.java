@@ -465,7 +465,7 @@ class ExecutionEngineTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"AX, 127", "BX, -127"})
+    @CsvSource({"AX, 32767", "BX, -32768"})
     void shouldExecuteMovAtRegisterBoundaries(RegisterName register, int value) {
         Instruction instruction = new MovInstruction(register, value);
         Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
@@ -644,7 +644,7 @@ class ExecutionEngineTest {
         Instruction failingInstruction = new AddInstruction(RegisterName.AX);
         Memory<Instruction> failingMemory = memoryWithProgram(List.of(failingInstruction));
         CpuRegisters<Instruction> failingCpu = new CpuRegisters<>();
-        failingCpu.writeAccumulator(127);
+        failingCpu.writeAccumulator(32767);
         failingCpu.writeRegister(RegisterName.AX, 1);
         ProcessControlBlock failingPcb = createPcb(
                 USER_START_ADDRESS,
@@ -692,10 +692,10 @@ class ExecutionEngineTest {
 
     private static Stream<Arguments> validArithmeticBoundaryCases() {
         return Stream.of(
-                Arguments.of(new AddInstruction(RegisterName.AX), 126, 1, 127),
-                Arguments.of(new AddInstruction(RegisterName.AX), -126, -1, -127),
-                Arguments.of(new SubInstruction(RegisterName.AX), -126, 1, -127),
-                Arguments.of(new SubInstruction(RegisterName.AX), 126, -1, 127)
+                Arguments.of(new AddInstruction(RegisterName.AX), 32766, 1, 32767),
+                Arguments.of(new AddInstruction(RegisterName.AX), -32767, -1, -32768),
+                Arguments.of(new SubInstruction(RegisterName.AX), -32767, 1, -32768),
+                Arguments.of(new SubInstruction(RegisterName.AX), 32766, -1, 32767)
         );
     }
 
@@ -703,28 +703,28 @@ class ExecutionEngineTest {
         return Stream.of(
                 Arguments.of(
                         new AddInstruction(RegisterName.AX),
-                        127,
+                        32767,
                         RegisterName.AX,
                         1,
                         ProcessState.READY
                 ),
                 Arguments.of(
                         new AddInstruction(RegisterName.BX),
-                        -127,
+                        -32768,
                         RegisterName.BX,
                         -1,
                         ProcessState.RUNNING
                 ),
                 Arguments.of(
                         new SubInstruction(RegisterName.CX),
-                        -127,
+                        -32768,
                         RegisterName.CX,
                         1,
                         ProcessState.RUNNING
                 ),
                 Arguments.of(
                         new SubInstruction(RegisterName.DX),
-                        127,
+                        32767,
                         RegisterName.DX,
                         -1,
                         ProcessState.READY

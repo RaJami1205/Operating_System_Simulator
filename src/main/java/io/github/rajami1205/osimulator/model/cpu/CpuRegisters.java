@@ -1,7 +1,6 @@
 package io.github.rajami1205.osimulator.model.cpu;
 
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidProgramCounterException;
-import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
 import java.util.EnumMap;
 import java.util.Objects;
 import java.util.Optional;
@@ -11,14 +10,14 @@ import java.util.Optional;
  */
 public final class CpuRegisters<I> {
 
-    private static final int MIN_DATA_VALUE = -127;
-    private static final int MAX_DATA_VALUE = 127;
-
     private final EnumMap<RegisterName, Integer> generalRegisters =
             new EnumMap<>(RegisterName.class);
     private int accumulator;
     private int programCounter;
     private I instructionRegister;
+    private int ah;
+    private int al;
+    private ConditionFlags conditionFlags;
 
     // Inicializa los registros numéricos y el IR del procesador simulado.
     public CpuRegisters() {
@@ -32,7 +31,7 @@ public final class CpuRegisters<I> {
 
     // Valida el rango lógico antes de actualizar AC.
     public void writeAccumulator(int value) {
-        validateDataValue(value);
+        CpuValueRange.validateRegisterValue(value);
         accumulator = value;
     }
 
@@ -44,7 +43,7 @@ public final class CpuRegisters<I> {
     // Valida el registro y el rango lógico antes de escribir su valor.
     public void writeRegister(RegisterName register, int value) {
         RegisterName nonNullRegister = requireRegister(register);
-        validateDataValue(value);
+        CpuValueRange.validateRegisterValue(value);
         generalRegisters.put(nonNullRegister, value);
     }
 
@@ -82,6 +81,54 @@ public final class CpuRegisters<I> {
         instructionRegister = null;
     }
 
+    public int ah() {
+        return ah;
+    }
+
+    public void writeAh(int value) {
+        CpuValueRange.validateRegisterValue(value);
+        ah = value;
+    }
+
+    public int al() {
+        return al;
+    }
+
+    public void writeAl(int value) {
+        CpuValueRange.validateRegisterValue(value);
+        al = value;
+    }
+
+    public ConditionFlags conditionFlags() {
+        return conditionFlags;
+    }
+
+    public void writeConditionFlags(ConditionFlags flags) {
+        conditionFlags = Objects.requireNonNull(flags, "flags must not be null");
+    }
+
+    /** Captura todos los registros; el contenido de IR debe ser inmutable. */
+    public CpuContext<I> snapshot() {
+        return new CpuContext<>(programCounter, instructionRegister(), accumulator,
+                readRegister(RegisterName.AX), readRegister(RegisterName.BX),
+                readRegister(RegisterName.CX), readRegister(RegisterName.DX), ah, al, conditionFlags);
+    }
+
+    /** Restaura un contexto ya validado sin compartir el mapa mutable de registros. */
+    public void restore(CpuContext<I> context) {
+        Objects.requireNonNull(context, "context must not be null");
+        programCounter = context.programCounter();
+        instructionRegister = context.instructionRegister().orElse(null);
+        accumulator = context.accumulator();
+        generalRegisters.put(RegisterName.AX, context.ax());
+        generalRegisters.put(RegisterName.BX, context.bx());
+        generalRegisters.put(RegisterName.CX, context.cx());
+        generalRegisters.put(RegisterName.DX, context.dx());
+        ah = context.ah();
+        al = context.al();
+        conditionFlags = context.conditionFlags();
+    }
+
     // Restablece los registros numéricos y vacía el IR.
     public void reset() {
         restoreInitialState();
@@ -90,6 +137,9 @@ public final class CpuRegisters<I> {
     // Lleva los registros numéricos a cero y deja el IR vacío.
     private void restoreInitialState() {
         accumulator = 0;
+        ah = 0;
+        al = 0;
+        conditionFlags = ConditionFlags.CLEAR;
 
         for (RegisterName register : RegisterName.values()) {
             generalRegisters.put(register, 0);
@@ -104,17 +154,4 @@ public final class CpuRegisters<I> {
         return Objects.requireNonNull(register, "register must not be null");
     }
 
-    // Impide almacenar datos fuera del rango lógico de -127 a 127.
-    private void validateDataValue(int value) {
-        if (value < MIN_DATA_VALUE || value > MAX_DATA_VALUE) {
-            throw new InvalidRegisterValueException(
-                    "Register value must be between "
-                            + MIN_DATA_VALUE
-                            + " and "
-                            + MAX_DATA_VALUE
-                            + ": "
-                            + value
-            );
-        }
-    }
 }

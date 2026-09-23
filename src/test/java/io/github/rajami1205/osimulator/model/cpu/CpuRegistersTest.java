@@ -46,7 +46,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-127, 127})
+    @ValueSource(ints = {-32768, 32767})
     void shouldAcceptBoundaryValuesForGeneralRegisters(int value) {
         CpuRegisters<String> registers = new CpuRegisters<>();
 
@@ -56,7 +56,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldRejectValuesOutsideGeneralRegisterRange(int value) {
         CpuRegisters<String> registers = new CpuRegisters<>();
 
@@ -80,7 +80,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldPreserveGeneralRegisterAfterFailedWrite(int invalidValue) {
         CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeRegister(RegisterName.AX, 50);
@@ -117,7 +117,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-127, 127})
+    @ValueSource(ints = {-32768, 32767})
     void shouldAcceptAccumulatorBoundaryValues(int value) {
         CpuRegisters<String> registers = new CpuRegisters<>();
 
@@ -127,7 +127,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldRejectValuesOutsideAccumulatorRange(int value) {
         CpuRegisters<String> registers = new CpuRegisters<>();
 
@@ -141,7 +141,7 @@ class CpuRegistersTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldPreserveAccumulatorAfterFailedWrite(int invalidValue) {
         CpuRegisters<String> registers = new CpuRegisters<>();
         registers.writeAccumulator(-20);
@@ -498,7 +498,7 @@ class CpuRegistersTest {
         assertAll(
                 () -> assertThrows(
                         InvalidRegisterValueException.class,
-                        () -> registers.writeRegister(RegisterName.AX, 128)
+                        () -> registers.writeRegister(RegisterName.AX, 32768)
                 ),
                 () -> assertThrows(
                         InvalidProgramCounterException.class,

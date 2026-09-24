@@ -91,7 +91,7 @@
                                 <Region HBox.hgrow="ALWAYS" />
                                 <Label fx:id="kernelMemoryValue" styleClass="configuration-value" />
                             </HBox>
-                            <Slider fx:id="kernelMemorySlider" min="1" max="255" value="32"
+                            <Slider fx:id="kernelMemorySlider" min="32" max="255" value="32"
                                     blockIncrement="1" majorTickUnit="1" minorTickCount="0"
                                     snapToTicks="true" styleClass="configuration-slider" />
                             <Label fx:id="kernelMemoryRange" styleClass="configuration-range" />
@@ -113,7 +113,7 @@
                                 <Region HBox.hgrow="ALWAYS" />
                                 <Label fx:id="virtualMemoryValue" styleClass="configuration-value" />
                             </HBox>
-                            <Slider fx:id="virtualMemorySlider" min="1" max="511" value="64"
+                            <Slider fx:id="virtualMemorySlider" min="64" max="511" value="64"
                                     blockIncrement="1" majorTickUnit="1" minorTickCount="0"
                                     snapToTicks="true" styleClass="configuration-slider" />
                             <Label fx:id="virtualMemoryRange" styleClass="configuration-range" />

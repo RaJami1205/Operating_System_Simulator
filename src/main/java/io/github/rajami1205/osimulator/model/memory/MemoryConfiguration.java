@@ -20,9 +20,9 @@ public record MemoryConfiguration(int totalPositions, int kernelReservedPosition
             );
         }
 
-        if (kernelReservedPositions <= 0) {
+        if (kernelReservedPositions < 32) {
             throw new InvalidMemoryConfigurationException(
-                    "Kernel reserved positions must be greater than zero: " + kernelReservedPositions
+                    "Kernel reserved positions must be at least 32: " + kernelReservedPositions
             );
         }
 

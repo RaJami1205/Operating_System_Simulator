@@ -11,11 +11,11 @@ public record SimulatorConfiguration(
 ) {
     public SimulatorConfiguration {
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
-        if (secondaryStoragePositions <= 0) {
-            throw new IllegalArgumentException("Secondary Storage must be greater than zero");
+        if (secondaryStoragePositions < 128) {
+            throw new IllegalArgumentException("Secondary Storage must be at least 128");
         }
-        if (virtualMemoryPositions <= 0 || virtualMemoryPositions >= secondaryStoragePositions) {
-            throw new IllegalArgumentException("Virtual Memory must be positive and less than Secondary Storage");
+        if (virtualMemoryPositions < 64 || virtualMemoryPositions >= secondaryStoragePositions) {
+            throw new IllegalArgumentException("Virtual Memory must be at least 64 and less than Secondary Storage");
         }
     }
 

@@ -8,6 +8,9 @@ import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.AdmissionResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
+import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
+import io.github.rajami1205.osimulator.model.scheduling.FcfsProcessScheduler;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
@@ -52,6 +55,8 @@ public final class SimulatorOrchestrator {
     private ProcessTable processTable;
     private ProcessAdmissionService processAdmissionService;
     private JobScheduler jobScheduler;
+    private ReadyQueue readyQueue;
+    private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
@@ -76,9 +81,11 @@ public final class SimulatorOrchestrator {
         JobList newJobs = new JobList();
         JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
         ProcessTable newProcesses = new ProcessTable();
+        ReadyQueue newReadyQueue = new ReadyQueue();
         ProcessAdmissionService newAdmission = new ProcessAdmissionService(
-                newJobs, newStorage, newMemory, newProcesses, programLoader);
+                newJobs, newStorage, newMemory, newProcesses, programLoader, newReadyQueue);
         JobScheduler newScheduler = new JobScheduler(newJobs, newAdmission);
+        ProcessScheduler newProcessScheduler = new FcfsProcessScheduler(newReadyQueue, newProcesses);
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
@@ -88,6 +95,8 @@ public final class SimulatorOrchestrator {
         processTable = newProcesses;
         processAdmissionService = newAdmission;
         jobScheduler = newScheduler;
+        readyQueue = newReadyQueue;
+        processScheduler = newProcessScheduler;
         this.configuration = configuration;
     }
 
@@ -111,6 +120,12 @@ public final class SimulatorOrchestrator {
     public Optional<AdmissionResult> attemptNextAdmission() {
         requireState("attemptNextAdmission", SimulatorState.INITIALIZED);
         return jobScheduler.attemptNextAdmission();
+    }
+
+    /** Consulta el próximo candidato sin consumir READY ni activar la CPU. */
+    public Optional<Integer> selectNextReadyProcess() {
+        requireState("selectNextReadyProcess", SimulatorState.INITIALIZED);
+        return processScheduler.selectNext();
     }
 
     // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
@@ -167,6 +182,8 @@ public final class SimulatorOrchestrator {
         processTable = null;
         processAdmissionService = null;
         jobScheduler = null;
+        readyQueue = null;
+        processScheduler = null;
         cpu = null;
         pcb = null;
         configuration = null;

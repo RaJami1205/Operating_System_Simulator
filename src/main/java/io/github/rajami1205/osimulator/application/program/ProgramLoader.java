@@ -2,7 +2,9 @@ package io.github.rajami1205.osimulator.application.program;
 
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
-import io.github.rajami1205.osimulator.model.memory.Memory;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessConfigurationException;
@@ -16,11 +18,11 @@ public final class ProgramLoader {
 
     // Valida el programa y lo carga en User Memory con un PCB en READY.
     public ProcessControlBlock load(
-            Memory<Instruction> memory,
+            MainMemory memory,
             int processId,
             List<Instruction> instructions
     ) {
-        Memory<Instruction> nonNullMemory = Objects.requireNonNull(
+        MainMemory nonNullMemory = Objects.requireNonNull(
                 memory,
                 "memory must not be null"
         );
@@ -32,33 +34,21 @@ public final class ProgramLoader {
             throw new ProgramLoadException("Program must contain at least one instruction");
         }
 
-        int userStartAddress = nonNullMemory.configuration().userStartAddress();
-        int userPositions = nonNullMemory.configuration().userPositions();
-        if (program.size() > userPositions) {
-            throw new ProgramLoadException(
-                    "Program contains "
-                            + program.size()
-                            + " instructions, but User Memory has capacity for "
-                            + userPositions
-            );
+        MemoryAllocation allocation;
+        try {
+            allocation = nonNullMemory.allocateUser(program.size());
+        } catch (MemoryAllocationException exception) {
+            throw new ProgramLoadException("Unable to allocate contiguous User memory", exception);
         }
-
-        ProcessControlBlock pcb = createProcessControlBlock(
-                processId,
-                userStartAddress,
-                program.size()
-        );
-        validateTargetRangeIsEmpty(
-                nonNullMemory,
-                userStartAddress,
-                program.size()
-        );
-
-        nonNullMemory.writeUserBlock(userStartAddress, program);
-        // Bridge temporal: el engine del baseline todavía utiliza direcciones físicas.
-        pcb.setProgramCounter(userStartAddress);
-        pcb.changeState(ProcessState.READY);
-        return pcb;
+        try {
+            nonNullMemory.writeUserBlock(allocation, program);
+            ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size());
+            pcb.changeState(ProcessState.READY);
+            return pcb;
+        } catch (RuntimeException exception) {
+            nonNullMemory.release(allocation);
+            throw exception;
+        }
     }
 
     // Crea los metadatos del proceso y traduce errores de configuración a errores de carga.
@@ -81,19 +71,4 @@ public final class ProgramLoader {
         }
     }
 
-    // Comprueba que la carga no sobrescriba posiciones ocupadas.
-    private void validateTargetRangeIsEmpty(
-            Memory<Instruction> memory,
-            int startAddress,
-            int instructionCount
-    ) {
-        for (int offset = 0; offset < instructionCount; offset++) {
-            int address = startAddress + offset;
-            if (!memory.isEmpty(address)) {
-                throw new ProgramLoadException(
-                        "Program target memory address is already occupied: " + address
-                );
-            }
-        }
-    }
 }

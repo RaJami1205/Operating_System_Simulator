@@ -23,7 +23,13 @@ class SimulatorConfigurationTest {
         assertEquals(8192, configuration.secondaryStoragePositions());
         assertEquals(8191, configuration.virtualMemoryPositions());
         assertEquals(new SimulatorConfiguration(memory, 8192, 8191), configuration);
-        assertDoesNotThrow(() -> new SimulatorConfiguration(memory, 2, 1));
+    }
+
+    @Test
+    void acceptsMinimumStorageAndVirtualMemory() {
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(128, 32), 128, 64);
+        assertEquals(128, configuration.secondaryStoragePositions());
+        assertEquals(64, configuration.virtualMemoryPositions());
     }
 
     @Test
@@ -32,7 +38,8 @@ class SimulatorConfigurationTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"0,1", "-1,1", "512,0", "512,-1", "512,512", "512,513"})
+    @CsvSource({"127,64", "0,64", "-1,64", "128,63", "512,0", "512,-1",
+            "128,128", "128,129", "512,512", "512,513"})
     void rejectsInvalidCapacities(int secondary, int virtual) {
         assertThrows(IllegalArgumentException.class,
                 () -> new SimulatorConfiguration(new MemoryConfiguration(256, 32), secondary, virtual));

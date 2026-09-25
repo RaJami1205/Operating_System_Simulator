@@ -18,7 +18,11 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.memory.Memory;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryContent;
+import io.github.rajami1205.osimulator.model.memory.EmptyContent;
+import io.github.rajami1205.osimulator.model.memory.InstructionContent;
+import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -32,7 +36,7 @@ public final class SimulatorOrchestrator {
     private final ProgramLoader programLoader;
     private final ExecutionEngine executionEngine;
     private final SimulatorLifecycle lifecycle = new SimulatorLifecycle();
-    private Memory<Instruction> memory;
+    private MainMemory memory;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
@@ -50,7 +54,7 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
-        Memory<Instruction> newMemory = new Memory<>(configuration.mainMemory());
+        MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         lifecycle.initialize();
         memory = newMemory;
@@ -132,18 +136,28 @@ public final class SimulatorOrchestrator {
                     pcb.processId(), pcb.state().name(), pcb.programStartAddress(),
                     pcb.instructionCount(), pcb.programEndAddressExclusive(), pcb.programCounter()));
             for (int address = pcb.programStartAddress(); address < pcb.programEndAddressExclusive(); address++) {
-                program.add(new ProgramEntry(address, semanticText(memory.read(address).orElseThrow())));
+                program.add(new ProgramEntry(address, semanticText(
+                        memory.readInstruction(pcb.memoryBounds(), address - pcb.programStartAddress()))));
             }
         }
         List<MemoryEntry> memoryEntries = new ArrayList<>();
         if (memory != null) {
             for (int address = 0; address < memory.size(); address++) {
                 memoryEntries.add(new MemoryEntry(address, memory.regionOf(address).name(),
-                        memory.read(address).map(this::semanticText)));
+                        contentText(memory.read(address))));
             }
         }
         return new SimulatorSnapshot(lifecycle.state(), cpuSnapshot, currentInstruction,
                 process, program, memoryEntries);
+    }
+
+    // Sólo texto inmutable cruza hacia Presentation, nunca el PCB canónico.
+    Optional<String> contentText(MemoryContent content) {
+        return switch (content) {
+            case EmptyContent ignored -> Optional.empty();
+            case InstructionContent instruction -> Optional.of(semanticText(instruction.instruction()));
+            case PcbContent process -> Optional.of("PCB PID=" + process.pcb().processId());
+        };
     }
 
     // Obtiene la representación semántica de una instrucción.

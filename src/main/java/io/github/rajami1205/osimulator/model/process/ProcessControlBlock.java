@@ -100,13 +100,12 @@ public final class ProcessControlBlock {
         cpuContext = cpuContext.withProgramCounter(programCounter);
     }
 
-    // Bridge físico temporal: el límite exclusivo representa fin de programa.
-    // Sólo la construcción NEW usa PC = 0 fuera de estos límites.
+    // El PC lógico admite Limit únicamente como marcador terminal.
     private void validateOperationalProgramCounter(int programCounter) {
-        if (programCounter < memoryBounds.base() || programCounter > memoryBounds.endExclusive()) {
+        if (programCounter < 0 || programCounter > memoryBounds.limit()) {
             throw new InvalidProcessProgramCounterException(
-                    "Process Program Counter must be between " + memoryBounds.base()
-                            + " and " + memoryBounds.endExclusive() + ": " + programCounter);
+                    "Process Program Counter must be between 0"
+                            + " and " + memoryBounds.limit() + ": " + programCounter);
         }
     }
     // Exige un identificador positivo para el proceso.

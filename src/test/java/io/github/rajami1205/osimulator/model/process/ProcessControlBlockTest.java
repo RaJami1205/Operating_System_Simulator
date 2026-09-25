@@ -202,7 +202,7 @@ class ProcessControlBlockTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {100, 101, 102, 103, 104, 105})
+    @ValueSource(ints = {0, 1, 2, 3, 4, 5})
     void shouldAcceptProgramCounterThroughoutInclusiveSavedRange(int programCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
 
@@ -212,7 +212,7 @@ class ProcessControlBlockTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {99, 106, Integer.MIN_VALUE, Integer.MAX_VALUE})
+    @ValueSource(ints = {-1, 6, 100, Integer.MIN_VALUE, Integer.MAX_VALUE})
     void shouldRejectProgramCounterOutsideSavedRange(int programCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
 
@@ -227,22 +227,22 @@ class ProcessControlBlockTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {99, 106})
+    @ValueSource(ints = {-1, 6})
     void shouldPreserveProgramCounterAfterFailedMutation(int invalidProgramCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
-        pcb.setProgramCounter(102);
+        pcb.setProgramCounter(2);
 
         assertInvalidProgramCounter(pcb, invalidProgramCounter);
 
-        assertEquals(102, pcb.programCounter());
+        assertEquals(2, pcb.programCounter());
     }
 
     @Test
-    void shouldAcceptMaximumIntegerAsEndExclusiveProgramCounter() {
+    void shouldAcceptMaximumIntegerAsLogicalLimit() {
         ProcessControlBlock pcb = new ProcessControlBlock(
                 1,
-                Integer.MAX_VALUE - 1,
-                1
+                0,
+                Integer.MAX_VALUE
         );
 
         pcb.setProgramCounter(Integer.MAX_VALUE);
@@ -253,11 +253,11 @@ class ProcessControlBlockTest {
     @Test
     void shouldKeepProgramCounterUnchangedWhenStateChanges() {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
-        pcb.setProgramCounter(102);
+        pcb.setProgramCounter(2);
 
         pcb.changeState(ProcessState.TERMINATED);
 
-        assertEquals(102, pcb.programCounter());
+        assertEquals(2, pcb.programCounter());
     }
 
     @Test
@@ -265,7 +265,7 @@ class ProcessControlBlockTest {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
         pcb.changeState(ProcessState.READY);
 
-        pcb.setProgramCounter(105);
+        pcb.setProgramCounter(5);
 
         assertEquals(ProcessState.READY, pcb.state());
     }
@@ -275,7 +275,7 @@ class ProcessControlBlockTest {
         ProcessControlBlock pcb = new ProcessControlBlock(7, 100, 5);
 
         pcb.changeState(ProcessState.RUNNING);
-        pcb.setProgramCounter(103);
+        pcb.setProgramCounter(3);
 
         assertAll(
                 () -> assertEquals(7, pcb.processId()),

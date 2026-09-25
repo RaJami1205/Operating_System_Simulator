@@ -22,6 +22,13 @@ public final class ProgramLoader {
             int processId,
             List<Instruction> instructions
     ) {
+        return loadWithAllocation(memory, processId, instructions).pcb();
+    }
+
+    /** Transfiere al caller el handle USER únicamente después de completar la carga. */
+    public ProgramLoadResult loadWithAllocation(
+            MainMemory memory, int processId, List<Instruction> instructions
+    ) {
         MainMemory nonNullMemory = Objects.requireNonNull(
                 memory,
                 "memory must not be null"
@@ -44,9 +51,13 @@ public final class ProgramLoader {
             nonNullMemory.writeUserBlock(allocation, program);
             ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size());
             pcb.changeState(ProcessState.READY);
-            return pcb;
-        } catch (RuntimeException exception) {
-            nonNullMemory.release(allocation);
+            return new ProgramLoadResult(pcb, allocation);
+        } catch (RuntimeException | Error exception) {
+            try {
+                nonNullMemory.release(allocation);
+            } catch (RuntimeException | Error cleanup) {
+                if (cleanup != exception) exception.addSuppressed(cleanup);
+            }
             throw exception;
         }
     }

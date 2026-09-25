@@ -6,6 +6,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JobListTest {
     @Test
+    void admissionReplacesImmutableJobWithoutChangingSubmissionOrder() {
+        var jobs = new JobList();
+        jobs.add(new Job(7, "first", JobState.PENDING));
+        jobs.add(new Job(2, "second", JobState.PENDING));
+        var before = jobs.entries();
+        jobs.markAdmitted(7);
+        assertEquals(List.of(
+                new Job(7, "first", JobState.ADMITTED), before.get(1)), jobs.entries());
+        assertEquals(JobState.PENDING, before.getFirst().state());
+        assertThrows(IllegalStateException.class, () -> jobs.markAdmitted(7));
+        assertThrows(IllegalArgumentException.class, () -> jobs.markAdmitted(99));
+        assertThrows(IllegalArgumentException.class, () -> jobs.markAdmitted(0));
+    }
+
+    @Test
     void preservesInsertionOrderAndAllowsMoreThanFiveJobsForOneProgram() {
         var jobs = new JobList();
         for (int id : new int[]{7, 2, 9, 1, 6, 3}) jobs.add(new Job(id, "same", JobState.PENDING));

@@ -4,6 +4,10 @@ import io.github.rajami1205.osimulator.application.lifecycle.SimulatorLifecycle;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
+import io.github.rajami1205.osimulator.application.job.JobScheduler;
+import io.github.rajami1205.osimulator.application.process.AdmissionResult;
+import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
+import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
@@ -45,6 +49,9 @@ public final class SimulatorOrchestrator {
     private SecondaryStorage secondaryStorage;
     private JobList jobList;
     private JobSubmissionService jobSubmissionService;
+    private ProcessTable processTable;
+    private ProcessAdmissionService processAdmissionService;
+    private JobScheduler jobScheduler;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
@@ -68,12 +75,19 @@ public final class SimulatorOrchestrator {
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
         JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
+        ProcessTable newProcesses = new ProcessTable();
+        ProcessAdmissionService newAdmission = new ProcessAdmissionService(
+                newJobs, newStorage, newMemory, newProcesses, programLoader);
+        JobScheduler newScheduler = new JobScheduler(newJobs, newAdmission);
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
         secondaryStorage = newStorage;
         jobList = newJobs;
         jobSubmissionService = newSubmissionService;
+        processTable = newProcesses;
+        processAdmissionService = newAdmission;
+        jobScheduler = newScheduler;
         this.configuration = configuration;
     }
 
@@ -93,9 +107,18 @@ public final class SimulatorOrchestrator {
         return jobList == null ? List.of() : jobList.entries();
     }
 
+    /** Admite a lo sumo un Job, sin habilitar la ejecución multiproceso. */
+    public Optional<AdmissionResult> attemptNextAdmission() {
+        requireState("attemptNextAdmission", SimulatorState.INITIALIZED);
+        return jobScheduler.attemptNextAdmission();
+    }
+
     // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
     public void loadProgram(List<Instruction> instructions) {
         requireState("loadProgram", SimulatorState.INITIALIZED);
+        if (processTable.size() != 0) {
+            throw new IllegalStateException("Legacy loading is unavailable while admitted processes are resident");
+        }
         List<Instruction> program = List.copyOf(
                 Objects.requireNonNull(instructions, "instructions must not be null"));
         pcb = programLoader.load(memory, 1, program);
@@ -141,6 +164,9 @@ public final class SimulatorOrchestrator {
         secondaryStorage = null;
         jobList = null;
         jobSubmissionService = null;
+        processTable = null;
+        processAdmissionService = null;
+        jobScheduler = null;
         cpu = null;
         pcb = null;
         configuration = null;

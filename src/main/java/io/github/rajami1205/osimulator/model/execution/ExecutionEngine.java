@@ -9,7 +9,8 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.memory.Memory;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
@@ -21,7 +22,7 @@ public final class ExecutionEngine {
 
     // Ejecuta como máximo una instrucción y actualiza CPU, PC y estado del proceso.
     public void executeNext(
-            Memory<Instruction> memory,
+            MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb
     ) {
@@ -30,20 +31,21 @@ public final class ExecutionEngine {
         Objects.requireNonNull(pcb, "pcb must not be null");
 
         validateExecutableState(pcb);
-        validateMemoryCompatibility(memory, pcb);
 
         int currentProgramCounter = pcb.programCounter();
-        int programEndAddressExclusive = pcb.programEndAddressExclusive();
-        if (currentProgramCounter == programEndAddressExclusive) {
-            cpu.setProgramCounter(programEndAddressExclusive);
+        int instructionCount = pcb.instructionCount();
+        if (currentProgramCounter == instructionCount) {
+            cpu.setProgramCounter(instructionCount);
             pcb.changeState(ProcessState.TERMINATED);
             return;
         }
 
-        Instruction instruction = memory.read(currentProgramCounter)
-                .orElseThrow(() -> new ExecutionEngineException(
-                        "No instruction exists at process address: " + currentProgramCounter
-                ));
+        Instruction instruction;
+        try {
+            instruction = memory.readInstruction(pcb.memoryBounds(), currentProgramCounter);
+        } catch (MemoryProtectionException exception) {
+            throw new ExecutionEngineException("Unable to fetch process instruction", exception);
+        }
 
         cpu.setProgramCounter(currentProgramCounter);
         cpu.loadInstructionRegister(instruction);
@@ -56,7 +58,7 @@ public final class ExecutionEngine {
         int nextProgramCounter = currentProgramCounter + 1;
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
-        if (nextProgramCounter == programEndAddressExclusive) {
+        if (nextProgramCounter == instructionCount) {
             pcb.changeState(ProcessState.TERMINATED);
         }
     }
@@ -66,26 +68,6 @@ public final class ExecutionEngine {
         if (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.RUNNING) {
             throw new ExecutionEngineException(
                     "Process state is not executable: " + pcb.state()
-            );
-        }
-    }
-
-    // Comprueba que el programa del proceso esté contenido en User Memory.
-    private void validateMemoryCompatibility(
-            Memory<Instruction> memory,
-            ProcessControlBlock pcb
-    ) {
-        if (pcb.programStartAddress() < memory.configuration().userStartAddress()) {
-            throw new ExecutionEngineException(
-                    "Process program must start in User memory: "
-                            + pcb.programStartAddress()
-            );
-        }
-
-        if (pcb.programEndAddressExclusive() > memory.size()) {
-            throw new ExecutionEngineException(
-                    "Process program exceeds Memory capacity: "
-                            + pcb.programEndAddressExclusive()
             );
         }
     }

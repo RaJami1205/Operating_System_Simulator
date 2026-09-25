@@ -18,7 +18,8 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.memory.Memory;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryContent;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -40,7 +41,7 @@ class ExecutionEngineTest {
     @Test
     void shouldRejectNullRequiredArguments() {
         ExecutionEngine engine = new ExecutionEngine();
-        Memory<Instruction> memory = createMemory();
+        MainMemory memory = createMemory();
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
 
@@ -64,11 +65,11 @@ class ExecutionEngineTest {
     @EnumSource(value = ProcessState.class, names = {"NEW", "BLOCKED", "READY_SUSPENDED", "BLOCKED_SUSPENDED", "TERMINATED"})
     void shouldRejectNonExecutableStateWithoutChangingMachine(ProcessState state) {
         Instruction instruction = new MovInstruction(RegisterName.AX, 5);
-        Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
+        MainMemory memory = memoryWithProgram(List.of(instruction));
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, state);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -79,7 +80,7 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(state, pcb.state()),
-                () -> assertEquals(USER_START_ADDRESS, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
@@ -89,13 +90,13 @@ class ExecutionEngineTest {
     void shouldRejectNonExecutableStateEvenAtEndMarkerWithoutChangingMachine(
             ProcessState state
     ) {
-        Memory<Instruction> memory = createMemory();
-        memory.writeUser(90, new LoadInstruction(RegisterName.DX));
+        MainMemory memory = createMemory();
+        writeAt(memory, 90, new LoadInstruction(RegisterName.DX));
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, state);
-        pcb.setProgramCounter(pcb.programEndAddressExclusive());
+        pcb.setProgramCounter(pcb.instructionCount());
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -107,7 +108,7 @@ class ExecutionEngineTest {
         assertAll(
                 () -> assertEquals(state, pcb.state()),
                 () -> assertEquals(
-                        pcb.programEndAddressExclusive(),
+                        pcb.instructionCount(),
                         pcb.programCounter()
                 )
         );
@@ -116,11 +117,11 @@ class ExecutionEngineTest {
 
     @Test
     void shouldRejectProgramStartingInKernelWithoutChangingMachine() {
-        Memory<Instruction> memory = createMemory();
+        MainMemory memory = createMemory();
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(31, 1, ProcessState.READY);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -131,20 +132,20 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(ProcessState.READY, pcb.state()),
-                () -> assertEquals(31, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
 
     @Test
     void shouldRejectProgramEndingBeyondMemoryWithoutChangingMachine() {
-        Memory<Instruction> memory = createMemory();
+        MainMemory memory = createMemory();
         Instruction instruction = new LoadInstruction(RegisterName.AX);
-        memory.writeUser(127, instruction);
+        writeAt(memory, 127, instruction);
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(127, 2, ProcessState.RUNNING);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -155,36 +156,26 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
-                () -> assertEquals(127, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
 
     @Test
-    void shouldValidateMemoryCompatibilityBeforeInterpretingEndMarker() {
-        Memory<Instruction> memory = createMemory();
-        memory.writeUser(127, new StoreInstruction(RegisterName.AX));
+    void shouldHandleLogicalEndMarkerBeforeAnyMemoryAccess() {
+        MainMemory memory = createMemory();
         CpuRegisters<Instruction> cpu = populatedCpu();
-        ProcessControlBlock pcb = createPcb(127, 2, ProcessState.READY);
-        pcb.setProgramCounter(pcb.programEndAddressExclusive());
-        CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        CpuState before = snapshotCpu(cpu);
+        // No allocation exists and Base lies beyond physical memory.
+        ProcessControlBlock pcb = createPcb(1000, 2, ProcessState.READY);
+        pcb.setProgramCounter(2);
 
-        ExecutionEngineException exception = assertThrows(
-                ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
-        );
+        new ExecutionEngine().executeNext(memory, cpu, pcb);
 
-        assertValidMessage(exception);
-        assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
-        assertAll(
-                () -> assertEquals(ProcessState.READY, pcb.state()),
-                () -> assertEquals(
-                        pcb.programEndAddressExclusive(),
-                        pcb.programCounter()
-                )
-        );
-        assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
+        assertEquals(ProcessState.TERMINATED, pcb.state());
+        assertEquals(2, cpu.programCounter());
+        assertEquals(2, pcb.programCounter());
+        assertCpuDataAndInstructionState(before, cpu);
     }
 
     @ParameterizedTest
@@ -192,9 +183,9 @@ class ExecutionEngineTest {
     void shouldTerminateAtEndMarkerWithoutFetchingOrChangingInstructionRegister(
             ProcessState state
     ) {
-        Memory<Instruction> memory = createMemory();
+        MainMemory memory = createMemory();
         Instruction unrelatedInstruction = new AddInstruction(RegisterName.DX);
-        memory.writeUser(90, unrelatedInstruction);
+        writeAt(memory, 90, unrelatedInstruction);
         CpuRegisters<Instruction> cpu = populatedCpu();
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(
@@ -202,14 +193,14 @@ class ExecutionEngineTest {
                 memory.configuration().userPositions(),
                 state
         );
-        pcb.setProgramCounter(memory.size());
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        pcb.setProgramCounter(pcb.instructionCount());
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertAll(
-                () -> assertEquals(memory.size(), cpu.programCounter()),
-                () -> assertEquals(memory.size(), pcb.programCounter()),
+                () -> assertEquals(pcb.instructionCount(), cpu.programCounter()),
+                () -> assertEquals(pcb.instructionCount(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state())
         );
         assertCpuDataAndInstructionState(cpuBeforeExecution, cpu);
@@ -219,12 +210,13 @@ class ExecutionEngineTest {
     @ParameterizedTest
     @EnumSource(value = ProcessState.class, names = {"READY", "RUNNING"})
     void shouldRejectMissingInstructionWithoutChangingMachine(ProcessState state) {
-        Memory<Instruction> memory = createMemory();
-        memory.writeUser(90, new StoreInstruction(RegisterName.DX));
+        MainMemory memory = createMemory();
+        memory.allocateUser(2);
+        memory.writeInstruction(memory.allocateUser(1), 0, new StoreInstruction(RegisterName.DX));
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, state);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -235,7 +227,7 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(state, pcb.state()),
-                () -> assertEquals(USER_START_ADDRESS, pcb.programCounter())
+                () -> assertEquals(0, pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
@@ -247,7 +239,7 @@ class ExecutionEngineTest {
     ) {
         Instruction previousInstruction = new StoreInstruction(RegisterName.DX);
         Instruction instruction = new MovInstruction(destination, -5);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 instruction,
                 new LoadInstruction(RegisterName.AX)
         ));
@@ -256,15 +248,15 @@ class ExecutionEngineTest {
         cpu.setProgramCounter(7);
         cpu.loadInstructionRegister(previousInstruction);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertOnlyRegisterChanged(destination, -5, cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(9, cpu.accumulator()),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -277,7 +269,7 @@ class ExecutionEngineTest {
             RegisterName source
     ) {
         Instruction instruction = new LoadInstruction(source);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 instruction,
                 new AddInstruction(RegisterName.AX)
         ));
@@ -285,15 +277,15 @@ class ExecutionEngineTest {
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         int expectedAccumulator = registerValue(cpuBeforeExecution, source);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.RUNNING);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -306,22 +298,22 @@ class ExecutionEngineTest {
             RegisterName destination
     ) {
         Instruction instruction = new StoreInstruction(destination);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 instruction,
                 new SubInstruction(RegisterName.DX)
         ));
         CpuRegisters<Instruction> cpu = cpuWithDistinctDataValues(40);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertOnlyRegisterChanged(destination, 40, cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(40, cpu.accumulator()),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -341,7 +333,7 @@ class ExecutionEngineTest {
             int expectedAccumulator
     ) {
         Instruction instruction = new AddInstruction(source);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 instruction,
                 new StoreInstruction(RegisterName.AX)
         ));
@@ -349,15 +341,15 @@ class ExecutionEngineTest {
         cpu.writeRegister(source, sourceValue);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -377,7 +369,7 @@ class ExecutionEngineTest {
             int expectedAccumulator
     ) {
         Instruction instruction = new SubInstruction(source);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 instruction,
                 new StoreInstruction(RegisterName.BX)
         ));
@@ -385,15 +377,15 @@ class ExecutionEngineTest {
         cpu.writeRegister(source, sourceValue);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -404,7 +396,7 @@ class ExecutionEngineTest {
     void shouldTerminateAfterSuccessfulFinalInstructionFromRunningState() {
         Instruction firstInstruction = new MovInstruction(RegisterName.AX, 10);
         Instruction finalInstruction = new AddInstruction(RegisterName.AX);
-        Memory<Instruction> memory = memoryWithProgram(List.of(
+        MainMemory memory = memoryWithProgram(List.of(
                 firstInstruction,
                 finalInstruction
         ));
@@ -413,14 +405,14 @@ class ExecutionEngineTest {
         cpu.writeRegister(RegisterName.AX, 10);
         cpu.loadInstructionRegister(firstInstruction);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.RUNNING);
-        pcb.setProgramCounter(33);
+        pcb.setProgramCounter(1);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(15, cpu.accumulator()),
-                () -> assertEquals(34, cpu.programCounter()),
-                () -> assertEquals(34, pcb.programCounter()),
+                () -> assertEquals(2, cpu.programCounter()),
+                () -> assertEquals(2, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(finalInstruction, cpu.instructionRegister().orElseThrow())
         );
@@ -429,7 +421,7 @@ class ExecutionEngineTest {
     @Test
     void shouldTerminateSingleInstructionReadyProcessAfterExecution() {
         Instruction instruction = new MovInstruction(RegisterName.DX, 17);
-        Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
+        MainMemory memory = memoryWithProgram(List.of(instruction));
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
 
@@ -437,8 +429,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(17, cpu.readRegister(RegisterName.DX)),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -446,9 +438,9 @@ class ExecutionEngineTest {
 
     @Test
     void shouldExecuteExactFitInstructionAtLastMemoryAddress() {
-        Memory<Instruction> memory = createMemory();
+        MainMemory memory = createMemory();
         Instruction instruction = new LoadInstruction(RegisterName.CX);
-        memory.writeUser(127, instruction);
+        writeAt(memory, 127, instruction);
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         cpu.writeRegister(RegisterName.CX, 60);
         ProcessControlBlock pcb = createPcb(127, 1, ProcessState.READY);
@@ -457,8 +449,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(60, cpu.accumulator()),
-                () -> assertEquals(memory.size(), cpu.programCounter()),
-                () -> assertEquals(memory.size(), pcb.programCounter()),
+                () -> assertEquals(pcb.instructionCount(), cpu.programCounter()),
+                () -> assertEquals(pcb.instructionCount(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -468,7 +460,7 @@ class ExecutionEngineTest {
     @CsvSource({"AX, 32767", "BX, -32768"})
     void shouldExecuteMovAtRegisterBoundaries(RegisterName register, int value) {
         Instruction instruction = new MovInstruction(register, value);
-        Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
+        MainMemory memory = memoryWithProgram(List.of(instruction));
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
 
@@ -488,20 +480,20 @@ class ExecutionEngineTest {
             int sourceValue,
             int expectedAccumulator
     ) {
-        Memory<Instruction> memory = memoryWithProgram(List.of(instruction));
+        MainMemory memory = memoryWithProgram(List.of(instruction));
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         cpu.writeAccumulator(initialAccumulator);
         cpu.writeRegister(RegisterName.AX, sourceValue);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         new ExecutionEngine().executeNext(memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
                 () -> assertEquals(sourceValue, cpu.readRegister(RegisterName.AX)),
-                () -> assertEquals(33, cpu.programCounter()),
-                () -> assertEquals(33, pcb.programCounter()),
+                () -> assertEquals(1, cpu.programCounter()),
+                () -> assertEquals(1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -518,14 +510,14 @@ class ExecutionEngineTest {
             ProcessState initialState
     ) {
         Instruction previousInstruction = new MovInstruction(RegisterName.BX, 4);
-        Memory<Instruction> memory = memoryWithProgram(List.of(failingInstruction));
+        MainMemory memory = memoryWithProgram(List.of(failingInstruction));
         CpuRegisters<Instruction> cpu = cpuWithDistinctDataValues(initialAccumulator);
         cpu.writeRegister(source, sourceValue);
         cpu.setProgramCounter(75);
         cpu.loadInstructionRegister(previousInstruction);
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, initialState);
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
@@ -539,8 +531,8 @@ class ExecutionEngineTest {
                         exception.getCause()
                 ),
                 () -> assertEquals(initialAccumulator, cpu.accumulator()),
-                () -> assertEquals(USER_START_ADDRESS, cpu.programCounter()),
-                () -> assertEquals(USER_START_ADDRESS, pcb.programCounter()),
+                () -> assertEquals(0, cpu.programCounter()),
+                () -> assertEquals(0, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(
                         failingInstruction,
@@ -560,34 +552,34 @@ class ExecutionEngineTest {
                 new StoreInstruction(RegisterName.BX),
                 new SubInstruction(RegisterName.AX)
         );
-        Memory<Instruction> memory = memoryWithProgram(program);
+        MainMemory memory = memoryWithProgram(program);
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(
                 USER_START_ADDRESS,
                 program.size(),
                 ProcessState.READY
         );
-        List<Optional<Instruction>> memoryBeforeExecution = snapshotMemory(memory);
+        List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
         ExecutionEngine engine = new ExecutionEngine();
 
         engine.executeNext(memory, cpu, pcb);
-        assertStep(cpu, pcb, program.get(0), 33, ProcessState.RUNNING);
+        assertStep(cpu, pcb, program.get(0), 1, ProcessState.RUNNING);
         assertEquals(5, cpu.readRegister(RegisterName.AX));
 
         engine.executeNext(memory, cpu, pcb);
-        assertStep(cpu, pcb, program.get(1), 34, ProcessState.RUNNING);
+        assertStep(cpu, pcb, program.get(1), 2, ProcessState.RUNNING);
         assertEquals(5, cpu.accumulator());
 
         engine.executeNext(memory, cpu, pcb);
-        assertStep(cpu, pcb, program.get(2), 35, ProcessState.RUNNING);
+        assertStep(cpu, pcb, program.get(2), 3, ProcessState.RUNNING);
         assertEquals(10, cpu.accumulator());
 
         engine.executeNext(memory, cpu, pcb);
-        assertStep(cpu, pcb, program.get(3), 36, ProcessState.RUNNING);
+        assertStep(cpu, pcb, program.get(3), 4, ProcessState.RUNNING);
         assertEquals(10, cpu.readRegister(RegisterName.BX));
 
         engine.executeNext(memory, cpu, pcb);
-        assertStep(cpu, pcb, program.get(4), 37, ProcessState.TERMINATED);
+        assertStep(cpu, pcb, program.get(4), 5, ProcessState.TERMINATED);
         assertAll(
                 () -> assertEquals(5, cpu.accumulator()),
                 () -> assertEquals(5, cpu.readRegister(RegisterName.AX)),
@@ -600,7 +592,7 @@ class ExecutionEngineTest {
     void shouldReuseEngineAcrossIndependentMachines() {
         ExecutionEngine engine = new ExecutionEngine();
         Instruction firstInstruction = new MovInstruction(RegisterName.AX, 7);
-        Memory<Instruction> firstMemory = memoryWithProgram(List.of(firstInstruction));
+        MainMemory firstMemory = memoryWithProgram(List.of(firstInstruction));
         CpuRegisters<Instruction> firstCpu = new CpuRegisters<>();
         ProcessControlBlock firstPcb = createPcb(
                 USER_START_ADDRESS,
@@ -608,7 +600,7 @@ class ExecutionEngineTest {
                 ProcessState.READY
         );
         Instruction secondInstruction = new LoadInstruction(RegisterName.BX);
-        Memory<Instruction> secondMemory = memoryWithProgram(List.of(secondInstruction));
+        MainMemory secondMemory = memoryWithProgram(List.of(secondInstruction));
         CpuRegisters<Instruction> secondCpu = new CpuRegisters<>();
         secondCpu.writeRegister(RegisterName.BX, 9);
         ProcessControlBlock secondPcb = createPcb(
@@ -642,7 +634,7 @@ class ExecutionEngineTest {
     void shouldExecuteIndependentMachineAfterFailureOnSameEngine() {
         ExecutionEngine engine = new ExecutionEngine();
         Instruction failingInstruction = new AddInstruction(RegisterName.AX);
-        Memory<Instruction> failingMemory = memoryWithProgram(List.of(failingInstruction));
+        MainMemory failingMemory = memoryWithProgram(List.of(failingInstruction));
         CpuRegisters<Instruction> failingCpu = new CpuRegisters<>();
         failingCpu.writeAccumulator(32767);
         failingCpu.writeRegister(RegisterName.AX, 1);
@@ -652,7 +644,7 @@ class ExecutionEngineTest {
                 ProcessState.READY
         );
         Instruction successfulInstruction = new MovInstruction(RegisterName.CX, -6);
-        Memory<Instruction> successfulMemory = memoryWithProgram(
+        MainMemory successfulMemory = memoryWithProgram(
                 List.of(successfulInstruction)
         );
         CpuRegisters<Instruction> successfulCpu = new CpuRegisters<>();
@@ -674,8 +666,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(-6, successfulCpu.readRegister(RegisterName.CX)),
-                () -> assertEquals(33, successfulCpu.programCounter()),
-                () -> assertEquals(33, successfulPcb.programCounter()),
+                () -> assertEquals(1, successfulCpu.programCounter()),
+                () -> assertEquals(1, successfulPcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, successfulPcb.state()),
                 () -> assertSame(
                         successfulInstruction,
@@ -732,13 +724,46 @@ class ExecutionEngineTest {
         );
     }
 
-    private Memory<Instruction> createMemory() {
-        return new Memory<>(new MemoryConfiguration(128, USER_START_ADDRESS));
+    @Test
+    void shouldStopAtLogicalLimitWithoutExecutingAdjacentAllocationOrReleasingProgram() {
+        var memory = createMemory();
+        var first = memory.allocateUser(1);
+        var next = memory.allocateUser(1);
+        var instruction = new MovInstruction(RegisterName.AX, 7);
+        memory.writeInstruction(first, 0, instruction);
+        memory.writeInstruction(next, 0, new MovInstruction(RegisterName.AX, 99));
+        var pcb = createPcb(first.base(), first.size(), ProcessState.READY);
+        var cpu = new CpuRegisters<Instruction>();
+        var engine = new ExecutionEngine();
+        engine.executeNext(memory, cpu, pcb);
+        assertEquals(7, cpu.readRegister(RegisterName.AX));
+        assertEquals(1, cpu.programCounter());
+        assertEquals(1, pcb.programCounter());
+        assertEquals(ProcessState.TERMINATED, pcb.state());
+        assertSame(instruction, memory.readInstruction(pcb.memoryBounds(), 0));
+        assertEquals(34, memory.allocateUser(1).base());
+        // A restored terminal marker must not fetch the following program.
+        pcb.changeState(ProcessState.READY);
+        engine.executeNext(memory, cpu, pcb);
+        assertEquals(7, cpu.readRegister(RegisterName.AX));
+        assertSame(instruction, cpu.instructionRegister().orElseThrow());
+        assertEquals(ProcessState.TERMINATED, pcb.state());
     }
 
-    private Memory<Instruction> memoryWithProgram(List<Instruction> instructions) {
-        Memory<Instruction> memory = createMemory();
-        memory.writeUserBlock(USER_START_ADDRESS, instructions);
+    private void writeAt(MainMemory memory, int address, Instruction instruction) {
+        var gap = memory.allocateUser(address - USER_START_ADDRESS);
+        var allocation = memory.allocateUser(1);
+        memory.writeInstruction(allocation, 0, instruction);
+        memory.release(gap);
+    }
+
+    private MainMemory createMemory() {
+        return new MainMemory(new MemoryConfiguration(128, USER_START_ADDRESS));
+    }
+
+    private MainMemory memoryWithProgram(List<Instruction> instructions) {
+        MainMemory memory = createMemory();
+        memory.writeUserBlock(memory.allocateUser(instructions.size()), instructions);
         return memory;
     }
 
@@ -752,7 +777,7 @@ class ExecutionEngineTest {
                 programStartAddress,
                 instructionCount
         );
-        pcb.setProgramCounter(programStartAddress);
+        pcb.setProgramCounter(0);
         pcb.changeState(state);
         return pcb;
     }
@@ -864,8 +889,8 @@ class ExecutionEngineTest {
         assertFalse(exception.getMessage().isBlank());
     }
 
-    private List<Optional<Instruction>> snapshotMemory(Memory<Instruction> memory) {
-        List<Optional<Instruction>> snapshot = new ArrayList<>(memory.size());
+    private List<MemoryContent> snapshotMemory(MainMemory memory) {
+        List<MemoryContent> snapshot = new ArrayList<>(memory.size());
         for (int address = 0; address < memory.size(); address++) {
             snapshot.add(memory.read(address));
         }
@@ -873,8 +898,8 @@ class ExecutionEngineTest {
     }
 
     private void assertMemoryMatchesSnapshot(
-            Memory<Instruction> memory,
-            List<Optional<Instruction>> expected
+            MainMemory memory,
+            List<MemoryContent> expected
     ) {
         assertEquals(memory.size(), expected.size());
         for (int address = 0; address < memory.size(); address++) {

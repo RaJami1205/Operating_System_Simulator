@@ -78,7 +78,7 @@ class SimulatorOrchestratorTest {
         input.clear();
         var snapshot = simulator.snapshot();
         assertEquals(SimulatorState.PROGRAM_LOADED, snapshot.simulatorState());
-        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "READY", 32, 2, 34, 32),
+        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "READY", 32, 2, 34, 0),
                 snapshot.process().orElseThrow());
         assertEquals(List.of(new SimulatorSnapshot.ProgramEntry(32, "MOV AX, 5"),
                 new SimulatorSnapshot.ProgramEntry(33, "LOAD AX")), snapshot.program());
@@ -122,8 +122,8 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.RUNNING, first.simulatorState());
         assertEquals(5, first.cpu().orElseThrow().ax());
         assertEquals(0, first.cpu().orElseThrow().accumulator());
-        assertEquals(33, first.cpu().orElseThrow().programCounter());
-        assertEquals(33, first.process().orElseThrow().savedProgramCounter());
+        assertEquals(1, first.cpu().orElseThrow().programCounter());
+        assertEquals(1, first.process().orElseThrow().savedProgramCounter());
         assertEquals("RUNNING", first.process().orElseThrow().processState());
         assertEquals(Optional.of("MOV AX, 5"), first.cpu().orElseThrow().instructionRegister());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
@@ -134,8 +134,8 @@ class SimulatorOrchestratorTest {
         var last = simulator.snapshot();
         assertEquals(SimulatorState.FINISHED, last.simulatorState());
         assertEquals("TERMINATED", last.process().orElseThrow().processState());
-        assertEquals(34, last.cpu().orElseThrow().programCounter());
-        assertEquals(34, last.process().orElseThrow().savedProgramCounter());
+        assertEquals(2, last.cpu().orElseThrow().programCounter());
+        assertEquals(2, last.process().orElseThrow().savedProgramCounter());
         assertEquals(5, last.cpu().orElseThrow().accumulator());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
                 "LOAD AX", "LOAD", "AX"),
@@ -216,7 +216,7 @@ class SimulatorOrchestratorTest {
         assertEquals(before.program(), failed.program());
         assertEquals(before.process(), failed.process());
         assertEquals(32767, failed.cpu().orElseThrow().accumulator());
-        assertEquals(34, failed.cpu().orElseThrow().programCounter());
+        assertEquals(2, failed.cpu().orElseThrow().programCounter());
         assertEquals("ADD AX", failed.currentInstruction().orElseThrow().semanticInstruction());
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(failed, simulator.snapshot());
@@ -289,6 +289,15 @@ class SimulatorOrchestratorTest {
         assertEquals(512, simulator.snapshot().memory().size());
         assertEquals("KERNEL", simulator.snapshot().memory().get(63).region());
         assertEquals("USER", simulator.snapshot().memory().get(64).region());
+    }
+
+    @Test
+    void formatsKernelPcbAsImmutableDescriptiveText() {
+        var pcb = new io.github.rajami1205.osimulator.model.process.ProcessControlBlock(7, 32, 1);
+        var text = simulator.contentText(new io.github.rajami1205.osimulator.model.memory.PcbContent(pcb));
+        assertEquals(Optional.of("PCB PID=7"), text);
+        pcb.changeState(io.github.rajami1205.osimulator.model.process.ProcessState.TERMINATED);
+        assertEquals(Optional.of("PCB PID=7"), text);
     }
 
     private void load(List<Instruction> instructions) {

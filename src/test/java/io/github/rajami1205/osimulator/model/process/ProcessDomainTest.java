@@ -103,17 +103,17 @@ class ProcessDomainTest {
         pcb.openFiles().open("file");
         assertTrue(other.stack().isEmpty());
         assertEquals(0, other.openFiles().size());
-        var context = new CpuContext<Instruction>(100, Optional.of(new LoadInstruction(RegisterName.AX)),
+        var context = new CpuContext<Instruction>(0, Optional.of(new LoadInstruction(RegisterName.AX)),
                 1, 2, 3, 4, 5, 6, 7, new ConditionFlags(true, true));
         pcb.replaceCpuContext(context);
-        pcb.setProgramCounter(105);
-        assertEquals(context.withProgramCounter(105), pcb.cpuContext());
-        assertEquals(100, context.programCounter());
+        pcb.setProgramCounter(5);
+        assertEquals(context.withProgramCounter(5), pcb.cpuContext());
+        assertEquals(0, context.programCounter());
         assertEquals(ProcessState.NEW, pcb.state());
         var before = pcb.cpuContext();
-        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(99)));
-        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(106)));
-        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.setProgramCounter(0));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(6)));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(100)));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.setProgramCounter(-1));
         assertThrows(NullPointerException.class, () -> pcb.replaceCpuContext(null));
         assertEquals(before, pcb.cpuContext());
         pcb.setPriority(Integer.MIN_VALUE);

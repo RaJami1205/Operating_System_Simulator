@@ -24,6 +24,7 @@ import io.github.rajami1205.osimulator.model.memory.EmptyContent;
 import io.github.rajami1205.osimulator.model.memory.InstructionContent;
 import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
+import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.ArrayList;
@@ -37,6 +38,7 @@ public final class SimulatorOrchestrator {
     private final ExecutionEngine executionEngine;
     private final SimulatorLifecycle lifecycle = new SimulatorLifecycle();
     private MainMemory memory;
+    private SecondaryStorage secondaryStorage;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
@@ -50,15 +52,18 @@ public final class SimulatorOrchestrator {
         this.executionEngine = Objects.requireNonNull(executionEngine, "executionEngine must not be null");
     }
 
-    // Crea Memory y CPU válidas antes de publicar la sesión inicializada.
+    // Crea los recursos válidos antes de publicar la sesión inicializada.
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
+        SecondaryStorage newStorage = new SecondaryStorage(
+                configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
+        secondaryStorage = newStorage;
         this.configuration = configuration;
     }
 
@@ -108,10 +113,11 @@ public final class SimulatorOrchestrator {
         lifecycle.resumeExecution();
     }
 
-    // Descarta Memory, CPU y PCB y devuelve la sesión a CONFIGURING.
+    // Descarta los recursos de sesión y devuelve la sesión a CONFIGURING.
     public void reset() {
         lifecycle.reset();
         memory = null;
+        secondaryStorage = null;
         cpu = null;
         pcb = null;
         configuration = null;

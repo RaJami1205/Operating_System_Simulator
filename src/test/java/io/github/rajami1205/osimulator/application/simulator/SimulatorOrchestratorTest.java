@@ -300,6 +300,36 @@ class SimulatorOrchestratorTest {
         assertEquals(Optional.of("PCB PID=7"), text);
     }
 
+    @Test
+    void createsAndDiscardsSecondaryStorageWithoutPersistingCurrentProgram() throws Exception {
+        // Inspect ownership without exposing mutable session state to Presentation.
+        var field = SimulatorOrchestrator.class.getDeclaredField("secondaryStorage");
+        field.setAccessible(true);
+        assertNull(field.get(simulator));
+        simulator.initialize(SimulatorConfiguration.defaults());
+        var first = assertInstanceOf(
+                io.github.rajami1205.osimulator.model.storage.SecondaryStorage.class, field.get(simulator));
+        assertEquals(512, first.size());
+        assertEquals(64, first.virtualMemoryPositions());
+        assertEquals(448, first.swapStart());
+        simulator.loadProgram(List.of(new LoadInstruction(RegisterName.AX)));
+        assertTrue(first.entries().isEmpty());
+        assertThrows(IllegalStateException.class, () -> simulator.initialize(SimulatorConfiguration.defaults()));
+        assertSame(first, field.get(simulator));
+        simulator.reset();
+        assertNull(field.get(simulator));
+        simulator.reset();
+        assertNull(field.get(simulator));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 128, 127));
+        var second = assertInstanceOf(
+                io.github.rajami1205.osimulator.model.storage.SecondaryStorage.class, field.get(simulator));
+        assertNotSame(first, second);
+        assertEquals(128, second.size());
+        assertEquals(127, second.virtualMemoryPositions());
+        assertEquals(second.dataStart(), second.dataEndExclusive());
+        assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
+    }
+
     private void load(List<Instruction> instructions) {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
         simulator.loadProgram(instructions);

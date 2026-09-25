@@ -12,6 +12,8 @@ import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationEx
 import io.github.rajami1205.osimulator.model.process.PcbAddress;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.process.ProcessState;
+import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,18 +27,20 @@ public final class ProcessAdmissionService {
     private final MainMemory memory;
     private final ProcessTable processes;
     private final ProgramLoader loader;
+    private final ReadyQueue readyQueue;
     private final Map<Integer, ResidentResources> residents = new HashMap<>();
     private long nextProcessId = 1;
 
     private record ResidentResources(MemoryAllocation user, MemoryAllocation kernel, PcbAddress address) {}
 
     public ProcessAdmissionService(JobList jobs, SecondaryStorage storage, MainMemory memory,
-            ProcessTable processes, ProgramLoader loader) {
+            ProcessTable processes, ProgramLoader loader, ReadyQueue readyQueue) {
         this.jobs = Objects.requireNonNull(jobs, "jobs must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.memory = Objects.requireNonNull(memory, "memory must not be null");
         this.processes = Objects.requireNonNull(processes, "processes must not be null");
         this.loader = Objects.requireNonNull(loader, "loader must not be null");
+        this.readyQueue = Objects.requireNonNull(readyQueue, "readyQueue must not be null");
     }
 
     public AdmissionResult admit(int jobId) {
@@ -63,6 +67,7 @@ public final class ProcessAdmissionService {
         boolean resourcesPublished = false;
         boolean processPublished = false;
         boolean linkChanged = false;
+        boolean enqueued = false;
         try {
             loaded = loader.loadWithAllocation(memory, pid, program);
             memory.writePcb(kernel, 0, loaded.pcb());
@@ -78,11 +83,17 @@ public final class ProcessAdmissionService {
                 previous.setNextPcbAddress(Optional.of(address));
                 linkChanged = true;
             }
+            if (loaded.pcb().state() != ProcessState.READY) {
+                throw new IllegalStateException("Admission requires a READY PCB: " + pid);
+            }
+            readyQueue.enqueue(pid);
+            enqueued = true;
             // Copy-before-publication; no potentially failing work follows this commit.
             jobs.markAdmitted(jobId);
             nextProcessId++;
             return result;
         } catch (RuntimeException | Error failure) {
+            if (enqueued) cleanup(failure, () -> readyQueue.remove(pid));
             if (linkChanged) {
                 var tail = previous;
                 var oldLink = previousLink;

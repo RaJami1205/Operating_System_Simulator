@@ -6,6 +6,7 @@ import io.github.rajami1205.osimulator.model.instruction.*;
 import io.github.rajami1205.osimulator.model.job.*;
 import io.github.rajami1205.osimulator.model.memory.*;
 import io.github.rajami1205.osimulator.model.process.*;
+import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
 import io.github.rajami1205.osimulator.support.MemoryFaults;
@@ -18,7 +19,8 @@ class ProcessAdmissionServiceTest {
     private final SecondaryStorage storage = new SecondaryStorage(512, 64);
     private final JobList jobs = new JobList();
     private final ProcessTable table = new ProcessTable();
-    private final ProcessAdmissionService service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader());
+    private final ReadyQueue queue = new ReadyQueue();
+    private final ProcessAdmissionService service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue);
     private final Instruction instruction = new LoadInstruction(RegisterName.AX);
 
     private void submit(int jobId, int length) {
@@ -47,6 +49,7 @@ class ProcessAdmissionServiceTest {
             assertEquals(1, ((MemoryAllocation) resourcePart(resource, "kernel")).size());
         }
         assertTrue(memory.isEmpty(3));
+        assertEquals(List.of(1, 2, 3), queue.entries());
         // Actual release proves these are the original active tokens, not reconstructed bounds.
         for (var resource : resources().values()) {
             memory.release((MemoryAllocation) resourcePart(resource, "user"));
@@ -62,9 +65,11 @@ class ProcessAdmissionServiceTest {
         for (int i = 1; i <= ProcessTable.MAX_ADMITTED_PROCESSES; i++) service.admit(i);
         var before = storage.entries();
         long next = counter();
+        var queued = queue.entries();
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED),
                 service.admit(ProcessTable.MAX_ADMITTED_PROCESSES + 1));
         assertEquals(next, counter());
+        assertEquals(queued, queue.entries());
         assertEquals(JobState.PENDING, jobs.entries().getLast().state());
         assertEquals(before, storage.entries());
         assertEquals(ProcessTable.MAX_ADMITTED_PROCESSES, resources().size());
@@ -75,6 +80,7 @@ class ProcessAdmissionServiceTest {
         submit(20, 1);
         var occupied = memory.allocateKernel(32);
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY), service.admit(20));
+        assertTrue(queue.entries().isEmpty());
         assertTrue(table.entries().isEmpty());
         assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
         assertTrue(memory.isEmpty(32));
@@ -91,6 +97,7 @@ class ProcessAdmissionServiceTest {
         memory.release(left);
         memory.release(right);
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(8));
+        assertTrue(queue.entries().isEmpty());
         assertEquals(JobState.PENDING, jobs.find(8).orElseThrow().state());
         var kernel = memory.allocateKernel(32);
         assertEquals(0, kernel.base());
@@ -137,9 +144,10 @@ class ProcessAdmissionServiceTest {
         var first = table.find(1).orElseThrow();
         var oldLink = Optional.of(new PcbAddress(17));
         first.setNextPcbAddress(oldLink);
-        var failure = failJobPublication(null);
+        var failure = failJobPublication(() -> assertEquals(List.of(1, 2), queue.entries()));
         assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(20)));
         assertEquals(oldLink, first.nextPcbAddress());
+        assertEquals(List.of(1), queue.entries());
         assertEquals(List.of(first), table.entries());
         assertEquals(Set.of(1), resources().keySet());
         assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
@@ -147,6 +155,7 @@ class ProcessAdmissionServiceTest {
         assertTrue(memory.isEmpty(1));
         assertTrue(memory.isEmpty(34));
         assertEquals(new AdmissionResult.Admitted(2), service.admit(20));
+        assertEquals(List.of(1, 2), queue.entries());
         assertEquals(Optional.of(new PcbAddress(1)), first.nextPcbAddress());
         assertEquals(34, table.find(2).orElseThrow().memoryBounds().base());
     }
@@ -158,6 +167,7 @@ class ProcessAdmissionServiceTest {
         var failure = new IllegalStateException("write failed");
         faults.writeFailure = failure;
         assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(1)));
+        assertTrue(queue.entries().isEmpty());
         assertEquals(1, faults.releases);
         assertEquals(0, memory.allocateKernel(32).base());
         assertEquals(32, memory.allocateUser(96).base());
@@ -250,6 +260,37 @@ class ProcessAdmissionServiceTest {
                 () -> service.admit(1));
         assertArrayEquals(new Throwable[]{kernel.releaseFailure}, failure.getSuppressed());
         assertEquals(JobState.PENDING, jobs.find(1).orElseThrow().state());
+    }
+
+    @Test
+    void duplicateEnqueuePreservesExistingMembershipAndRollsBackNewResources() throws Exception {
+        submit(10, 1);
+        submit(20, 2);
+        service.admit(10);
+        var first = table.find(1).orElseThrow();
+        queue.enqueue(2);
+        var before = queue.entries();
+        assertThrows(IllegalStateException.class, () -> service.admit(20));
+        assertEquals(before, queue.entries());
+        assertEquals(List.of(first), table.entries());
+        assertTrue(first.nextPcbAddress().isEmpty());
+        assertEquals(Set.of(1), resources().keySet());
+        assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
+        assertEquals(2, counter());
+        assertTrue(memory.isEmpty(1));
+        assertTrue(memory.isEmpty(33));
+        queue.remove(2);
+        assertEquals(new AdmissionResult.Admitted(2), service.admit(20));
+        assertEquals(List.of(1, 2), queue.entries());
+        assertEquals(33, table.find(2).orElseThrow().memoryBounds().base());
+        assertThrows(IllegalStateException.class, () -> service.admit(20));
+        assertEquals(List.of(1, 2), queue.entries());
+    }
+
+    @Test
+    void requiresSharedQueue() {
+        assertThrows(NullPointerException.class,
+                () -> new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), null));
     }
 
     private IllegalStateException failJobPublication(Runnable beforeFailure) throws Exception {

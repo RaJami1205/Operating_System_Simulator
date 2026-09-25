@@ -425,6 +425,43 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.PROGRAM_LOADED, simulator.snapshot().simulatorState());
     }
 
+    @Test
+    void schedulingSelectsWithoutDispatchAndResetDiscardsCandidates() {
+        assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertTrue(simulator.selectNextReadyProcess().isEmpty());
+        var image = new ProgramImage("first", List.of(new LoadInstruction(RegisterName.AX)));
+        simulator.submitProgram(image);
+        simulator.submitProgram(new ProgramImage("second", image.instructions()));
+        simulator.attemptNextAdmission();
+        simulator.attemptNextAdmission();
+        var before = simulator.snapshot();
+        var jobsBefore = simulator.jobs();
+        assertEquals(Optional.of(1), simulator.selectNextReadyProcess());
+        assertEquals(Optional.of(1), simulator.selectNextReadyProcess());
+        assertEquals(before, simulator.snapshot());
+        assertEquals(jobsBefore, simulator.jobs());
+        assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
+        assertTrue(simulator.snapshot().process().isEmpty());
+        assertThrows(IllegalStateException.class, simulator::start);
+        assertThrows(IllegalStateException.class, () -> simulator.loadProgram(image.instructions()));
+        simulator.reset();
+        assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertTrue(simulator.selectNextReadyProcess().isEmpty());
+        simulator.submitProgram(image);
+        simulator.attemptNextAdmission();
+        assertEquals(Optional.of(1), simulator.selectNextReadyProcess());
+        simulator.reset();
+        simulator.initialize(SimulatorConfiguration.defaults());
+        simulator.loadProgram(image.instructions());
+        assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
+        simulator.start();
+        assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
+        simulator.step();
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+    }
+
     private void load(List<Instruction> instructions) {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
         simulator.loadProgram(instructions);

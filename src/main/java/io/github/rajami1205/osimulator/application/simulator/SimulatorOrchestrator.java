@@ -3,6 +3,10 @@ package io.github.rajami1205.osimulator.application.simulator;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorLifecycle;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
+import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
+import io.github.rajami1205.osimulator.model.job.Job;
+import io.github.rajami1205.osimulator.model.job.JobList;
+import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.CpuSnapshot;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.InstructionSnapshot;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.MemoryEntry;
@@ -39,6 +43,8 @@ public final class SimulatorOrchestrator {
     private final SimulatorLifecycle lifecycle = new SimulatorLifecycle();
     private MainMemory memory;
     private SecondaryStorage secondaryStorage;
+    private JobList jobList;
+    private JobSubmissionService jobSubmissionService;
     private CpuRegisters<Instruction> cpu;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
@@ -60,16 +66,31 @@ public final class SimulatorOrchestrator {
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
+        JobList newJobs = new JobList();
+        JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
         secondaryStorage = newStorage;
+        jobList = newJobs;
+        jobSubmissionService = newSubmissionService;
         this.configuration = configuration;
     }
 
     /** Configuración inmutable de la sesión, ausente antes de Initialize y después de Reset. */
     public Optional<SimulatorConfiguration> configuration() {
         return Optional.ofNullable(configuration);
+    }
+
+    /** Presenta trabajo sin crear un proceso ni cambiar el lifecycle. */
+    public Job submitProgram(ProgramImage program) {
+        requireState("submitProgram", SimulatorState.INITIALIZED);
+        return jobSubmissionService.submit(program);
+    }
+
+    /** Vista histórica inmutable; vacía cuando no existe sesión. */
+    public List<Job> jobs() {
+        return jobList == null ? List.of() : jobList.entries();
     }
 
     // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
@@ -118,6 +139,8 @@ public final class SimulatorOrchestrator {
         lifecycle.reset();
         memory = null;
         secondaryStorage = null;
+        jobList = null;
+        jobSubmissionService = null;
         cpu = null;
         pcb = null;
         configuration = null;

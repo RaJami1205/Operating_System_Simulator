@@ -330,6 +330,43 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
     }
 
+    @Test
+    void submissionsPreserveMachineAndLifecycleAndResetRestartsIdentity() {
+        var image = new io.github.rajami1205.osimulator.model.program.ProgramImage(
+                "p", List.of(new LoadInstruction(RegisterName.AX)));
+        assertTrue(simulator.jobs().isEmpty());
+        assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
+        simulator.initialize(SimulatorConfiguration.defaults());
+        var before = simulator.snapshot();
+        assertEquals(1, simulator.submitProgram(image).jobId());
+        assertEquals(2, simulator.submitProgram(
+                new io.github.rajami1205.osimulator.model.program.ProgramImage("q", image.instructions())).jobId());
+        assertEquals(before, simulator.snapshot());
+        assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
+        assertThrows(IllegalStateException.class, simulator::start);
+        var history = simulator.jobs();
+        assertThrows(UnsupportedOperationException.class, history::clear);
+        assertThrows(io.github.rajami1205.osimulator.model.storage.exception.StorageException.class,
+                () -> simulator.submitProgram(image));
+        assertEquals(before, simulator.snapshot());
+        // The existing load/execution capability still works alongside pending Jobs.
+        simulator.loadProgram(image.instructions());
+        assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
+        simulator.start();
+        assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
+        simulator.pause();
+        assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
+        simulator.resume();
+        simulator.step();
+        assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
+        assertEquals(history, simulator.jobs());
+        simulator.reset();
+        assertTrue(simulator.jobs().isEmpty());
+        assertEquals(2, history.size());
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertEquals(1, simulator.submitProgram(image).jobId());
+    }
+
     private void load(List<Instruction> instructions) {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
         simulator.loadProgram(instructions);

@@ -110,7 +110,7 @@ class SimulatorOrchestratorTest {
     }
 
     @Test
-    void startDoesNotExecuteAndEachStepUsesIrUntilImmediateFinish() {
+    void startDoesNotExecuteAndCompletedInstructionsPreserveIrUntilFinish() {
         load(List.of(new MovInstruction(RegisterName.AX, 5), new LoadInstruction(RegisterName.AX)));
         var loaded = simulator.snapshot();
         simulator.start();
@@ -120,7 +120,7 @@ class SimulatorOrchestratorTest {
         assertEquals(loaded.process(), started.process());
         assertTrue(started.currentInstruction().isEmpty());
 
-        simulator.step();
+        completeInstruction();
         var first = simulator.snapshot();
         assertEquals(SimulatorState.RUNNING, first.simulatorState());
         assertEquals(5, first.cpu().orElseThrow().ax());
@@ -133,7 +133,7 @@ class SimulatorOrchestratorTest {
                 "MOV AX, 5", "MOV", "AX, 5"),
                 first.currentInstruction().orElseThrow());
 
-        simulator.step();
+        completeInstruction();
         var last = simulator.snapshot();
         assertEquals(SimulatorState.FINISHED, last.simulatorState());
         assertEquals("TERMINATED", last.process().orElseThrow().processState());
@@ -157,7 +157,7 @@ class SimulatorOrchestratorTest {
         var operands = List.of("AX, -5", "AX", "BX", "CX", "DX");
         simulator.start();
         for (int index = 0; index < expected.size(); index++) {
-            simulator.step();
+            completeInstruction();
             var snapshot = simulator.snapshot();
             var instruction = snapshot.currentInstruction().orElseThrow();
             assertEquals(expected.get(index), instruction.semanticInstruction());
@@ -173,7 +173,7 @@ class SimulatorOrchestratorTest {
     void pauseAndResumeOnlyChangeSimulatorState() {
         load(List.of(new MovInstruction(RegisterName.AX, 5), new LoadInstruction(RegisterName.AX)));
         simulator.start();
-        simulator.step();
+        completeInstruction();
         var running = simulator.snapshot();
         simulator.pause();
         var paused = simulator.snapshot();
@@ -184,7 +184,7 @@ class SimulatorOrchestratorTest {
         assertEquals(paused, simulator.snapshot());
         simulator.resume();
         assertEquals(running, simulator.snapshot());
-        simulator.step();
+        completeInstruction();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
     }
 
@@ -209,10 +209,10 @@ class SimulatorOrchestratorTest {
         load(List.of(new MovInstruction(RegisterName.AX, 32767), new LoadInstruction(RegisterName.AX),
                 new AddInstruction(RegisterName.AX)));
         simulator.start();
-        simulator.step();
-        simulator.step();
+        completeInstruction();
+        completeInstruction();
         var before = simulator.snapshot();
-        assertThrows(ExecutionEngineException.class, simulator::step);
+        assertThrows(ExecutionEngineException.class, this::completeInstruction);
         var failed = simulator.snapshot();
         assertEquals(SimulatorState.ERROR, failed.simulatorState());
         assertEquals(before.memory(), failed.memory());
@@ -236,7 +236,7 @@ class SimulatorOrchestratorTest {
         assertThrows(UnsupportedOperationException.class, () -> historical.program().clear());
         assertThrows(UnsupportedOperationException.class, () -> historical.memory().clear());
         simulator.start();
-        simulator.step();
+        completeInstruction();
         simulator.reset();
         assertEmptySession(simulator.snapshot());
         assertEquals(SimulatorState.PROGRAM_LOADED, historical.simulatorState());
@@ -360,7 +360,7 @@ class SimulatorOrchestratorTest {
         simulator.pause();
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         simulator.resume();
-        simulator.step();
+        completeInstruction();
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         assertEquals(history, simulator.jobs());
         simulator.reset();
@@ -408,7 +408,7 @@ class SimulatorOrchestratorTest {
         simulator.loadProgram(program.instructions());
         assertThrows(IllegalStateException.class, simulator::attemptNextAdmission);
         simulator.start();
-        simulator.step();
+        completeInstruction();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
     }
 
@@ -458,8 +458,48 @@ class SimulatorOrchestratorTest {
         assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
         simulator.start();
         assertThrows(IllegalStateException.class, simulator::selectNextReadyProcess);
-        simulator.step();
+        completeInstruction();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+    }
+
+    @Test
+    void pauseResumeAndResetPreserveOrDiscardPartialTicks() {
+        load(List.of(new MovInstruction(RegisterName.AX, 5), new AddInstruction(RegisterName.AX)));
+        simulator.start();
+        simulator.step();
+        simulator.step(); // ADD 1/3
+        var partial = simulator.snapshot();
+        assertEquals(1, partial.cpu().orElseThrow().programCounter());
+        assertEquals(0, partial.cpu().orElseThrow().accumulator());
+        assertEquals("ADD AX", partial.currentInstruction().orElseThrow().semanticInstruction());
+        simulator.pause();
+        assertThrows(IllegalStateException.class, simulator::step);
+        simulator.resume();
+        assertEquals(partial, simulator.snapshot());
+        simulator.step(); // ADD 2/3
+        assertEquals(partial, simulator.snapshot());
+        simulator.step(); // ADD 3/3
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+        assertEquals(5, simulator.snapshot().cpu().orElseThrow().accumulator());
+        simulator.reset();
+        load(List.of(new AddInstruction(RegisterName.AX)));
+        simulator.start();
+        simulator.step();
+        simulator.reset();
+        load(List.of(new AddInstruction(RegisterName.AX)));
+        simulator.start();
+        for (int tick = 1; tick <= 3; tick++) {
+            simulator.step(); // Same entry point used by each Automatic callback.
+            assertEquals(tick == 3 ? SimulatorState.FINISHED : SimulatorState.RUNNING,
+                    simulator.snapshot().simulatorState());
+        }
+    }
+
+    private void completeInstruction() {
+        int pc = simulator.snapshot().cpu().orElseThrow().programCounter();
+        do { simulator.step(); }
+        while (simulator.snapshot().simulatorState() == SimulatorState.RUNNING
+                && simulator.snapshot().cpu().orElseThrow().programCounter() == pc);
     }
 
     private void load(List<Instruction> instructions) {

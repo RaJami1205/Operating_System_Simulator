@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
+import io.github.rajami1205.osimulator.application.process.AdmissionResult;
+import io.github.rajami1205.osimulator.model.job.JobState;
+import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
@@ -365,6 +368,61 @@ class SimulatorOrchestratorTest {
         assertEquals(2, history.size());
         simulator.initialize(SimulatorConfiguration.defaults());
         assertEquals(1, simulator.submitProgram(image).jobId());
+    }
+
+    @Test
+    void admissionPreservesIdleCpuAndLifecycleAndProtectsLegacyLoading() {
+        assertThrows(IllegalStateException.class, simulator::attemptNextAdmission);
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertTrue(simulator.attemptNextAdmission().isEmpty());
+        var before = simulator.snapshot();
+        var program = new ProgramImage("resident", List.of(new LoadInstruction(RegisterName.AX)));
+        simulator.submitProgram(program);
+        var history = simulator.jobs();
+        assertEquals(Optional.of(new AdmissionResult.Admitted(1)), simulator.attemptNextAdmission());
+        var after = simulator.snapshot();
+        assertEquals(SimulatorState.INITIALIZED, after.simulatorState());
+        assertEquals(before.cpu(), after.cpu());
+        assertEquals(before.currentInstruction(), after.currentInstruction());
+        assertTrue(after.process().isEmpty());
+        assertTrue(after.program().isEmpty());
+        assertEquals(Optional.of("PCB PID=1"), after.memory().getFirst().content());
+        assertEquals(Optional.of("LOAD AX"), after.memory().get(32).content());
+        assertEquals(JobState.ADMITTED, simulator.jobs().getFirst().state());
+        assertEquals(JobState.PENDING, history.getFirst().state());
+        assertThrows(IllegalStateException.class, simulator::start);
+        assertThrows(IllegalStateException.class, simulator::step);
+        assertThrows(IllegalStateException.class, () -> simulator.loadProgram(program.instructions()));
+        assertEquals(after, simulator.snapshot());
+        simulator.submitProgram(new ProgramImage("next", program.instructions()));
+        assertEquals(Optional.of(new AdmissionResult.Admitted(2)), simulator.attemptNextAdmission());
+        simulator.reset();
+        assertEmptySession(simulator.snapshot());
+        assertTrue(simulator.jobs().isEmpty());
+        assertThrows(IllegalStateException.class, simulator::attemptNextAdmission);
+        simulator.initialize(SimulatorConfiguration.defaults());
+        simulator.submitProgram(program);
+        assertEquals(Optional.of(new AdmissionResult.Admitted(1)), simulator.attemptNextAdmission());
+        simulator.reset();
+        simulator.initialize(SimulatorConfiguration.defaults());
+        simulator.loadProgram(program.instructions());
+        assertThrows(IllegalStateException.class, simulator::attemptNextAdmission);
+        simulator.start();
+        simulator.step();
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+    }
+
+    @Test
+    void waitingAdmissionPreservesInitializedSessionAndAllowsLegacyFlow() {
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.submitProgram(new ProgramImage("tooLarge", Collections.nCopies(97, new LoadInstruction(RegisterName.AX))));
+        var before = simulator.snapshot();
+        assertEquals(Optional.of(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY)),
+                simulator.attemptNextAdmission());
+        assertEquals(before, simulator.snapshot());
+        assertEquals(JobState.PENDING, simulator.jobs().getFirst().state());
+        simulator.loadProgram(List.of(new LoadInstruction(RegisterName.BX)));
+        assertEquals(SimulatorState.PROGRAM_LOADED, simulator.snapshot().simulatorState());
     }
 
     private void load(List<Instruction> instructions) {

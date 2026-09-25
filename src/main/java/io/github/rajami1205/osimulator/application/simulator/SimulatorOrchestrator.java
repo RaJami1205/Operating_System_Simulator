@@ -22,6 +22,8 @@ import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.P
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
+import io.github.rajami1205.osimulator.model.execution.ExecutionProgress;
+import io.github.rajami1205.osimulator.model.execution.TickResult;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.AddInstruction;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
@@ -37,7 +39,6 @@ import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
-import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -58,6 +59,7 @@ public final class SimulatorOrchestrator {
     private ReadyQueue readyQueue;
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
+    private ExecutionProgress executionProgress;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
 
@@ -76,6 +78,7 @@ public final class SimulatorOrchestrator {
         Objects.requireNonNull(configuration, "configuration must not be null");
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
+        ExecutionProgress newProgress = new ExecutionProgress();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
@@ -89,6 +92,7 @@ public final class SimulatorOrchestrator {
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
+        executionProgress = newProgress;
         secondaryStorage = newStorage;
         jobList = newJobs;
         jobSubmissionService = newSubmissionService;
@@ -145,20 +149,18 @@ public final class SimulatorOrchestrator {
         lifecycle.startExecution();
     }
 
-    // Ejecuta una instrucción y propaga al lifecycle la finalización o el fallo.
+    // Consume un tick y propaga al lifecycle la finalización o el fallo.
     public void step() {
         requireState("step", SimulatorState.RUNNING);
         if (memory == null || cpu == null || pcb == null) {
             throw new IllegalStateException("Step requires active Memory, CPU and PCB");
         }
         try {
-            executionEngine.executeNext(memory, cpu, pcb);
+            TickResult result = executionEngine.executeTick(memory, cpu, pcb, executionProgress);
+            if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
         } catch (ExecutionEngineException exception) {
             lifecycle.markError();
             throw exception;
-        }
-        if (pcb.state() == ProcessState.TERMINATED) {
-            lifecycle.finishExecution();
         }
     }
 
@@ -185,6 +187,7 @@ public final class SimulatorOrchestrator {
         readyQueue = null;
         processScheduler = null;
         cpu = null;
+        executionProgress = null;
         pcb = null;
         configuration = null;
     }

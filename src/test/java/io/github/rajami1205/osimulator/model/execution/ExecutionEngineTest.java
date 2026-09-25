@@ -48,15 +48,15 @@ class ExecutionEngineTest {
         assertAll(
                 () -> assertThrows(
                         NullPointerException.class,
-                        () -> engine.executeNext(null, cpu, pcb)
+                        () -> completeInstruction(engine, null, cpu, pcb)
                 ),
                 () -> assertThrows(
                         NullPointerException.class,
-                        () -> engine.executeNext(memory, null, pcb)
+                        () -> completeInstruction(engine, memory, null, pcb)
                 ),
                 () -> assertThrows(
                         NullPointerException.class,
-                        () -> engine.executeNext(memory, cpu, null)
+                        () -> completeInstruction(engine, memory, cpu, null)
                 )
         );
     }
@@ -73,7 +73,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertValidMessage(exception);
@@ -100,7 +100,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertValidMessage(exception);
@@ -125,7 +125,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertValidMessage(exception);
@@ -149,7 +149,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertValidMessage(exception);
@@ -170,7 +170,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(1000, 2, ProcessState.READY);
         pcb.setProgramCounter(2);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertEquals(ProcessState.TERMINATED, pcb.state());
         assertEquals(2, cpu.programCounter());
@@ -196,7 +196,7 @@ class ExecutionEngineTest {
         pcb.setProgramCounter(pcb.instructionCount());
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(pcb.instructionCount(), cpu.programCounter()),
@@ -220,7 +220,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertValidMessage(exception);
@@ -250,7 +250,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertOnlyRegisterChanged(destination, -5, cpuBeforeExecution, cpu);
         assertAll(
@@ -279,7 +279,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.RUNNING);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
@@ -307,7 +307,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertOnlyRegisterChanged(destination, 40, cpuBeforeExecution, cpu);
         assertAll(
@@ -343,7 +343,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
@@ -379,7 +379,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.READY);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
@@ -407,7 +407,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.RUNNING);
         pcb.setProgramCounter(1);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(15, cpu.accumulator()),
@@ -425,7 +425,7 @@ class ExecutionEngineTest {
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(17, cpu.readRegister(RegisterName.DX)),
@@ -445,7 +445,7 @@ class ExecutionEngineTest {
         cpu.writeRegister(RegisterName.CX, 60);
         ProcessControlBlock pcb = createPcb(127, 1, ProcessState.READY);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(60, cpu.accumulator()),
@@ -464,7 +464,7 @@ class ExecutionEngineTest {
         CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(value, cpu.readRegister(register)),
@@ -487,7 +487,7 @@ class ExecutionEngineTest {
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 1, ProcessState.READY);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
-        new ExecutionEngine().executeNext(memory, cpu, pcb);
+        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
@@ -521,7 +521,7 @@ class ExecutionEngineTest {
 
         ExecutionEngineException exception = assertThrows(
                 ExecutionEngineException.class,
-                () -> new ExecutionEngine().executeNext(memory, cpu, pcb)
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb)
         );
 
         assertAll(
@@ -544,7 +544,7 @@ class ExecutionEngineTest {
     }
 
     @Test
-    void shouldExecuteRepresentativeProgramOneStepAtATime() {
+    void shouldPreserveRepresentativeProgramSemanticsThroughTicks() {
         List<Instruction> program = List.of(
                 new MovInstruction(RegisterName.AX, 5),
                 new LoadInstruction(RegisterName.AX),
@@ -562,23 +562,23 @@ class ExecutionEngineTest {
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
         ExecutionEngine engine = new ExecutionEngine();
 
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertStep(cpu, pcb, program.get(0), 1, ProcessState.RUNNING);
         assertEquals(5, cpu.readRegister(RegisterName.AX));
 
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertStep(cpu, pcb, program.get(1), 2, ProcessState.RUNNING);
         assertEquals(5, cpu.accumulator());
 
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertStep(cpu, pcb, program.get(2), 3, ProcessState.RUNNING);
         assertEquals(10, cpu.accumulator());
 
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertStep(cpu, pcb, program.get(3), 4, ProcessState.RUNNING);
         assertEquals(10, cpu.readRegister(RegisterName.BX));
 
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertStep(cpu, pcb, program.get(4), 5, ProcessState.TERMINATED);
         assertAll(
                 () -> assertEquals(5, cpu.accumulator()),
@@ -609,8 +609,8 @@ class ExecutionEngineTest {
                 ProcessState.READY
         );
 
-        engine.executeNext(firstMemory, firstCpu, firstPcb);
-        engine.executeNext(secondMemory, secondCpu, secondPcb);
+        completeInstruction(engine, firstMemory, firstCpu, firstPcb);
+        completeInstruction(engine, secondMemory, secondCpu, secondPcb);
 
         assertAll(
                 () -> assertEquals(7, firstCpu.readRegister(RegisterName.AX)),
@@ -656,13 +656,13 @@ class ExecutionEngineTest {
 
         assertThrows(
                 ExecutionEngineException.class,
-                () -> engine.executeNext(failingMemory, failingCpu, failingPcb)
+                () -> completeInstruction(engine, failingMemory, failingCpu, failingPcb)
         );
         CpuState failingCpuAfterFailure = snapshotCpu(failingCpu);
         ProcessState failingStateAfterFailure = failingPcb.state();
         int failingPcbProgramCounterAfterFailure = failingPcb.programCounter();
 
-        engine.executeNext(successfulMemory, successfulCpu, successfulPcb);
+        completeInstruction(engine, successfulMemory, successfulCpu, successfulPcb);
 
         assertAll(
                 () -> assertEquals(-6, successfulCpu.readRegister(RegisterName.CX)),
@@ -735,7 +735,7 @@ class ExecutionEngineTest {
         var pcb = createPcb(first.base(), first.size(), ProcessState.READY);
         var cpu = new CpuRegisters<Instruction>();
         var engine = new ExecutionEngine();
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertEquals(7, cpu.readRegister(RegisterName.AX));
         assertEquals(1, cpu.programCounter());
         assertEquals(1, pcb.programCounter());
@@ -744,10 +744,16 @@ class ExecutionEngineTest {
         assertEquals(34, memory.allocateUser(1).base());
         // A restored terminal marker must not fetch the following program.
         pcb.changeState(ProcessState.READY);
-        engine.executeNext(memory, cpu, pcb);
+        completeInstruction(engine, memory, cpu, pcb);
         assertEquals(7, cpu.readRegister(RegisterName.AX));
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
         assertEquals(ProcessState.TERMINATED, pcb.state());
+    }
+
+    // Semantic regression helper: completes an instruction through the public tick API only.
+    private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
+        var progress = new ExecutionProgress();
+        while (engine.executeTick(memory, cpu, pcb, progress) == TickResult.IN_PROGRESS) { }
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {

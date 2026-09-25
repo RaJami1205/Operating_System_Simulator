@@ -16,51 +16,66 @@ import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
 
 /**
- * Ejecuta un paso de instrucción semántica para un proceso simulado.
+ * Consume ticks sin conservar estado de sesión dentro del engine.
  */
 public final class ExecutionEngine {
 
-    // Ejecuta como máximo una instrucción y actualiza CPU, PC y estado del proceso.
-    public void executeNext(
+    // Consume un tick; los efectos semánticos se aplican únicamente en el tick final.
+    public TickResult executeTick(
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
-            ProcessControlBlock pcb
+            ProcessControlBlock pcb,
+            ExecutionProgress progress
     ) {
         Objects.requireNonNull(memory, "memory must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
         Objects.requireNonNull(pcb, "pcb must not be null");
+        Objects.requireNonNull(progress, "progress must not be null");
 
         validateExecutableState(pcb);
+        progress.validateContext(memory, cpu, pcb);
 
         int currentProgramCounter = pcb.programCounter();
         int instructionCount = pcb.instructionCount();
         if (currentProgramCounter == instructionCount) {
             cpu.setProgramCounter(instructionCount);
             pcb.changeState(ProcessState.TERMINATED);
-            return;
+            return TickResult.PROGRAM_FINISHED;
         }
 
-        Instruction instruction;
+        if (progress.isIdle()) {
+            Instruction instruction;
+            try {
+                instruction = memory.readInstruction(pcb.memoryBounds(), currentProgramCounter);
+            } catch (MemoryProtectionException exception) {
+                throw new ExecutionEngineException("Unable to fetch process instruction", exception);
+            }
+
+            cpu.setProgramCounter(currentProgramCounter);
+            cpu.loadInstructionRegister(instruction);
+            if (pcb.state() == ProcessState.READY) {
+                pcb.changeState(ProcessState.RUNNING);
+            }
+            progress.begin(memory, cpu, pcb, instruction);
+        }
+
+        if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
         try {
-            instruction = memory.readInstruction(pcb.memoryBounds(), currentProgramCounter);
-        } catch (MemoryProtectionException exception) {
-            throw new ExecutionEngineException("Unable to fetch process instruction", exception);
+            executeInstruction(progress.instruction().orElseThrow(), cpu);
+        } catch (RuntimeException | Error failure) {
+            progress.clear();
+            throw failure;
         }
-
-        cpu.setProgramCounter(currentProgramCounter);
-        cpu.loadInstructionRegister(instruction);
-        if (pcb.state() == ProcessState.READY) {
-            pcb.changeState(ProcessState.RUNNING);
-        }
-
-        executeInstruction(instruction, cpu);
 
         int nextProgramCounter = currentProgramCounter + 1;
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
+        progress.clear();
         if (nextProgramCounter == instructionCount) {
             pcb.changeState(ProcessState.TERMINATED);
+            return TickResult.PROGRAM_FINISHED;
         }
+        return TickResult.INSTRUCTION_COMPLETED;
     }
 
     // Permite ejecutar únicamente procesos READY o RUNNING.

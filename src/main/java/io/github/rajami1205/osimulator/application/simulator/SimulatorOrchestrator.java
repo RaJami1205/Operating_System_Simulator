@@ -27,6 +27,14 @@ import io.github.rajami1205.osimulator.model.execution.TickResult;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.AddInstruction;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.instruction.CmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JeInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JneInstruction;
+import io.github.rajami1205.osimulator.model.instruction.ParamInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PushInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PopInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacement;
 import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
@@ -258,7 +266,16 @@ public final class SimulatorOrchestrator {
             case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
                 case ImmediateOperand immediate -> Integer.toString(immediate.value());
                 case RegisterOperand register -> register.register().name();
+                case BranchDisplacement ignored -> throw new IllegalStateException("Invalid MOV source");
             };
+            case CmpInstruction cmp -> cmp.left().name() + ", " + cmp.right().name();
+            case JmpInstruction jump -> displacementText(jump.displacement());
+            case JeInstruction jump -> displacementText(jump.displacement());
+            case JneInstruction jump -> displacementText(jump.displacement());
+            case PushInstruction push -> push.source().name();
+            case PopInstruction pop -> pop.destination().name();
+            case ParamInstruction param -> param.values().stream().map(value -> Integer.toString(value.value()))
+                    .collect(java.util.stream.Collectors.joining(", "));
             case IncInstruction inc -> inc.target().map(RegisterName::name).orElse("");
             case DecInstruction dec -> dec.target().map(RegisterName::name).orElse("");
             case SwapInstruction swap -> swap.left().name() + ", " + swap.right().name();
@@ -267,6 +284,10 @@ public final class SimulatorOrchestrator {
             case AddInstruction add -> add.source().name();
             case SubInstruction sub -> sub.source().name();
         };
+    }
+
+    private String displacementText(BranchDisplacement displacement) {
+        return displacement.value() > 0 ? "+" + displacement.value() : Integer.toString(displacement.value());
     }
 
     // Rechaza operaciones que no corresponden al estado actual de la sesión.

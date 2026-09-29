@@ -14,7 +14,8 @@ public sealed interface Instruction
                 SubInstruction,
                 IncInstruction,
                 DecInstruction,
-                SwapInstruction {
+                SwapInstruction, CmpInstruction, JmpInstruction, JeInstruction, JneInstruction,
+                ParamInstruction, PushInstruction, PopInstruction {
 
     // Identifica la operación semántica representada.
     Opcode opcode();

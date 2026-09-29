@@ -20,6 +20,9 @@ public record MovInstruction(RegisterName destination, InstructionOperand source
         Objects.requireNonNull(destination, "destination must not be null");
 
         Objects.requireNonNull(source, "source must not be null");
+        if (!(source instanceof RegisterOperand) && !(source instanceof ImmediateOperand)) {
+            throw new IllegalArgumentException("MOV source must be a register or immediate");
+        }
     }
 
     public MovInstruction(RegisterName destination, int immediate) {

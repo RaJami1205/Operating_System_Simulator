@@ -28,7 +28,7 @@ class InstructionTest {
                     Opcode.SUB,
                     Opcode.INC,
                     Opcode.DEC,
-                    Opcode.SWAP
+                    Opcode.SWAP, Opcode.CMP, Opcode.JMP, Opcode.JE, Opcode.JNE, Opcode.PARAM, Opcode.PUSH, Opcode.POP
                 },
                 Opcode.values()
         );

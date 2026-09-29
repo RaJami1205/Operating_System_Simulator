@@ -516,6 +516,24 @@ class SimulatorOrchestratorTest {
         assertEquals(6, simulator.snapshot().cpu().orElseThrow().bx());
     }
 
+    @Test
+    void formatsControlFlowAndStackAcrossProgramMemoryAndCurrentInstruction() {
+        var parser = new io.github.rajami1205.osimulator.infrastructure.asm.AsmParser();
+        var expected = List.of("CMP AX, BX", "JMP +2", "JMP -2", "JMP 0", "JE +1", "JNE -1",
+                "PARAM 1, 2, 3", "PUSH AX", "POP BX");
+        for (String text : expected) {
+            simulator.reset();
+            load(parser.parse(List.of(text)));
+            assertEquals(text, simulator.snapshot().program().getFirst().instruction());
+            assertEquals(Optional.of(text), simulator.snapshot().memory().get(32).content());
+            simulator.start();
+            if (text.equals("POP BX")) assertThrows(ExecutionEngineException.class, simulator::step);
+            else simulator.step();
+            assertEquals(text, simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
+            assertEquals(Optional.of(text), simulator.snapshot().cpu().orElseThrow().instructionRegister());
+        }
+    }
+
     private void completeInstruction() {
         int pc = simulator.snapshot().cpu().orElseThrow().programCounter();
         do { simulator.step(); }

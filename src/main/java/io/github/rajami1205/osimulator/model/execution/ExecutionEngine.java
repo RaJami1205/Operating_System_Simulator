@@ -19,6 +19,17 @@ import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionEx
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.instruction.CmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JeInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JneInstruction;
+import io.github.rajami1205.osimulator.model.instruction.ParamInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PushInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PopInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacement;
+import io.github.rajami1205.osimulator.model.cpu.ConditionFlags;
+import io.github.rajami1205.osimulator.model.process.exception.ProcessStackOverflowException;
+import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnderflowException;
 
 /**
  * Consume ticks sin conservar estado de sesión dentro del engine.
@@ -65,14 +76,14 @@ public final class ExecutionEngine {
         }
 
         if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
+        int nextProgramCounter;
         try {
-            executeInstruction(progress.instruction().orElseThrow(), cpu);
+            nextProgramCounter = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter);
         } catch (RuntimeException | Error failure) {
             progress.clear();
             throw failure;
         }
 
-        int nextProgramCounter = currentProgramCounter + 1;
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
         progress.clear();
@@ -93,16 +104,33 @@ public final class ExecutionEngine {
     }
 
     // Aplica la semántica de la instrucción y traduce fallos de rango de la CPU.
-    private void executeInstruction(
+    private int executeInstruction(
             Instruction instruction,
-            CpuRegisters<Instruction> cpu
+            CpuRegisters<Instruction> cpu,
+            ProcessControlBlock pcb,
+            int currentPc
     ) {
         try {
             switch (instruction) {
+                case CmpInstruction cmp -> cpu.writeConditionFlags(new ConditionFlags(
+                        cpu.readRegister(cmp.left()) == cpu.readRegister(cmp.right()),
+                        cpu.conditionFlags().overflow()));
+                case JmpInstruction jump -> { return branchTarget(currentPc, jump.displacement(), pcb.instructionCount()); }
+                case JeInstruction jump -> {
+                    if (cpu.conditionFlags().equal()) return branchTarget(currentPc, jump.displacement(), pcb.instructionCount());
+                }
+                case JneInstruction jump -> {
+                    if (!cpu.conditionFlags().equal()) return branchTarget(currentPc, jump.displacement(), pcb.instructionCount());
+                }
+                case PushInstruction push -> pcb.stack().push(cpu.readRegister(push.source()));
+                case PopInstruction pop -> cpu.writeRegister(pop.destination(), pcb.stack().pop());
+                case ParamInstruction param -> pcb.stack().pushAll(
+                        param.values().reversed().stream().map(ImmediateOperand::value).toList());
                 case MovInstruction mov ->
                         cpu.writeRegister(mov.destination(), switch (mov.source()) {
                             case ImmediateOperand immediate -> immediate.value();
                             case RegisterOperand register -> cpu.readRegister(register.register());
+                            case BranchDisplacement ignored -> throw new ExecutionEngineException("Invalid MOV source");
                         });
                 case IncInstruction inc -> {
                     if (inc.target().isPresent()) {
@@ -135,11 +163,22 @@ public final class ExecutionEngine {
                                 cpu.accumulator() - cpu.readRegister(sub.source())
                         );
             }
+        } catch (ProcessStackOverflowException | ProcessStackUnderflowException exception) {
+            throw new ExecutionEngineException("Process stack operation failed", exception);
         } catch (InvalidRegisterValueException exception) {
             throw new ExecutionEngineException(
                     "Instruction result violates the CPU register range",
                     exception
             );
         }
+        return currentPc + 1;
+    }
+
+    private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {
+        long target = (long) currentPc + 1L + displacement.value();
+        if (target < 0 || target >= instructionCount) {
+            throw new ExecutionEngineException("Branch target outside process instructions: " + target);
+        }
+        return (int) target;
     }
 }

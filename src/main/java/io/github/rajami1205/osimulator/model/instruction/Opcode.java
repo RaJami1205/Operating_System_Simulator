@@ -11,5 +11,12 @@ public enum Opcode {
     SUB,
     INC,
     DEC,
-    SWAP
+    SWAP,
+    CMP,
+    JMP,
+    JE,
+    JNE,
+    PARAM,
+    PUSH,
+    POP
 }

@@ -12,6 +12,15 @@ import io.github.rajami1205.osimulator.model.instruction.IncInstruction;
 import io.github.rajami1205.osimulator.model.instruction.DecInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
 import io.github.rajami1205.osimulator.model.instruction.exception.InvalidImmediateValueException;
+import io.github.rajami1205.osimulator.model.instruction.CmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JmpInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JeInstruction;
+import io.github.rajami1205.osimulator.model.instruction.JneInstruction;
+import io.github.rajami1205.osimulator.model.instruction.ParamInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PushInstruction;
+import io.github.rajami1205.osimulator.model.instruction.PopInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacement;
+import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +68,17 @@ public final class AsmParser {
         String mnemonic = tokens[0].toUpperCase(Locale.ROOT);
 
         return switch (mnemonic) {
+            case "CMP" -> {
+                Matcher operands = parseTwoOperands(normalizedLine, mnemonic, lineNumber);
+                yield new CmpInstruction(parseRegister(operands.group(1), lineNumber),
+                        parseRegister(operands.group(2), lineNumber));
+            }
+            case "JMP" -> new JmpInstruction(parseDisplacement(tokens, lineNumber));
+            case "JE" -> new JeInstruction(parseDisplacement(tokens, lineNumber));
+            case "JNE" -> new JneInstruction(parseDisplacement(tokens, lineNumber));
+            case "PUSH" -> new PushInstruction(parseSingleRegisterOperand(tokens, mnemonic, lineNumber));
+            case "POP" -> new PopInstruction(parseSingleRegisterOperand(tokens, mnemonic, lineNumber));
+            case "PARAM" -> parseParameters(normalizedLine.substring(tokens[0].length()).strip(), lineNumber);
             case "MOV" -> parseMovInstruction(normalizedLine, lineNumber);
             case "INC" -> tokens.length == 1 ? new IncInstruction()
                     : new IncInstruction(parseSingleRegisterOperand(tokens, mnemonic, lineNumber));
@@ -86,6 +106,27 @@ public final class AsmParser {
                     "Unknown mnemonic '" + tokens[0] + "'"
             );
         };
+    }
+
+    private BranchDisplacement parseDisplacement(String[] tokens, int lineNumber) {
+        if (tokens.length != 2) throw new AsmParseException(lineNumber, "Branch requires one displacement");
+        return new BranchDisplacement(parseImmediate(tokens[1], lineNumber));
+    }
+
+    private ParamInstruction parseParameters(String text, int lineNumber) {
+        String[] tokens = text.split(",", -1);
+        if (tokens.length > ParamInstruction.MAX_VALUES) {
+            throw new AsmParseException(lineNumber, "PARAM requires one to three values");
+        }
+        List<ImmediateOperand> values = new ArrayList<>();
+        for (String token : tokens) {
+            try {
+                values.add(new ImmediateOperand(parseImmediate(token.strip(), lineNumber)));
+            } catch (InvalidImmediateValueException exception) {
+                throw new AsmParseException(lineNumber, "Invalid PARAM value '" + token.strip() + "'", exception);
+            }
+        }
+        return new ParamInstruction(values);
     }
 
     // Exige un único registro como operando de la instrucción.

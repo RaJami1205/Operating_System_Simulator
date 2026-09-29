@@ -19,6 +19,16 @@ public final class ProcessStack {
         values.add(value);
     }
 
+    /** Validates the complete batch before publishing any stack changes. */
+    public void pushAll(List<Integer> values) {
+        List<Integer> copy = List.copyOf(values);
+        copy.forEach(CpuValueRange::validateRegisterValue);
+        if (copy.size() > CAPACITY - size()) {
+            throw new ProcessStackOverflowException();
+        }
+        this.values.addAll(copy);
+    }
+
     public int pop() {
         if (isEmpty()) {
             throw new ProcessStackUnderflowException();

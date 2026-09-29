@@ -38,7 +38,9 @@ class TransferArithmeticModelTest {
         assertEquals(new MovInstruction(RegisterName.AX, new ImmediateOperand(5)), new MovInstruction(RegisterName.AX, 5));
         assertNotEquals(new MovInstruction(RegisterName.AX, 5), new MovInstruction(RegisterName.AX, RegisterName.BX));
         assertEquals(Set.of(MovInstruction.class, LoadInstruction.class, StoreInstruction.class,
-                AddInstruction.class, SubInstruction.class, IncInstruction.class, DecInstruction.class, SwapInstruction.class),
+                AddInstruction.class, SubInstruction.class, IncInstruction.class, DecInstruction.class, SwapInstruction.class, CmpInstruction.class,
+                JmpInstruction.class, JeInstruction.class, JneInstruction.class, ParamInstruction.class,
+                PushInstruction.class, PopInstruction.class),
                 Set.of(Instruction.class.getPermittedSubclasses()));
     }
 

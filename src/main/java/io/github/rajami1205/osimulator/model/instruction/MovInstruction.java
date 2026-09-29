@@ -9,17 +9,25 @@ import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOper
 import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 
 /**
- * Representa la instrucción que asigna un inmediato a un registro destino al ejecutarse.
+ * Asigna un inmediato o el valor de un registro a un registro destino.
  */
-public record MovInstruction(RegisterName destination, int immediate) implements Instruction {
+public record MovInstruction(RegisterName destination, InstructionOperand source) implements Instruction {
 
     private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(1);
 
-    // Valida el registro destino y el rango lógico del inmediato.
+    // Los operandos tipados ya validan su contenido.
     public MovInstruction {
         Objects.requireNonNull(destination, "destination must not be null");
 
-        ImmediateOperand.validate(immediate);
+        Objects.requireNonNull(source, "source must not be null");
+    }
+
+    public MovInstruction(RegisterName destination, int immediate) {
+        this(Objects.requireNonNull(destination, "destination must not be null"), new ImmediateOperand(immediate));
+    }
+
+    public MovInstruction(RegisterName destination, RegisterName source) {
+        this(destination, new RegisterOperand(source));
     }
 
     @Override
@@ -29,7 +37,7 @@ public record MovInstruction(RegisterName destination, int immediate) implements
     }
     @Override
     public List<InstructionOperand> operands() {
-        return List.of(new RegisterOperand(destination), new ImmediateOperand(immediate));
+        return List.of(new RegisterOperand(destination), source);
     }
 
     @Override

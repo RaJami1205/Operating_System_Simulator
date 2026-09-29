@@ -8,6 +8,9 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
+import io.github.rajami1205.osimulator.model.instruction.IncInstruction;
+import io.github.rajami1205.osimulator.model.instruction.DecInstruction;
+import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
 import io.github.rajami1205.osimulator.model.instruction.exception.InvalidImmediateValueException;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +24,7 @@ import java.util.regex.Pattern;
  */
 public final class AsmParser {
 
-    private static final Pattern MOV_SYNTAX = Pattern.compile(
+    private static final Pattern TWO_OPERAND_SYNTAX = Pattern.compile(
             "\\S+\\s+([^\\s,]+)\\s*,\\s*([^\\s,]+)"
     );
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("[+-]?[0-9]+");
@@ -37,7 +40,9 @@ public final class AsmParser {
                     "source line must not be null"
             );
 
-            if (sourceLine.isBlank()) {
+            int comment = sourceLine.indexOf(';');
+            sourceLine = (comment >= 0 ? sourceLine.substring(0, comment) : sourceLine).strip();
+            if (sourceLine.isEmpty()) {
                 continue;
             }
 
@@ -55,6 +60,15 @@ public final class AsmParser {
 
         return switch (mnemonic) {
             case "MOV" -> parseMovInstruction(normalizedLine, lineNumber);
+            case "INC" -> tokens.length == 1 ? new IncInstruction()
+                    : new IncInstruction(parseSingleRegisterOperand(tokens, mnemonic, lineNumber));
+            case "DEC" -> tokens.length == 1 ? new DecInstruction()
+                    : new DecInstruction(parseSingleRegisterOperand(tokens, mnemonic, lineNumber));
+            case "SWAP" -> {
+                Matcher operands = parseTwoOperands(normalizedLine, mnemonic, lineNumber);
+                yield new SwapInstruction(parseRegister(operands.group(1), lineNumber),
+                        parseRegister(operands.group(2), lineNumber));
+            }
             case "LOAD" -> new LoadInstruction(
                     parseSingleRegisterOperand(tokens, mnemonic, lineNumber)
             );
@@ -90,18 +104,24 @@ public final class AsmParser {
         return parseRegister(tokens[1], lineNumber);
     }
 
-    // Valida la sintaxis de MOV y construye su representación semántica.
-    private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
-        Matcher matcher = MOV_SYNTAX.matcher(sourceLine);
-
+    private Matcher parseTwoOperands(String sourceLine, String mnemonic, int lineNumber) {
+        Matcher matcher = TWO_OPERAND_SYNTAX.matcher(sourceLine);
         if (!matcher.matches()) {
             throw new AsmParseException(
                     lineNumber,
-                    "MOV requires a register, comma, and decimal immediate"
+                    mnemonic + " requires exactly two comma-separated operands"
             );
         }
+        return matcher;
+    }
 
+    // MOV comparte estructura con SWAP, pero admite registro o inmediato como origen.
+    private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
+        Matcher matcher = parseTwoOperands(sourceLine, "MOV", lineNumber);
         RegisterName destination = parseRegister(matcher.group(1), lineNumber);
+        if (!DECIMAL_INTEGER.matcher(matcher.group(2)).matches()) {
+            return new MovInstruction(destination, parseRegister(matcher.group(2), lineNumber));
+        }
         int immediate = parseImmediate(matcher.group(2), lineNumber);
 
         try {

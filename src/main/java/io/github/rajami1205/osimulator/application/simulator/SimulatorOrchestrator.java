@@ -31,6 +31,11 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
+import io.github.rajami1205.osimulator.model.instruction.IncInstruction;
+import io.github.rajami1205.osimulator.model.instruction.DecInstruction;
+import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.memory.MemoryContent;
 import io.github.rajami1205.osimulator.model.memory.EmptyContent;
@@ -243,13 +248,20 @@ public final class SimulatorOrchestrator {
 
     // Compone el texto de una instrucción para su visualización.
     private String semanticText(Instruction instruction) {
-        return instruction.opcode().name() + " " + operandText(instruction);
+        String operands = operandText(instruction);
+        return instruction.opcode().name() + (operands.isEmpty() ? "" : " " + operands);
     }
 
     // Describe los operandos según el tipo de instrucción.
     private String operandText(Instruction instruction) {
         return switch (instruction) {
-            case MovInstruction mov -> mov.destination().name() + ", " + mov.immediate();
+            case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
+                case ImmediateOperand immediate -> Integer.toString(immediate.value());
+                case RegisterOperand register -> register.register().name();
+            };
+            case IncInstruction inc -> inc.target().map(RegisterName::name).orElse("");
+            case DecInstruction dec -> dec.target().map(RegisterName::name).orElse("");
+            case SwapInstruction swap -> swap.left().name() + ", " + swap.right().name();
             case LoadInstruction load -> load.source().name();
             case StoreInstruction store -> store.destination().name();
             case AddInstruction add -> add.source().name();

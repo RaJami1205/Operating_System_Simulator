@@ -9,6 +9,11 @@ import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
 import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
 import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
+import io.github.rajami1205.osimulator.model.instruction.IncInstruction;
+import io.github.rajami1205.osimulator.model.instruction.DecInstruction;
+import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
@@ -95,7 +100,28 @@ public final class ExecutionEngine {
         try {
             switch (instruction) {
                 case MovInstruction mov ->
-                        cpu.writeRegister(mov.destination(), mov.immediate());
+                        cpu.writeRegister(mov.destination(), switch (mov.source()) {
+                            case ImmediateOperand immediate -> immediate.value();
+                            case RegisterOperand register -> cpu.readRegister(register.register());
+                        });
+                case IncInstruction inc -> {
+                    if (inc.target().isPresent()) {
+                        var target = inc.target().orElseThrow();
+                        cpu.writeRegister(target, cpu.readRegister(target) + 1);
+                    } else cpu.writeAccumulator(cpu.accumulator() + 1);
+                }
+                case DecInstruction dec -> {
+                    if (dec.target().isPresent()) {
+                        var target = dec.target().orElseThrow();
+                        cpu.writeRegister(target, cpu.readRegister(target) - 1);
+                    } else cpu.writeAccumulator(cpu.accumulator() - 1);
+                }
+                case SwapInstruction swap -> {
+                    int left = cpu.readRegister(swap.left());
+                    int right = cpu.readRegister(swap.right());
+                    cpu.writeRegister(swap.left(), right);
+                    cpu.writeRegister(swap.right(), left);
+                }
                 case LoadInstruction load ->
                         cpu.writeAccumulator(cpu.readRegister(load.source()));
                 case StoreInstruction store ->

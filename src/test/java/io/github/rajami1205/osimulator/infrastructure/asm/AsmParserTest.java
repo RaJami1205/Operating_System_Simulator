@@ -216,11 +216,10 @@ class AsmParserTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "MOV AX, 25 ; comment",
             "MOV AX, 25 # comment",
             "MOV AX, 25 // comment"
     })
-    void shouldRejectCommentsAfterMov(String sourceLine) {
+    void shouldRejectUnsupportedCommentMarkersAfterMov(String sourceLine) {
         assertThrows(
                 AsmParseException.class,
                 () -> parser.parse(List.of(sourceLine))

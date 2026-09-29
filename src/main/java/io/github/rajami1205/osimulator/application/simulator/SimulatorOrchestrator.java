@@ -52,6 +52,10 @@ import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
+import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -73,6 +77,8 @@ public final class SimulatorOrchestrator {
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
     private ExecutionProgress executionProgress;
+    private ScreenDevice screen;
+    private KeyboardDevice keyboard;
     private ProcessControlBlock pcb;
     private SimulatorConfiguration configuration;
 
@@ -92,6 +98,8 @@ public final class SimulatorOrchestrator {
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         ExecutionProgress newProgress = new ExecutionProgress();
+        ScreenDevice newScreen = new ScreenDevice();
+        KeyboardDevice newKeyboard = new KeyboardDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
@@ -106,6 +114,8 @@ public final class SimulatorOrchestrator {
         memory = newMemory;
         cpu = newCpu;
         executionProgress = newProgress;
+        screen = newScreen;
+        keyboard = newKeyboard;
         secondaryStorage = newStorage;
         jobList = newJobs;
         jobSubmissionService = newSubmissionService;
@@ -168,12 +178,35 @@ public final class SimulatorOrchestrator {
         if (memory == null || cpu == null || pcb == null) {
             throw new IllegalStateException("Step requires active Memory, CPU and PCB");
         }
+        if (waitingForInput()) return;
         try {
-            TickResult result = executionEngine.executeTick(memory, cpu, pcb, executionProgress);
+            TickResult result = executionEngine.executeTick(screen, keyboard, memory, cpu, pcb, executionProgress);
             if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
         } catch (ExecutionEngineException exception) {
             lifecycle.markError();
             throw exception;
+        }
+    }
+
+    /** Immutable session output; empty before initialization and after Reset. */
+    public List<Integer> screenOutput() { return screen == null ? List.of() : screen.outputs(); }
+
+    /** True only while an INT09 request is awaiting external completion. */
+    public boolean waitingForInput() {
+        return executionProgress != null && executionProgress.waitingForInput();
+    }
+
+    /** Queues validated input; completes a pending request only while RUNNING. */
+    public void submitKeyboardInput(int value) {
+        if (keyboard == null) throw new IllegalStateException("Keyboard requires an initialized session");
+        keyboard.submit(value);
+        completePendingKeyboardInput();
+    }
+
+    private void completePendingKeyboardInput() {
+        if (lifecycle.state() == SimulatorState.RUNNING && waitingForInput() && keyboard.hasInput()) {
+            TickResult result = executionEngine.completeKeyboardInput(keyboard, memory, cpu, pcb, executionProgress);
+            if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
         }
     }
 
@@ -185,6 +218,7 @@ public final class SimulatorOrchestrator {
     // Devuelve la sesión pausada al estado RUNNING.
     public void resume() {
         lifecycle.resumeExecution();
+        completePendingKeyboardInput();
     }
 
     // Descarta los recursos de sesión y devuelve la sesión a CONFIGURING.
@@ -201,6 +235,8 @@ public final class SimulatorOrchestrator {
         processScheduler = null;
         cpu = null;
         executionProgress = null;
+        screen = null;
+        keyboard = null;
         pcb = null;
         configuration = null;
     }
@@ -266,8 +302,10 @@ public final class SimulatorOrchestrator {
             case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
                 case ImmediateOperand immediate -> Integer.toString(immediate.value());
                 case RegisterOperand register -> register.register().name();
+                case InterruptVector ignored -> throw new IllegalStateException("Invalid MOV source");
                 case BranchDisplacement ignored -> throw new IllegalStateException("Invalid MOV source");
             };
+            case InterruptInstruction interrupt -> interrupt.vector().canonicalText();
             case CmpInstruction cmp -> cmp.left().name() + ", " + cmp.right().name();
             case JmpInstruction jump -> displacementText(jump.displacement());
             case JeInstruction jump -> displacementText(jump.displacement());

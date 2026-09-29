@@ -21,6 +21,8 @@ import io.github.rajami1205.osimulator.model.instruction.PushInstruction;
 import io.github.rajami1205.osimulator.model.instruction.PopInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacement;
 import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
+import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -68,6 +70,14 @@ public final class AsmParser {
         String mnemonic = tokens[0].toUpperCase(Locale.ROOT);
 
         return switch (mnemonic) {
+            case "INT" -> {
+                if (tokens.length != 2) throw new AsmParseException(lineNumber, "INT requires exactly one vector");
+                try {
+                    yield new InterruptInstruction(InterruptVector.parse(tokens[1]));
+                } catch (IllegalArgumentException exception) {
+                    throw new AsmParseException(lineNumber, exception.getMessage(), exception);
+                }
+            }
             case "CMP" -> {
                 Matcher operands = parseTwoOperands(normalizedLine, mnemonic, lineNumber);
                 yield new CmpInstruction(parseRegister(operands.group(1), lineNumber),

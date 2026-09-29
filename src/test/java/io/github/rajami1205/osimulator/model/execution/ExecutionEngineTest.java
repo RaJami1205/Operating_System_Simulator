@@ -1,5 +1,9 @@
 package io.github.rajami1205.osimulator.model.execution;
 
+import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
+
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,6 +39,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class ExecutionEngineTest {
+    private final ScreenDevice screen = new ScreenDevice();
+    private final KeyboardDevice keyboard = new KeyboardDevice();
 
     private static final int USER_START_ADDRESS = 32;
 
@@ -753,7 +759,7 @@ class ExecutionEngineTest {
     // Semantic regression helper: completes an instruction through the public tick API only.
     private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
         var progress = new ExecutionProgress();
-        while (engine.executeTick(memory, cpu, pcb, progress) == TickResult.IN_PROGRESS) { }
+        while (engine.executeTick(screen, keyboard, memory, cpu, pcb, progress) == TickResult.IN_PROGRESS) { }
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {

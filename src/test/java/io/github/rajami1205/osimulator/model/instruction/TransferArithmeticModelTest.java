@@ -40,7 +40,7 @@ class TransferArithmeticModelTest {
         assertEquals(Set.of(MovInstruction.class, LoadInstruction.class, StoreInstruction.class,
                 AddInstruction.class, SubInstruction.class, IncInstruction.class, DecInstruction.class, SwapInstruction.class, CmpInstruction.class,
                 JmpInstruction.class, JeInstruction.class, JneInstruction.class, ParamInstruction.class,
-                PushInstruction.class, PopInstruction.class),
+                PushInstruction.class, PopInstruction.class, InterruptInstruction.class),
                 Set.of(Instruction.class.getPermittedSubclasses()));
     }
 

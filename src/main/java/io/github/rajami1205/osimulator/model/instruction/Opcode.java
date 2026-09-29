@@ -18,5 +18,6 @@ public enum Opcode {
     JNE,
     PARAM,
     PUSH,
-    POP
+    POP,
+    INT
 }

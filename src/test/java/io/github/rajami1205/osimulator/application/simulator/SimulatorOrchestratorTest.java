@@ -495,6 +495,27 @@ class SimulatorOrchestratorTest {
         }
     }
 
+    @Test
+    void formatsAndExecutesTransferArithmeticFormsWithoutTrailingSpaces() {
+        var expected = List.of("MOV AX, 5", "MOV BX, AX", "INC", "INC AX", "DEC", "DEC BX", "SWAP AX, BX");
+        var parser = new io.github.rajami1205.osimulator.infrastructure.asm.AsmParser();
+        load(parser.parse(expected));
+        simulator.start();
+        for (int index = 0; index < expected.size(); index++) {
+            simulator.step();
+            var snapshot = simulator.snapshot();
+            assertEquals(expected.get(index), snapshot.currentInstruction().orElseThrow().semanticInstruction());
+            assertEquals(Optional.of(expected.get(index)), snapshot.cpu().orElseThrow().instructionRegister());
+            assertEquals(expected.get(index), snapshot.program().get(index).instruction());
+            assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(32 + index).content());
+            assertEquals(index + 1, snapshot.cpu().orElseThrow().programCounter());
+            if (index == 2 || index == 4) assertEquals("", snapshot.currentInstruction().orElseThrow().operand());
+            assertEquals(index == expected.size() - 1 ? SimulatorState.FINISHED : SimulatorState.RUNNING, snapshot.simulatorState());
+        }
+        assertEquals(4, simulator.snapshot().cpu().orElseThrow().ax());
+        assertEquals(6, simulator.snapshot().cpu().orElseThrow().bx());
+    }
+
     private void completeInstruction() {
         int pc = simulator.snapshot().cpu().orElseThrow().programCounter();
         do { simulator.step(); }

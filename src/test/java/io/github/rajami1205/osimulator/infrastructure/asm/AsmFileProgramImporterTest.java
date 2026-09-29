@@ -55,9 +55,7 @@ class AsmFileProgramImporterTest {
     @Test
     void leavesCommentHandlingToParser() throws Exception {
         Path file = write("comment.asm", "MOV AX, 5\n; comentario\n");
-        var exception = assertThrows(ProgramImportException.class, () -> importer.importProgram(file));
-        var cause = assertInstanceOf(AsmParseException.class, exception.getCause());
-        assertEquals(2, cause.lineNumber());
+        assertEquals(List.of(new MovInstruction(RegisterName.AX, 5)), importer.importProgram(file));
     }
 
     @Test

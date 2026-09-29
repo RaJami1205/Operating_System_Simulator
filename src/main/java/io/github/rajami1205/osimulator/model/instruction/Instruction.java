@@ -11,7 +11,10 @@ public sealed interface Instruction
                 LoadInstruction,
                 StoreInstruction,
                 AddInstruction,
-                SubInstruction {
+                SubInstruction,
+                IncInstruction,
+                DecInstruction,
+                SwapInstruction {
 
     // Identifica la operación semántica representada.
     Opcode opcode();

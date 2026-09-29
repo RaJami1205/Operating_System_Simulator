@@ -25,7 +25,10 @@ class InstructionTest {
                     Opcode.LOAD,
                     Opcode.STORE,
                     Opcode.ADD,
-                    Opcode.SUB
+                    Opcode.SUB,
+                    Opcode.INC,
+                    Opcode.DEC,
+                    Opcode.SWAP
                 },
                 Opcode.values()
         );
@@ -97,7 +100,7 @@ class InstructionTest {
 
         assertAll(
                 () -> assertEquals(RegisterName.AX, instruction.destination()),
-                () -> assertEquals(25, instruction.immediate()),
+                () -> assertEquals(new io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand(25), instruction.source()),
                 () -> assertEquals(Opcode.MOV, instruction.opcode())
         );
     }
@@ -107,7 +110,7 @@ class InstructionTest {
     void shouldAcceptMovImmediateBoundaryValues(int immediate) {
         MovInstruction instruction = new MovInstruction(RegisterName.AX, immediate);
 
-        assertEquals(immediate, instruction.immediate());
+        assertEquals(new io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand(immediate), instruction.source());
     }
 
     @ParameterizedTest

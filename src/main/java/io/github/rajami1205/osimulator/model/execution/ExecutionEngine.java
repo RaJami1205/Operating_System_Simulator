@@ -19,6 +19,11 @@ import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionEx
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
+import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+import io.github.rajami1205.osimulator.model.cpu.RegisterName;
+import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
+import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
 import io.github.rajami1205.osimulator.model.instruction.CmpInstruction;
 import io.github.rajami1205.osimulator.model.instruction.JmpInstruction;
 import io.github.rajami1205.osimulator.model.instruction.JeInstruction;
@@ -35,9 +40,15 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnder
  * Consume ticks sin conservar estado de sesión dentro del engine.
  */
 public final class ExecutionEngine {
+    private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
+    private record Continue(int nextLogicalPc) implements SemanticOutcome { }
+    private record Terminate() implements SemanticOutcome { }
+    private record WaitForKeyboard() implements SemanticOutcome { }
 
     // Consume un tick; los efectos semánticos se aplican únicamente en el tick final.
     public TickResult executeTick(
+            ScreenDevice screen,
+            KeyboardDevice keyboard,
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
@@ -48,6 +59,12 @@ public final class ExecutionEngine {
         Objects.requireNonNull(pcb, "pcb must not be null");
         Objects.requireNonNull(progress, "progress must not be null");
 
+        Objects.requireNonNull(screen, "screen must not be null");
+        Objects.requireNonNull(keyboard, "keyboard must not be null");
+        if (progress.waitingForInput()) {
+            progress.validateKeyboardWait(memory, cpu, pcb);
+            return TickResult.WAITING_FOR_INPUT;
+        }
         validateExecutableState(pcb);
         progress.validateContext(memory, cpu, pcb);
 
@@ -76,18 +93,52 @@ public final class ExecutionEngine {
         }
 
         if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
-        int nextProgramCounter;
+        SemanticOutcome outcome;
         try {
-            nextProgramCounter = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter);
+            outcome = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter, screen, keyboard);
         } catch (RuntimeException | Error failure) {
             progress.clear();
             throw failure;
         }
 
+        return switch (outcome) {
+            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextLogicalPc());
+            case Terminate ignored -> {
+                progress.clear();
+                pcb.changeState(ProcessState.TERMINATED);
+                yield TickResult.PROGRAM_FINISHED;
+            }
+            case WaitForKeyboard ignored -> {
+                progress.waitForKeyboard();
+                pcb.changeState(ProcessState.BLOCKED);
+                yield TickResult.WAITING_FOR_INPUT;
+            }
+        };
+    }
+
+    /** Completes external input without consuming another CPU tick. */
+    public TickResult completeKeyboardInput(KeyboardDevice keyboard, MainMemory memory,
+            CpuRegisters<Instruction> cpu, ProcessControlBlock pcb, ExecutionProgress progress) {
+        Objects.requireNonNull(keyboard, "keyboard must not be null");
+        Objects.requireNonNull(memory, "memory must not be null");
+        Objects.requireNonNull(cpu, "cpu must not be null");
+        Objects.requireNonNull(pcb, "pcb must not be null");
+        Objects.requireNonNull(progress, "progress must not be null");
+        progress.validateKeyboardWait(memory, cpu, pcb);
+        var value = keyboard.poll();
+        if (value.isEmpty()) return TickResult.WAITING_FOR_INPUT;
+        cpu.writeRegister(RegisterName.DX, value.getAsInt());
+        TickResult result = publishNextPc(cpu, pcb, progress, pcb.programCounter() + 1);
+        if (result != TickResult.PROGRAM_FINISHED) pcb.changeState(ProcessState.READY);
+        return result;
+    }
+
+    private TickResult publishNextPc(CpuRegisters<Instruction> cpu, ProcessControlBlock pcb,
+            ExecutionProgress progress, int nextProgramCounter) {
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
         progress.clear();
-        if (nextProgramCounter == instructionCount) {
+        if (nextProgramCounter == pcb.instructionCount()) {
             pcb.changeState(ProcessState.TERMINATED);
             return TickResult.PROGRAM_FINISHED;
         }
@@ -104,23 +155,36 @@ public final class ExecutionEngine {
     }
 
     // Aplica la semántica de la instrucción y traduce fallos de rango de la CPU.
-    private int executeInstruction(
+    private SemanticOutcome executeInstruction(
             Instruction instruction,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
-            int currentPc
+            int currentPc,
+            ScreenDevice screen,
+            KeyboardDevice keyboard
     ) {
         try {
             switch (instruction) {
+                case InterruptInstruction interrupt -> {
+                    switch (interrupt.vector()) {
+                        case TERMINATE -> { return new Terminate(); }
+                        case SCREEN -> screen.append(cpu.readRegister(RegisterName.DX));
+                        case KEYBOARD -> {
+                            var input = keyboard.poll();
+                            if (input.isEmpty()) return new WaitForKeyboard();
+                            cpu.writeRegister(RegisterName.DX, input.getAsInt());
+                        }
+                    }
+                }
                 case CmpInstruction cmp -> cpu.writeConditionFlags(new ConditionFlags(
                         cpu.readRegister(cmp.left()) == cpu.readRegister(cmp.right()),
                         cpu.conditionFlags().overflow()));
-                case JmpInstruction jump -> { return branchTarget(currentPc, jump.displacement(), pcb.instructionCount()); }
+                case JmpInstruction jump -> { return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount())); }
                 case JeInstruction jump -> {
-                    if (cpu.conditionFlags().equal()) return branchTarget(currentPc, jump.displacement(), pcb.instructionCount());
+                    if (cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
                 }
                 case JneInstruction jump -> {
-                    if (!cpu.conditionFlags().equal()) return branchTarget(currentPc, jump.displacement(), pcb.instructionCount());
+                    if (!cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
                 }
                 case PushInstruction push -> pcb.stack().push(cpu.readRegister(push.source()));
                 case PopInstruction pop -> cpu.writeRegister(pop.destination(), pcb.stack().pop());
@@ -130,6 +194,7 @@ public final class ExecutionEngine {
                         cpu.writeRegister(mov.destination(), switch (mov.source()) {
                             case ImmediateOperand immediate -> immediate.value();
                             case RegisterOperand register -> cpu.readRegister(register.register());
+                            case InterruptVector ignored -> throw new ExecutionEngineException("Invalid MOV source");
                             case BranchDisplacement ignored -> throw new ExecutionEngineException("Invalid MOV source");
                         });
                 case IncInstruction inc -> {
@@ -171,7 +236,7 @@ public final class ExecutionEngine {
                     exception
             );
         }
-        return currentPc + 1;
+        return new Continue(currentPc + 1);
     }
 
     private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {

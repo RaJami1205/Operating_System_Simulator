@@ -187,7 +187,7 @@ public final class SimulatorController {
     // Activa el avance periódico cuando la sesión está en RUNNING manual.
     private void handleAutomatic() {
         var snapshot = orchestrator.snapshot();
-        if (snapshot.simulatorState() != SimulatorState.RUNNING || automaticMode) {
+        if (snapshot.simulatorState() != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput()) {
             return;
         }
         automaticMode = true;
@@ -197,6 +197,11 @@ public final class SimulatorController {
 
     // Ejecuta un paso, actualiza la vista y detiene Automatic al finalizar o fallar.
     private void executeSingleStep() {
+        if (orchestrator.waitingForInput()) {
+            stopAutomaticExecution();
+            render(orchestrator.snapshot());
+            return;
+        }
         try {
             orchestrator.step();
         } catch (ExecutionEngineException exception) {
@@ -211,7 +216,7 @@ public final class SimulatorController {
             return;
         }
         var snapshot = orchestrator.snapshot();
-        if (snapshot.simulatorState() == SimulatorState.FINISHED) {
+        if (snapshot.simulatorState() == SimulatorState.FINISHED || orchestrator.waitingForInput()) {
             stopAutomaticExecution();
         }
         render(snapshot);
@@ -243,7 +248,9 @@ public final class SimulatorController {
             showError("Operation unavailable. " + exception.getMessage());
             return;
         }
-        if (automaticMode) {
+        if (orchestrator.waitingForInput() || orchestrator.snapshot().simulatorState() == SimulatorState.FINISHED) {
+            stopAutomaticExecution();
+        } else if (automaticMode) {
             automaticTimeline.play();
         }
         render(orchestrator.snapshot());
@@ -329,11 +336,11 @@ public final class SimulatorController {
         browseProgramButton.setDisable(!configuring && state != SimulatorState.INITIALIZED);
         loadProgramButton.setDisable(state != SimulatorState.INITIALIZED || selectedProgramPath == null);
         startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
-        stepButton.setDisable(state != SimulatorState.RUNNING || automaticMode);
+        stepButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput());
         pauseButton.setDisable(state != SimulatorState.RUNNING);
         resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false);
-        automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode);
+        automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput());
         mainMemorySlider.setDisable(!configuring);
         kernelMemorySlider.setDisable(!configuring);
         secondaryStorageSlider.setDisable(!configuring);

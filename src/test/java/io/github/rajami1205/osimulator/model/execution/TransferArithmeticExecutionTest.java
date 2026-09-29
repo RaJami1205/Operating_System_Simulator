@@ -1,5 +1,9 @@
 package io.github.rajami1205.osimulator.model.execution;
 
+import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
+
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.model.cpu.*;
 import io.github.rajami1205.osimulator.model.cpu.exception.InvalidRegisterValueException;
@@ -11,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TransferArithmeticExecutionTest {
+    private final ScreenDevice screen = new ScreenDevice();
+    private final KeyboardDevice keyboard = new KeyboardDevice();
     private final ExecutionEngine engine = new ExecutionEngine();
 
     private CpuRegisters<Instruction> cpu() {
@@ -26,7 +32,7 @@ class TransferArithmeticExecutionTest {
         var pcb = new ProgramLoader().load(memory, 1, List.of(instruction));
         var progress = new ExecutionProgress();
         var flags = cpu.conditionFlags();
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(memory, cpu, pcb, progress));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(screen, keyboard, memory, cpu, pcb, progress));
         assertEquals(1, cpu.programCounter());
         assertEquals(1, pcb.programCounter());
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
@@ -100,7 +106,7 @@ class TransferArithmeticExecutionTest {
             var progress = new ExecutionProgress();
             cpu.loadInstructionRegister(instruction);
             var before = cpu.snapshot();
-            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(memory, cpu, pcb, progress));
+            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(screen, keyboard, memory, cpu, pcb, progress));
             assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
             assertEquals(before, cpu.snapshot());
             assertEquals(0, pcb.programCounter());

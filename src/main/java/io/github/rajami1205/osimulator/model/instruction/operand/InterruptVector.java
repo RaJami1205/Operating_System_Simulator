@@ -7,7 +7,8 @@ import java.util.Arrays;
 public enum InterruptVector implements InstructionOperand {
     KEYBOARD("09H", 2),
     SCREEN("10H", 2),
-    TERMINATE("20H", 2);
+    TERMINATE("20H", 2),
+    FILESYSTEM("21H", 5);
 
     private final String canonicalText;
     private final ExecutionWeight executionWeight;

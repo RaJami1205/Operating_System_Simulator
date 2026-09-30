@@ -10,9 +10,17 @@ import java.util.Optional;
  */
 public record CpuContext<I>(
         int programCounter, Optional<I> instructionRegister,
-        int accumulator, int ax, int bx, int cx, int dx, int ah, int al,
+        int accumulator, int ax, int bx, int cx, RegisterValue dxValue, int ah, RegisterValue alValue,
         ConditionFlags conditionFlags
 ) {
+    public CpuContext(int programCounter, Optional<I> instructionRegister,
+            int accumulator, int ax, int bx, int cx, int dx, int ah, int al, ConditionFlags flags) {
+        this(programCounter, instructionRegister, accumulator, ax, bx, cx,
+                new NumericRegisterValue(dx), ah, new NumericRegisterValue(al), flags);
+    }
+    public int dx() { return dxValue.numericValue(); }
+    public int al() { return alValue.numericValue(); }
+
     public static <I> CpuContext<I> initial() {
         return new CpuContext<>(0, Optional.empty(), 0, 0, 0, 0, 0, 0, 0, ConditionFlags.CLEAR);
     }
@@ -20,7 +28,7 @@ public record CpuContext<I>(
     /** Copia el contexto conservando todos los valores salvo el PC. */
     public CpuContext<I> withProgramCounter(int programCounter) {
         return new CpuContext<>(programCounter, instructionRegister, accumulator,
-                ax, bx, cx, dx, ah, al, conditionFlags);
+                ax, bx, cx, dxValue, ah, alValue, conditionFlags);
     }
 
     public CpuContext {
@@ -33,8 +41,8 @@ public record CpuContext<I>(
         CpuValueRange.validateRegisterValue(ax);
         CpuValueRange.validateRegisterValue(bx);
         CpuValueRange.validateRegisterValue(cx);
-        CpuValueRange.validateRegisterValue(dx);
+        Objects.requireNonNull(dxValue, "DX must not be null");
         CpuValueRange.validateRegisterValue(ah);
-        CpuValueRange.validateRegisterValue(al);
+        Objects.requireNonNull(alValue, "AL must not be null");
     }
 }

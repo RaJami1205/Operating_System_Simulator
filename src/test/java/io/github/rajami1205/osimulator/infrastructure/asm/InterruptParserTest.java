@@ -15,7 +15,7 @@ class InterruptParserTest {
                 new AsmParser().parse(List.of("; comment","", " iNt\t09h ; input", "INT 10H", "int 20h")));
     }
     @ParameterizedTest
-    @ValueSource(strings={"INT","INT 9","INT 09","INT 0x09","INT20H","INT 11H","INT 21H","INT 10H, 20H","INT 10H 20H","INT AX"})
+    @ValueSource(strings={"INT","INT 9","INT 09","INT 0x09","INT20H","INT 11H","INT 22H","INT 10H, 20H","INT 10H 20H","INT AX"})
     void rejectsMalformedVectorsWithPhysicalLine(String source) {
         var failure=assertThrows(AsmParseException.class,()->new AsmParser().parse(List.of(";header","",source)));
         assertEquals(3,failure.lineNumber());

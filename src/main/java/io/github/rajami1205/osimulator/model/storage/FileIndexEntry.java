@@ -2,12 +2,18 @@ package io.github.rajami1205.osimulator.model.storage;
 
 import java.util.Objects;
 
-/** length delimita el bloque, sin depender del contenido de posiciones vecinas. */
-public record FileIndexEntry(String name, int startAddress, int length) implements StorageContent {
+/** Logical content length; physical allocation capacity is owned separately by SecondaryStorage. */
+public record FileIndexEntry(String name, int startAddress, int length, FileEntryKind kind) implements StorageContent {
+    /** Compatibility constructor for stored programs. */
+    public FileIndexEntry(String name, int startAddress, int length) {
+        this(name, startAddress, length, FileEntryKind.PROGRAM);
+    }
     public FileIndexEntry {
         validateName(name);
-        if (startAddress < 0 || length < 1 || (long) startAddress + length > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("Invalid stored program range");
+        Objects.requireNonNull(kind, "kind must not be null");
+        if (startAddress < 0 || length < (kind == FileEntryKind.PROGRAM ? 1 : 0)
+                || (long) startAddress + Math.max(1, length) > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Invalid storage entry range");
         }
     }
 

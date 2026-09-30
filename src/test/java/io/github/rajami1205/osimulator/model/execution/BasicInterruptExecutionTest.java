@@ -1,5 +1,7 @@
 package io.github.rajami1205.osimulator.model.execution;
 
+import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.model.cpu.*;
 import io.github.rajami1205.osimulator.model.instruction.*;
@@ -19,10 +21,11 @@ class BasicInterruptExecutionTest {
     private final ExecutionProgress progress = new ExecutionProgress();
     private final KeyboardDevice keyboard = new KeyboardDevice();
     private final ScreenDevice screen = new ScreenDevice();
+    private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
     private ProcessControlBlock pcb;
     private InterruptInstruction interrupt(InterruptVector vector) { return new InterruptInstruction(vector); }
     private void load(Instruction... instructions) { pcb = new ProgramLoader().load(memory,1,List.of(instructions)); }
-    private TickResult tick() { return engine.executeTick(screen,keyboard,memory,cpu,pcb,progress); }
+    private TickResult tick() { return engine.executeTick(filesystem, screen,keyboard,memory,cpu,pcb,progress); }
     private TickResult complete() { return engine.completeKeyboardInput(keyboard,memory,cpu,pcb,progress); }
     private void pc(int expected) { assertEquals(expected,cpu.programCounter()); assertEquals(expected,pcb.programCounter()); }
 
@@ -83,7 +86,7 @@ class BasicInterruptExecutionTest {
         load(interrupt(InterruptVector.KEYBOARD)); tick(); tick(); keyboard.submit(0);
         var other=new ProcessControlBlock(1,pcb.programStartAddress(),1); other.changeState(ProcessState.BLOCKED);
         assertThrows(ExecutionEngineException.class,()->engine.completeKeyboardInput(keyboard,memory,cpu,other,progress));
-        assertThrows(ExecutionEngineException.class,()->engine.executeTick(screen,keyboard,memory,new CpuRegisters<>(),pcb,progress));
+        assertThrows(ExecutionEngineException.class,()->engine.executeTick(filesystem, screen,keyboard,memory,new CpuRegisters<>(),pcb,progress));
         assertTrue(keyboard.hasInput()); assertEquals(2,progress.consumedTicks());
         assertEquals(TickResult.PROGRAM_FINISHED,complete()); pc(1);
         assertEquals(ProcessState.TERMINATED,pcb.state()); assertTrue(progress.isIdle());

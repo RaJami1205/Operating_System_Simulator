@@ -61,6 +61,15 @@ class BasicIoControllerTest {
                 assertEquals(false,field(controller,"automaticMode"));
                 assertFalse(((Button)field(controller,"stepButton")).isDisabled());
                 assertEquals(55,simulator.snapshot().cpu().orElseThrow().dx());
+                invoke(controller,"handleReset");
+                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
+                simulator.loadProgram(new AsmParser().parse(List.of("MOV DX, \"notes.txt\"","MOV DX, 7")));
+                simulator.start();
+                invoke(controller,"handleStep");
+                assertEquals("notes.txt",((javafx.scene.control.Label)field(controller,"dxValueLabel")).getText());
+                invoke(controller,"handleStep");
+                assertEquals("7",((javafx.scene.control.Label)field(controller,"dxValueLabel")).getText());
+
             } finally { timeline.stop(); }
             return null;
         });

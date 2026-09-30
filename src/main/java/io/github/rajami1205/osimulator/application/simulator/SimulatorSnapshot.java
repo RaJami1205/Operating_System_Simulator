@@ -1,6 +1,8 @@
 package io.github.rajami1205.osimulator.application.simulator;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
+import io.github.rajami1205.osimulator.model.cpu.RegisterValue;
+import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,11 +26,16 @@ public record SimulatorSnapshot(
         memory = List.copyOf(memory);
     }
     public record CpuSnapshot(
-            int programCounter, int accumulator, int ax, int bx, int cx, int dx,
+            int programCounter, int accumulator, int ax, int bx, int cx, RegisterValue dxValue,
             Optional<String> instructionRegister
     ) {
         // Valida la representación opcional del IR en el snapshot de CPU.
+        public CpuSnapshot(int pc, int ac, int ax, int bx, int cx, int dx, Optional<String> ir) {
+            this(pc, ac, ax, bx, cx, new NumericRegisterValue(dx), ir);
+        }
+        public int dx() { return dxValue.numericValue(); }
         public CpuSnapshot {
+            Objects.requireNonNull(dxValue, "DX must not be null");
             Objects.requireNonNull(instructionRegister, "instructionRegister must not be null");
         }
     }

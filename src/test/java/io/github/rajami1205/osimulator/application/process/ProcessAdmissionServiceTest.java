@@ -20,7 +20,8 @@ class ProcessAdmissionServiceTest {
     private final JobList jobs = new JobList();
     private final ProcessTable table = new ProcessTable();
     private final ReadyQueue queue = new ReadyQueue();
-    private final ProcessAdmissionService service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue);
+    private final ProcessResourceRegistry registry = new ProcessResourceRegistry();
+    private final ProcessAdmissionService service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
     private final Instruction instruction = new LoadInstruction(RegisterName.AX);
 
     private void submit(int jobId, int length) {
@@ -290,7 +291,7 @@ class ProcessAdmissionServiceTest {
     @Test
     void requiresSharedQueue() {
         assertThrows(NullPointerException.class,
-                () -> new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), null));
+                () -> new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), null, registry));
     }
 
     private IllegalStateException failJobPublication(Runnable beforeFailure) throws Exception {
@@ -313,16 +314,15 @@ class ProcessAdmissionServiceTest {
         return failure;
     }
 
-    private Map<?, ?> resources() throws Exception {
-        var field = ProcessAdmissionService.class.getDeclaredField("residents");
-        field.setAccessible(true);
-        return (Map<?, ?>) field.get(service);
-    }
+    private Map<Integer, ProcessResources> resources() { return registry.entries(); }
 
-    private Object resourcePart(Object resource, String name) throws Exception {
-        var method = resource.getClass().getDeclaredMethod(name);
-        method.setAccessible(true);
-        return method.invoke(resource);
+    private Object resourcePart(ProcessResources resource, String name) {
+        return switch (name) {
+            case "user" -> ((UserImageResidence.Resident) resource.residence()).allocation();
+            case "kernel" -> resource.kernel();
+            case "address" -> resource.address();
+            default -> throw new AssertionError(name);
+        };
     }
 
     private long counter() throws Exception {

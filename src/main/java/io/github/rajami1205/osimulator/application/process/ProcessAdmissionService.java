@@ -15,8 +15,6 @@ import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -28,13 +26,12 @@ public final class ProcessAdmissionService {
     private final ProcessTable processes;
     private final ProgramLoader loader;
     private final ReadyQueue readyQueue;
-    private final Map<Integer, ResidentResources> residents = new HashMap<>();
+    private final ProcessResourceRegistry resources;
     private long nextProcessId = 1;
 
-    private record ResidentResources(MemoryAllocation user, MemoryAllocation kernel, PcbAddress address) {}
-
     public ProcessAdmissionService(JobList jobs, SecondaryStorage storage, MainMemory memory,
-            ProcessTable processes, ProgramLoader loader, ReadyQueue readyQueue) {
+            ProcessTable processes, ProgramLoader loader, ReadyQueue readyQueue, ProcessResourceRegistry resources) {
+        this.resources = Objects.requireNonNull(resources, "resources must not be null");
         this.jobs = Objects.requireNonNull(jobs, "jobs must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.memory = Objects.requireNonNull(memory, "memory must not be null");
@@ -49,7 +46,7 @@ public final class ProcessAdmissionService {
         if (processes.isFull()) return new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED);
         if (nextProcessId > Integer.MAX_VALUE) throw new IllegalStateException("Process IDs exhausted");
         int pid = (int) nextProcessId;
-        if (processes.find(pid).isPresent() || residents.containsKey(pid)) {
+        if (processes.find(pid).isPresent() || resources.find(pid).isPresent()) {
             throw new IllegalStateException("Next Process ID is already resident: " + pid);
         }
         var program = storage.readProgram(job.programName());
@@ -75,7 +72,7 @@ public final class ProcessAdmissionService {
             previous = processes.last().orElse(null);
             if (previous != null) previousLink = previous.nextPcbAddress();
             var result = new AdmissionResult.Admitted(pid);
-            residents.put(pid, new ResidentResources(loaded.userAllocation(), kernel, address));
+            resources.register(pid, new ProcessResources(kernel, address, new UserImageResidence.Resident(loaded.userAllocation())));
             resourcesPublished = true;
             processes.register(loaded.pcb());
             processPublished = true;
@@ -100,7 +97,7 @@ public final class ProcessAdmissionService {
                 cleanup(failure, () -> tail.setNextPcbAddress(oldLink));
             }
             if (processPublished) cleanup(failure, () -> processes.remove(pid));
-            if (resourcesPublished) cleanup(failure, () -> residents.remove(pid));
+            if (resourcesPublished) cleanup(failure, () -> resources.remove(pid));
             if (loaded != null) {
                 var user = loaded.userAllocation();
                 cleanup(failure, () -> memory.release(user));

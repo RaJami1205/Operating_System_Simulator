@@ -6,6 +6,9 @@ import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.AdmissionResult;
+import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
+import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
+import io.github.rajami1205.osimulator.application.process.SwapResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
@@ -78,6 +81,8 @@ public final class SimulatorOrchestrator {
     private JobSubmissionService jobSubmissionService;
     private ProcessTable processTable;
     private ProcessAdmissionService processAdmissionService;
+    private ProcessResourceRegistry processResources;
+    private ProcessSwapService processSwapService;
     private JobScheduler jobScheduler;
     private ReadyQueue readyQueue;
     private ProcessScheduler processScheduler;
@@ -112,8 +117,10 @@ public final class SimulatorOrchestrator {
         JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
         ProcessTable newProcesses = new ProcessTable();
         ReadyQueue newReadyQueue = new ReadyQueue();
+        ProcessResourceRegistry newResources = new ProcessResourceRegistry();
+        ProcessSwapService newSwap = new ProcessSwapService(newMemory, newStorage, newProcesses, newResources, newReadyQueue);
         ProcessAdmissionService newAdmission = new ProcessAdmissionService(
-                newJobs, newStorage, newMemory, newProcesses, programLoader, newReadyQueue);
+                newJobs, newStorage, newMemory, newProcesses, programLoader, newReadyQueue, newResources);
         JobScheduler newScheduler = new JobScheduler(newJobs, newAdmission);
         ProcessScheduler newProcessScheduler = new FcfsProcessScheduler(newReadyQueue, newProcesses);
         lifecycle.initialize();
@@ -128,6 +135,8 @@ public final class SimulatorOrchestrator {
         jobSubmissionService = newSubmissionService;
         processTable = newProcesses;
         processAdmissionService = newAdmission;
+        processResources = newResources;
+        processSwapService = newSwap;
         jobScheduler = newScheduler;
         readyQueue = newReadyQueue;
         processScheduler = newProcessScheduler;
@@ -160,6 +169,26 @@ public final class SimulatorOrchestrator {
     public Optional<Integer> selectNextReadyProcess() {
         requireState("selectNextReadyProcess", SimulatorState.INITIALIZED);
         return processScheduler.selectNext();
+    }
+
+    public SwapResult swapOut(int processId) {
+        requireSwapSession(processId);
+        return processSwapService.swapOut(processId);
+    }
+
+    public SwapResult swapIn(int processId) {
+        requireSwapSession(processId);
+        return processSwapService.swapIn(processId);
+    }
+
+    private void requireSwapSession(int processId) {
+        if (pcb != null && pcb.processId() == processId) {
+            throw new IllegalStateException("Current legacy process cannot be swapped");
+        }
+        if (pcb != null || (executionProgress != null && !executionProgress.isIdle())) {
+            throw new IllegalStateException("Swapping requires an inactive legacy runtime");
+        }
+        requireState("swap", SimulatorState.INITIALIZED);
     }
 
     // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
@@ -238,6 +267,8 @@ public final class SimulatorOrchestrator {
         jobSubmissionService = null;
         processTable = null;
         processAdmissionService = null;
+        processResources = null;
+        processSwapService = null;
         jobScheduler = null;
         readyQueue = null;
         processScheduler = null;

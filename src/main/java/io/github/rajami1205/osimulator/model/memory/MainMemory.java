@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddre
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessMemoryBounds;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +47,29 @@ public final class MainMemory {
         Objects.requireNonNull(allocation, "allocation must not be null");
         allocator(allocation.region()).release(allocation);
         Arrays.fill(positions, allocation.base(), allocation.endExclusive(), EmptyContent.INSTANCE);
+    }
+
+    /** Reads the complete current image through its original active USER handle. */
+    public List<Instruction> readUserBlock(MemoryAllocation allocation) {
+        Objects.requireNonNull(allocation, "allocation must not be null");
+        validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
+        var image = new ArrayList<Instruction>(allocation.size());
+        for (int address = allocation.base(); address < allocation.endExclusive(); address++) {
+            if (!(positions[address] instanceof InstructionContent content)) {
+                throw new MemoryProtectionException("USER image contains non-instruction content");
+            }
+            image.add(content.instruction());
+        }
+        return List.copyOf(image);
+    }
+
+    /** Verifies the original Kernel reservation and canonical PCB before resource transfers. */
+    public void validatePcbAllocation(MemoryAllocation allocation, ProcessControlBlock pcb) {
+        validateWrite(allocation, MemoryRegion.KERNEL, 0, 1);
+        if (allocation.size() != 1 || !(positions[allocation.base()] instanceof PcbContent content)
+                || content.pcb() != pcb) {
+            throw new MemoryProtectionException("Kernel allocation does not contain the canonical PCB");
+        }
     }
 
     public void writeInstruction(MemoryAllocation allocation, int offset, Instruction instruction) {

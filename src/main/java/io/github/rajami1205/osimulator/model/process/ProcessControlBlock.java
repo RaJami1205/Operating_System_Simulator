@@ -13,7 +13,7 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 public final class ProcessControlBlock {
 
     private final int processId;
-    private final ProcessMemoryBounds memoryBounds;
+    private ProcessMemoryBounds memoryBounds;
     private final ProcessStack stack = new ProcessStack();
     private final OpenFileTable openFiles = new OpenFileTable();
     private ProcessAccounting accounting = ProcessAccounting.initial();
@@ -32,7 +32,22 @@ public final class ProcessControlBlock {
         this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
     }
 
-    public ProcessMemoryBounds memoryBounds() { return memoryBounds; }
+    public ProcessMemoryBounds memoryBounds() {
+        if (state == ProcessState.READY_SUSPENDED || state == ProcessState.BLOCKED_SUSPENDED) {
+            throw new IllegalStateException("Suspended process has no current MainMemory bounds");
+        }
+        return memoryBounds;
+    }
+
+    /** Publishes relocation while suspended; logical extent and context remain unchanged. */
+    public void relocateSuspended(ProcessMemoryBounds bounds) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
+                || bounds.limit() != memoryBounds.limit()) {
+            throw new IllegalStateException("Relocation requires suspended state and unchanged limit");
+        }
+        memoryBounds = bounds;
+    }
     public CpuContext<Instruction> cpuContext() { return cpuContext; }
     public ProcessStack stack() { return stack; }
     public OpenFileTable openFiles() { return openFiles; }
@@ -62,7 +77,7 @@ public final class ProcessControlBlock {
 
     // Expone la dirección inicial del programa cargado.
     public int programStartAddress() {
-        return memoryBounds.base();
+        return memoryBounds().base();
     }
 
     // Expone la cantidad de instrucciones del proceso.
@@ -72,7 +87,7 @@ public final class ProcessControlBlock {
 
     // Expone el límite exclusivo del programa en memoria.
     public int programEndAddressExclusive() {
-        return memoryBounds.endExclusive();
+        return memoryBounds().endExclusive();
     }
 
     // Expone el estado actual del proceso.

@@ -2,6 +2,7 @@ package io.github.rajami1205.osimulator.model.storage;
 
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
+import io.github.rajami1205.osimulator.model.storage.exception.InvalidStorageReleaseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -17,6 +18,8 @@ public final class SecondaryStorage {
     private final int swapStart;
     private final FileIndex index;
     private final StorageContent[] data;
+    private final StorageContent[] swap;
+    private final FirstFitStorageAllocator swapAllocator;
     private final FirstFitStorageAllocator allocator;
     private final Map<String, StorageAllocation> allocations = new HashMap<>();
 
@@ -32,6 +35,9 @@ public final class SecondaryStorage {
         data = new StorageContent[swapStart - index.capacity()];
         allocator = new FirstFitStorageAllocator(index.capacity(), swapStart);
         Arrays.fill(data, EmptyStorageContent.INSTANCE);
+        swap = new StorageContent[virtualMemoryPositions];
+        swapAllocator = new FirstFitStorageAllocator(swapStart, totalPositions);
+        Arrays.fill(swap, EmptyStorageContent.INSTANCE);
     }
 
     public int size() { return totalPositions; }
@@ -49,12 +55,12 @@ public final class SecondaryStorage {
         return address < swapStart ? StorageRegion.PROGRAM_DATA : StorageRegion.SWAP;
     }
 
-    /** El índice tiene una única representación; Swap permanece vacío y reservado. */
+    /** El índice y cada región tienen una única representación física. */
     public StorageContent read(int address) {
         return switch (regionOf(address)) {
             case FILE_INDEX -> index.read(address);
             case PROGRAM_DATA -> data[address - dataStart()];
-            case SWAP -> EmptyStorageContent.INSTANCE;
+            case SWAP -> swap[address - swapStart];
         };
     }
 
@@ -211,8 +217,48 @@ public final class SecondaryStorage {
         return allocation;
     }
 
+    public StorageAllocation allocateSwap(int size) { return swapAllocator.allocate(size); }
+
+    private void validateSwap(StorageAllocation allocation) {
+        if (!swapAllocator.isActive(allocation) || allocation.base() < swapStart
+                || allocation.endExclusive() > size()) {
+            throw new InvalidStorageReleaseException(
+                    "SWAP requires an active original allocation in its bounded region");
+        }
+    }
+
+    /** Full-image replacement: validates and prepares every cell before publication. */
+    public void writeSwapBlock(StorageAllocation allocation, List<Instruction> image) {
+        validateSwap(allocation);
+        var instructions = List.copyOf(Objects.requireNonNull(image, "image must not be null"));
+        if (instructions.size() != allocation.size()) throw new StorageException("SWAP image size mismatch");
+        var contents = instructions.stream().map(StoredInstructionContent::new).toArray(StoredInstructionContent[]::new);
+        System.arraycopy(contents, 0, swap, allocation.base() - swapStart, contents.length);
+    }
+
+    public List<Instruction> readSwapBlock(StorageAllocation allocation) {
+        validateSwap(allocation);
+        var image = new ArrayList<Instruction>(allocation.size());
+        for (int offset = 0; offset < allocation.size(); offset++) {
+            if (!(swap[allocation.base() - swapStart + offset] instanceof StoredInstructionContent content)) {
+                throw new StorageException("Incomplete or invalid SWAP image");
+            }
+            image.add(content.instruction());
+        }
+        return List.copyOf(image);
+    }
+
+    public void releaseSwap(StorageAllocation allocation) {
+        validateSwap(allocation);
+        swapAllocator.release(allocation);
+        Arrays.fill(swap, allocation.base() - swapStart, allocation.endExclusive() - swapStart,
+                EmptyStorageContent.INSTANCE);
+    }
+
     public void reset() {
         Arrays.fill(data, EmptyStorageContent.INSTANCE);
+        Arrays.fill(swap, EmptyStorageContent.INSTANCE);
+        swapAllocator.reset();
         index.reset();
         allocations.clear();
         allocator.reset();

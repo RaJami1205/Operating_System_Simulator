@@ -21,7 +21,7 @@ class JobSchedulerTest {
         var memory = new MainMemory(new MemoryConfiguration(128, 32));
         var table = new ProcessTable();
         var queue = new ReadyQueue();
-        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue);
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, new io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry());
         var scheduler = new JobScheduler(jobs, admission);
         assertTrue(scheduler.attemptNextAdmission().isEmpty());
         var instruction = new LoadInstruction(RegisterName.AX);

@@ -32,7 +32,7 @@ public final class FileIndex {
     }
 
     void validatePublication(String name) {
-        if (find(name).isPresent()) throw new StorageException("Duplicate program name: " + name);
+        if (find(name).isPresent()) throw new StorageException("Duplicate storage name: " + name);
         if (slots.size() == capacity) throw new StorageException("File Index is full");
     }
 
@@ -44,6 +44,15 @@ public final class FileIndex {
         while (slots.containsKey(slot)) slot++;
         slots.put(slot, entry);
         return slot;
+    }
+
+    /** Replaces metadata in its existing slot, without renaming or changing entry kind. */
+    public void replace(FileIndexEntry replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        var slot = slots.entrySet().stream().filter(item -> item.getValue().name().equals(replacement.name()))
+                .findFirst().orElseThrow(() -> new StorageException("Unknown index entry: " + replacement.name()));
+        if (slot.getValue().kind() != replacement.kind()) throw new StorageException("Entry kind cannot change");
+        slots.put(slot.getKey(), replacement);
     }
 
     public boolean remove(String name) {

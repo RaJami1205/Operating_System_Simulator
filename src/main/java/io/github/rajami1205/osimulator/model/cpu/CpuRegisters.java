@@ -16,7 +16,8 @@ public final class CpuRegisters<I> {
     private int programCounter;
     private I instructionRegister;
     private int ah;
-    private int al;
+    private RegisterValue dx;
+    private RegisterValue al;
     private ConditionFlags conditionFlags;
 
     // Inicializa los registros numéricos y el IR del procesador simulado.
@@ -37,14 +38,15 @@ public final class CpuRegisters<I> {
 
     // Consulta el valor de un registro general válido.
     public int readRegister(RegisterName register) {
-        return generalRegisters.get(requireRegister(register));
+        return requireRegister(register) == RegisterName.DX ? dx.numericValue() : generalRegisters.get(register);
     }
 
     // Valida el registro y el rango lógico antes de escribir su valor.
     public void writeRegister(RegisterName register, int value) {
         RegisterName nonNullRegister = requireRegister(register);
         CpuValueRange.validateRegisterValue(value);
-        generalRegisters.put(nonNullRegister, value);
+        if (nonNullRegister == RegisterName.DX) dx = new NumericRegisterValue(value);
+        else generalRegisters.put(nonNullRegister, value);
     }
 
     // Expone la posición actual del contador de programa.
@@ -91,13 +93,18 @@ public final class CpuRegisters<I> {
     }
 
     public int al() {
-        return al;
+        return al.numericValue();
     }
 
     public void writeAl(int value) {
         CpuValueRange.validateRegisterValue(value);
-        al = value;
+        al = new NumericRegisterValue(value);
     }
+
+    public RegisterValue dxValue() { return dx; }
+    public RegisterValue alValue() { return al; }
+    public void writeDx(RegisterValue value) { dx = Objects.requireNonNull(value, "DX must not be null"); }
+    public void writeAl(RegisterValue value) { al = Objects.requireNonNull(value, "AL must not be null"); }
 
     public ConditionFlags conditionFlags() {
         return conditionFlags;
@@ -111,7 +118,7 @@ public final class CpuRegisters<I> {
     public CpuContext<I> snapshot() {
         return new CpuContext<>(programCounter, instructionRegister(), accumulator,
                 readRegister(RegisterName.AX), readRegister(RegisterName.BX),
-                readRegister(RegisterName.CX), readRegister(RegisterName.DX), ah, al, conditionFlags);
+                readRegister(RegisterName.CX), dx, ah, al, conditionFlags);
     }
 
     /** Restaura un contexto ya validado sin compartir el mapa mutable de registros. */
@@ -123,9 +130,9 @@ public final class CpuRegisters<I> {
         generalRegisters.put(RegisterName.AX, context.ax());
         generalRegisters.put(RegisterName.BX, context.bx());
         generalRegisters.put(RegisterName.CX, context.cx());
-        generalRegisters.put(RegisterName.DX, context.dx());
+        dx = context.dxValue();
         ah = context.ah();
-        al = context.al();
+        al = context.alValue();
         conditionFlags = context.conditionFlags();
     }
 
@@ -138,11 +145,12 @@ public final class CpuRegisters<I> {
     private void restoreInitialState() {
         accumulator = 0;
         ah = 0;
-        al = 0;
+        dx = new NumericRegisterValue(0);
+        al = new NumericRegisterValue(0);
         conditionFlags = ConditionFlags.CLEAR;
 
         for (RegisterName register : RegisterName.values()) {
-            generalRegisters.put(register, 0);
+            if (register != RegisterName.DX) generalRegisters.put(register, 0);
         }
 
         programCounter = 0;

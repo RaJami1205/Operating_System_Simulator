@@ -19,6 +19,11 @@ import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionEx
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import io.github.rajami1205.osimulator.model.filesystem.FileSystemException;
+import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
+import io.github.rajami1205.osimulator.model.cpu.TextRegisterValue;
+import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
@@ -47,6 +52,7 @@ public final class ExecutionEngine {
 
     // Consume un tick; los efectos semánticos se aplican únicamente en el tick final.
     public TickResult executeTick(
+            SimulatedFileSystem filesystem,
             ScreenDevice screen,
             KeyboardDevice keyboard,
             MainMemory memory,
@@ -59,6 +65,7 @@ public final class ExecutionEngine {
         Objects.requireNonNull(pcb, "pcb must not be null");
         Objects.requireNonNull(progress, "progress must not be null");
 
+        Objects.requireNonNull(filesystem, "filesystem must not be null");
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(keyboard, "keyboard must not be null");
         if (progress.waitingForInput()) {
@@ -95,7 +102,7 @@ public final class ExecutionEngine {
         if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
         SemanticOutcome outcome;
         try {
-            outcome = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter, screen, keyboard);
+            outcome = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter, screen, keyboard, filesystem);
         } catch (RuntimeException | Error failure) {
             progress.clear();
             throw failure;
@@ -161,12 +168,14 @@ public final class ExecutionEngine {
             ProcessControlBlock pcb,
             int currentPc,
             ScreenDevice screen,
-            KeyboardDevice keyboard
+            KeyboardDevice keyboard,
+            SimulatedFileSystem filesystem
     ) {
         try {
             switch (instruction) {
                 case InterruptInstruction interrupt -> {
                     switch (interrupt.vector()) {
+                        case FILESYSTEM -> filesystem.execute(cpu, pcb);
                         case TERMINATE -> { return new Terminate(); }
                         case SCREEN -> screen.append(cpu.readRegister(RegisterName.DX));
                         case KEYBOARD -> {
@@ -190,13 +199,23 @@ public final class ExecutionEngine {
                 case PopInstruction pop -> cpu.writeRegister(pop.destination(), pcb.stack().pop());
                 case ParamInstruction param -> pcb.stack().pushAll(
                         param.values().reversed().stream().map(ImmediateOperand::value).toList());
-                case MovInstruction mov ->
-                        cpu.writeRegister(mov.destination(), switch (mov.source()) {
+                case MovInstruction mov -> {
+                    if (mov.source() instanceof TextOperand text) {
+                        var value = new TextRegisterValue(text.value());
+                        if (mov.destination() == RegisterName.DX) cpu.writeDx(value);
+                        else cpu.writeAl(value); // Model restricts text destinations to DX or AL.
+                    } else {
+                        int value = switch (mov.source()) {
                             case ImmediateOperand immediate -> immediate.value();
                             case RegisterOperand register -> cpu.readRegister(register.register());
-                            case InterruptVector ignored -> throw new ExecutionEngineException("Invalid MOV source");
-                            case BranchDisplacement ignored -> throw new ExecutionEngineException("Invalid MOV source");
-                        });
+                            default -> throw new ExecutionEngineException("Invalid MOV source");
+                        };
+                        switch (mov.destination()) {
+                            case RegisterName register -> cpu.writeRegister(register, value);
+                            case ServiceRegister ignored -> cpu.writeAh(value); // Only AH accepts numeric service MOV.
+                        }
+                    }
+                }
                 case IncInstruction inc -> {
                     if (inc.target().isPresent()) {
                         var target = inc.target().orElseThrow();
@@ -228,6 +247,8 @@ public final class ExecutionEngine {
                                 cpu.accumulator() - cpu.readRegister(sub.source())
                         );
             }
+        } catch (FileSystemException exception) {
+            throw new ExecutionEngineException("Filesystem instruction failed", exception);
         } catch (ProcessStackOverflowException | ProcessStackUnderflowException exception) {
             throw new ExecutionEngineException("Process stack operation failed", exception);
         } catch (InvalidRegisterValueException exception) {

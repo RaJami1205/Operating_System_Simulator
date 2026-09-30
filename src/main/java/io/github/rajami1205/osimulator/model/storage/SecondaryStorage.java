@@ -62,7 +62,7 @@ public final class SecondaryStorage {
         return new StorageCell(address, regionOf(address), read(address));
     }
 
-    public Optional<FileIndexEntry> findProgram(String name) { return index.find(name); }
+    public Optional<FileIndexEntry> findProgram(String name) { return index.find(name).filter(entry -> entry.kind() == FileEntryKind.PROGRAM); }
     public List<FileIndexEntry> entries() { return index.entries(); }
 
     /** Publica sólo después de escribir; cualquier fallo posterior a reservar revierte la operación. */
@@ -75,7 +75,7 @@ public final class SecondaryStorage {
         var allocation = allocator.allocate(contents.length);
         boolean committed = false;
         try {
-            var entry = new FileIndexEntry(name, allocation.base(), allocation.size());
+            var entry = new FileIndexEntry(name, allocation.base(), allocation.size(), FileEntryKind.PROGRAM);
             System.arraycopy(contents, 0, data, allocation.base() - dataStart(), contents.length);
             allocations.put(name, allocation);
             index.publish(entry);
@@ -92,7 +92,7 @@ public final class SecondaryStorage {
     }
 
     public List<Instruction> readProgram(String name) {
-        var entry = index.find(name).orElseThrow(() -> new StorageException("Unknown program: " + name));
+        var entry = findProgram(name).orElseThrow(() -> new StorageException("Unknown program: " + name));
         var result = new ArrayList<Instruction>(entry.length());
         for (int offset = 0; offset < entry.length(); offset++) {
             if (read(entry.startAddress() + offset) instanceof StoredInstructionContent content) {
@@ -106,13 +106,109 @@ public final class SecondaryStorage {
 
     /** Libera el handle original; no reconstruye identidades a partir de direcciones. */
     public boolean removeProgram(String name) {
-        if (index.find(name).isEmpty()) return false;
+        if (findProgram(name).isEmpty()) return false;
         var allocation = allocations.get(name);
         allocator.release(allocation);
         clear(allocation);
         allocations.remove(name);
         index.remove(name);
         return true;
+    }
+
+    public FileIndexEntry userFile(String name) {
+        var entry = index.find(name).orElseThrow(() -> new StorageException("Unknown user file: " + name));
+        if (entry.kind() != FileEntryKind.USER_FILE) throw new StorageException("Entry is not a user file: " + name);
+        return entry;
+    }
+
+    public FileIndexEntry createUserFile(String name) {
+        index.validatePublication(name);
+        var allocation = allocator.allocate(1);
+        boolean committed = false;
+        try {
+            var entry = new FileIndexEntry(name, allocation.base(), 0, FileEntryKind.USER_FILE);
+            allocations.put(name, allocation);
+            index.publish(entry);
+            committed = true;
+            return entry;
+        } finally {
+            if (!committed) {
+                index.remove(name);
+                allocations.remove(name);
+                clear(allocation);
+                allocator.release(allocation);
+            }
+        }
+    }
+
+    public String readUserFile(String name) {
+        var entry = userFile(name);
+        var result = new StringBuilder(entry.length());
+        for (int offset = 0; offset < entry.length(); offset++) {
+            if (!(read(entry.startAddress() + offset) instanceof UserFileContent content)) {
+                throw new StorageException("User file contains non-text content");
+            }
+            result.append(content.value());
+        }
+        return result.toString();
+    }
+
+    /** Complete replacement; shrinking deliberately retains the original allocation capacity. */
+    public void writeUserFile(String name, String content) {
+        var previous = userFile(name);
+        Objects.requireNonNull(content, "content must not be null");
+        StorageContent[] replacement = new StorageContent[Math.max(1, content.length())];
+        Arrays.fill(replacement, EmptyStorageContent.INSTANCE);
+        for (int i = 0; i < content.length(); i++) replacement[i] = new UserFileContent(content.charAt(i));
+        var oldAllocation = requireAllocation(name);
+        if (replacement.length <= oldAllocation.size()) {
+            var entry = new FileIndexEntry(name, oldAllocation.base(), content.length(), FileEntryKind.USER_FILE);
+            int start = oldAllocation.base() - dataStart();
+            var oldContents = Arrays.copyOfRange(data, start, start + oldAllocation.size());
+            boolean committed = false;
+            try {
+                System.arraycopy(replacement, 0, data, start, replacement.length);
+                Arrays.fill(data, start + replacement.length, start + oldAllocation.size(), EmptyStorageContent.INSTANCE);
+                index.replace(entry);
+                committed = true;
+            } finally {
+                if (!committed) System.arraycopy(oldContents, 0, data, start, oldContents.length);
+            }
+            return;
+        }
+        var allocation = allocator.allocate(replacement.length);
+        boolean committed = false;
+        try {
+            var entry = new FileIndexEntry(name, allocation.base(), content.length(), FileEntryKind.USER_FILE);
+            System.arraycopy(replacement, 0, data, allocation.base() - dataStart(), replacement.length);
+            index.replace(entry);
+            allocations.put(name, allocation);
+            committed = true;
+        } finally {
+            if (!committed) {
+                index.replace(previous);
+                clear(allocation);
+                allocator.release(allocation);
+            }
+        }
+        // The retained, prevalidated handle remains active until replacement publication succeeds.
+        allocator.release(oldAllocation);
+        clear(oldAllocation);
+    }
+
+    public void deleteUserFile(String name) {
+        userFile(name);
+        var allocation = requireAllocation(name);
+        allocator.release(allocation);
+        clear(allocation);
+        allocations.remove(name);
+        index.remove(name);
+    }
+
+    private StorageAllocation requireAllocation(String name) {
+        var allocation = allocations.get(name);
+        if (!allocator.isActive(allocation)) throw new StorageException("Missing active allocation: " + name);
+        return allocation;
     }
 
     public void reset() {

@@ -56,6 +56,11 @@ import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
+import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import io.github.rajami1205.osimulator.model.filesystem.FileService;
+import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
+import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.ServiceRegisterOperand;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -68,6 +73,7 @@ public final class SimulatorOrchestrator {
     private final SimulatorLifecycle lifecycle = new SimulatorLifecycle();
     private MainMemory memory;
     private SecondaryStorage secondaryStorage;
+    private SimulatedFileSystem filesystem;
     private JobList jobList;
     private JobSubmissionService jobSubmissionService;
     private ProcessTable processTable;
@@ -117,6 +123,7 @@ public final class SimulatorOrchestrator {
         screen = newScreen;
         keyboard = newKeyboard;
         secondaryStorage = newStorage;
+        filesystem = new SimulatedFileSystem(newStorage);
         jobList = newJobs;
         jobSubmissionService = newSubmissionService;
         processTable = newProcesses;
@@ -180,7 +187,7 @@ public final class SimulatorOrchestrator {
         }
         if (waitingForInput()) return;
         try {
-            TickResult result = executionEngine.executeTick(screen, keyboard, memory, cpu, pcb, executionProgress);
+            TickResult result = executionEngine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, executionProgress);
             if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
         } catch (ExecutionEngineException exception) {
             lifecycle.markError();
@@ -226,6 +233,7 @@ public final class SimulatorOrchestrator {
         lifecycle.reset();
         memory = null;
         secondaryStorage = null;
+        filesystem = null;
         jobList = null;
         jobSubmissionService = null;
         processTable = null;
@@ -249,7 +257,7 @@ public final class SimulatorOrchestrator {
             cpuSnapshot = Optional.of(new CpuSnapshot(
                     cpu.programCounter(), cpu.accumulator(),
                     cpu.readRegister(RegisterName.AX), cpu.readRegister(RegisterName.BX),
-                    cpu.readRegister(RegisterName.CX), cpu.readRegister(RegisterName.DX),
+                    cpu.readRegister(RegisterName.CX), cpu.dxValue(),
                     cpu.instructionRegister().map(this::semanticText)));
             currentInstruction = cpu.instructionRegister().map(this::instructionSnapshot);
         }
@@ -300,7 +308,11 @@ public final class SimulatorOrchestrator {
     private String operandText(Instruction instruction) {
         return switch (instruction) {
             case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
-                case ImmediateOperand immediate -> Integer.toString(immediate.value());
+                case ImmediateOperand immediate -> mov.destination() == ServiceRegister.AH
+                        ? FileService.find(immediate.value()).map(FileService::canonicalText).orElse(Integer.toString(immediate.value()))
+                        : Integer.toString(immediate.value());
+                case TextOperand text -> "\"" + text.value() + "\"";
+                case ServiceRegisterOperand ignored -> throw new IllegalStateException("Invalid MOV source");
                 case RegisterOperand register -> register.register().name();
                 case InterruptVector ignored -> throw new IllegalStateException("Invalid MOV source");
                 case BranchDisplacement ignored -> throw new IllegalStateException("Invalid MOV source");

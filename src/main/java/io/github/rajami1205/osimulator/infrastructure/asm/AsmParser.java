@@ -23,6 +23,11 @@ import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacem
 import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
 import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
+import io.github.rajami1205.osimulator.model.cpu.MovDestination;
+import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
+import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -51,8 +56,7 @@ public final class AsmParser {
                     "source line must not be null"
             );
 
-            int comment = sourceLine.indexOf(';');
-            sourceLine = (comment >= 0 ? sourceLine.substring(0, comment) : sourceLine).strip();
+            sourceLine = stripComment(sourceLine, index + 1).strip();
             if (sourceLine.isEmpty()) {
                 continue;
             }
@@ -166,24 +170,67 @@ public final class AsmParser {
         return matcher;
     }
 
-    // MOV comparte estructura con SWAP, pero admite registro o inmediato como origen.
-    private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
-        Matcher matcher = parseTwoOperands(sourceLine, "MOV", lineNumber);
-        RegisterName destination = parseRegister(matcher.group(1), lineNumber);
-        if (!DECIMAL_INTEGER.matcher(matcher.group(2)).matches()) {
-            return new MovInstruction(destination, parseRegister(matcher.group(2), lineNumber));
+    // No escapes: quotes delimit one literal; commas and semicolons inside it are data.
+    private String stripComment(String line, int lineNumber) {
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char value = line.charAt(i);
+            if (value == '\n' || value == '\r') throw new AsmParseException(lineNumber, "Line breaks are not valid inside a source line");
+            if (value == '"') quoted = !quoted;
+            if (value == ';' && !quoted) return line.substring(0, i);
         }
-        int immediate = parseImmediate(matcher.group(2), lineNumber);
+        if (quoted) throw new AsmParseException(lineNumber, "Unclosed string literal");
+        return line;
+    }
 
-        try {
-            return new MovInstruction(destination, immediate);
-        } catch (InvalidImmediateValueException exception) {
-            throw new AsmParseException(
-                    lineNumber,
-                    "Invalid MOV immediate '" + matcher.group(2) + "'",
-                    exception
-            );
+    private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
+        String operands = sourceLine.substring(3).strip();
+        boolean quoted = false;
+        int comma = -1;
+        for (int i = 0; i < operands.length(); i++) {
+            char value = operands.charAt(i);
+            if (value == '"') quoted = !quoted;
+            if (value == ',' && !quoted) {
+                if (comma >= 0) throw new AsmParseException(lineNumber, "MOV requires two operands");
+                comma = i;
+            }
         }
+        if (comma < 0) throw new AsmParseException(lineNumber, "MOV requires two comma-separated operands");
+        String target = operands.substring(0, comma).strip().toUpperCase(Locale.ROOT);
+        String source = operands.substring(comma + 1).strip();
+        MovDestination destination = target.equals("AH") || target.equals("AL")
+                ? ServiceRegister.valueOf(target) : parseRegister(target, lineNumber);
+        try {
+            InstructionOperand operand;
+            if (source.startsWith("\"")) {
+                if (source.length() < 2 || !source.endsWith("\"")
+                        || source.substring(1, source.length() - 1).indexOf('"') >= 0) {
+                    throw new AsmParseException(lineNumber, "Malformed string literal");
+                }
+                operand = new TextOperand(source.substring(1, source.length() - 1));
+            } else if (source.equalsIgnoreCase("AH") || source.equalsIgnoreCase("AL")) {
+                throw new AsmParseException(lineNumber, "Service registers cannot be MOV sources");
+            } else if (DECIMAL_INTEGER.matcher(source).matches() || source.toUpperCase(Locale.ROOT).endsWith("H")) {
+                operand = new ImmediateOperand(parseNumericLiteral(source, lineNumber));
+            } else {
+                operand = new RegisterOperand(parseRegister(source, lineNumber));
+            }
+            return new MovInstruction(destination, operand);
+        } catch (AsmParseException exception) {
+            throw exception;
+        } catch (IllegalArgumentException exception) {
+            throw new AsmParseException(lineNumber, "Invalid MOV operands: " + exception.getMessage(), exception);
+        }
+    }
+
+    private int parseNumericLiteral(String token, int lineNumber) {
+        if (token.matches("[0-9A-Fa-f]+[Hh]")) {
+            try { return Integer.parseInt(token.substring(0, token.length() - 1), 16); }
+            catch (NumberFormatException exception) {
+                throw new AsmParseException(lineNumber, "Hex literal outside integer range", exception);
+            }
+        }
+        return parseImmediate(token, lineNumber);
     }
 
     // Interpreta un entero decimal y conserva la línea de origen en los errores.

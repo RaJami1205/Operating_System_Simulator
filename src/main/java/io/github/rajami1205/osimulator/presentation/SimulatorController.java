@@ -298,7 +298,7 @@ public final class SimulatorController {
         axValueLabel.setText(cpu.map(value -> Integer.toString(value.ax())).orElse("—"));
         bxValueLabel.setText(cpu.map(value -> Integer.toString(value.bx())).orElse("—"));
         cxValueLabel.setText(cpu.map(value -> Integer.toString(value.cx())).orElse("—"));
-        dxValueLabel.setText(cpu.map(value -> Integer.toString(value.dx())).orElse("—"));
+        dxValueLabel.setText(cpu.map(value -> value.dxValue().displayText()).orElse("—"));
     }
 
     // Muestra la instrucción semántica y el estado de ejecución.

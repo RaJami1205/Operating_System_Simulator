@@ -86,7 +86,8 @@ class BasicIoOrchestratorTest {
     @Test void explicitTerminationFinishesSameStepWithoutResetOrLaterExecution() {
         load("INT 20H","INC"); simulator.step(); state(SimulatorState.RUNNING,"RUNNING",0,0);
         simulator.step(); state(SimulatorState.FINISHED,"TERMINATED",0,0);
-        assertEquals("INT 20H",simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
+        assertTrue(simulator.snapshot().currentInstruction().isEmpty());
+        assertEquals(Optional.of("INT 20H"),simulator.snapshot().cpu().orElseThrow().instructionRegister());
         assertTrue(simulator.configuration().isPresent()); assertTrue(simulator.snapshot().program().isEmpty());
         assertEquals(0,simulator.snapshot().cpu().orElseThrow().accumulator());
         assertThrows(IllegalStateException.class,simulator::step);

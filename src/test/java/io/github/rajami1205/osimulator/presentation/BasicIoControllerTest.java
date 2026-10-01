@@ -32,7 +32,7 @@ class BasicIoControllerTest {
             var loader=new FXMLLoader(SimulatorApplication.class.getResource("/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"));
             loader.setController(controller); assertNotNull(loader.load());
             simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
-            simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC"))); simulator.start();
+            simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC"))); simulator.start();invoke(controller,"refresh");
             var timeline=(Timeline)field(controller,"automaticTimeline");
             try {
                 invoke(controller,"handleAutomatic");
@@ -66,7 +66,7 @@ class BasicIoControllerTest {
                 invoke(controller,"handleReset");
                 simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
                 simulator.loadProgram(new AsmParser().parse(List.of("MOV DX, \"notes.txt\"","MOV DX, 7")));
-                simulator.start();
+                simulator.start();invoke(controller,"refresh");
                 invoke(controller,"handleStep");
                 assertEquals("notes.txt",((javafx.scene.control.Label)field(controller,"dxValueLabel")).getText());
                 invoke(controller,"handleStep");
@@ -77,7 +77,7 @@ class BasicIoControllerTest {
                 simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC")));
                 simulator.loadProgram(new AsmParser().parse(List.of("INC")));
                 simulator.loadProgram(new AsmParser().parse(List.of("ADD AX")));
-                simulator.start();invoke(controller,"handleAutomatic");
+                simulator.start();invoke(controller,"refresh");invoke(controller,"handleAutomatic");
                 callback.handle(new javafx.event.ActionEvent()); // INT09 1/2
                 assertEquals(0,simulator.snapshot().cpu().orElseThrow().programCounter());
                 callback.handle(new javafx.event.ActionEvent()); // P1 blocked; P2 remains READY
@@ -97,7 +97,7 @@ class BasicIoControllerTest {
                 callback.handle(new javafx.event.ActionEvent()); // ADD 3/3 -> all remaining blocked
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));
-                simulator.submitKeyboardInput(12);
+                simulator.submitKeyboardInput(12);invoke(controller,"refresh");
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 callback.handle(new javafx.event.ActionEvent()); // stopped mode never progresses
                 assertEquals(2,simulator.completedProcesses().size());
@@ -106,7 +106,7 @@ class BasicIoControllerTest {
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 invoke(controller,"handleReset");
                 simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),512,64));
-                simulator.loadProgram(new AsmParser().parse(List.of("INC","INC")));simulator.start();
+                simulator.loadProgram(new AsmParser().parse(List.of("INC","INC")));simulator.start();invoke(controller,"refresh");
                 invoke(controller,"handleAutomatic");invoke(controller,"handleStep");
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));

@@ -1,422 +1,310 @@
-<?xml version="1.0" encoding="UTF-8"?>
-
+<?xml version="1.0" ?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
 <?import javafx.geometry.Insets?>
-<?import javafx.scene.control.Button?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.control.TableColumn?>
-<?import javafx.scene.control.TableView?>
-<?import javafx.scene.control.TextField?>
-<?import javafx.scene.control.Slider?>
-<?import javafx.scene.control.ScrollPane?>
-<?import javafx.scene.layout.BorderPane?>
-<?import javafx.scene.layout.ColumnConstraints?>
-<?import javafx.scene.layout.GridPane?>
-<?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.Region?>
-<?import javafx.scene.layout.RowConstraints?>
-<?import javafx.scene.layout.VBox?>
-
-<BorderPane xmlns="http://javafx.com/javafx/25"
-            xmlns:fx="http://javafx.com/fxml/1"
-            prefWidth="1280.0"
-            prefHeight="720.0"
-            styleClass="app-root"
-            stylesheets="@simulator.css">
-    <!-- Header -->
+<BorderPane xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" prefWidth="1280.0" prefHeight="720.0" styleClass="app-root" stylesheets="@simulator.css">
     <top>
-        <HBox alignment="CENTER_LEFT" spacing="16.0" styleClass="header">
-            <VBox spacing="1.0">
-                <Label text="Operating System Simulator" styleClass="header-title" />
-                <Label text="System Control Dashboard" styleClass="header-subtitle" />
+        <HBox alignment="CENTER_LEFT" spacing="10.0" styleClass="header">
+            <VBox>
+                <Label text="Operating System Simulator" styleClass="header-title"/>
+                <Label text="Multiprocess Dashboard" styleClass="header-subtitle"/>
             </VBox>
-            <Region HBox.hgrow="ALWAYS" />
-            <VBox alignment="CENTER_RIGHT" spacing="2.0" styleClass="state-badge">
-                <Label text="SIMULATOR STATE" styleClass="state-caption" />
-                <Label fx:id="simulatorStateLabel"
-                       text="CONFIGURING"
-                       styleClass="state-value" />
+            <Region HBox.hgrow="ALWAYS"/>
+            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+                <Label text="LIFECYCLE" styleClass="state-caption"/>
+                <Label fx:id="simulatorStateLabel" text="CONFIGURING" styleClass="state-value"/>
+            </VBox>
+            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+                <Label text="RUNTIME" styleClass="state-caption"/>
+                <Label fx:id="runtimeStatusLabel" text="—" styleClass="state-value"/>
+            </VBox>
+            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+                <Label text="CPU OWNER" styleClass="state-caption"/>
+                <Label fx:id="ownerValueLabel" text="Idle" styleClass="state-value"/>
             </VBox>
         </HBox>
     </top>
-
     <center>
-        <GridPane hgap="10.0" vgap="10.0" styleClass="dashboard-grid">
-            <padding>
-                <Insets top="10.0" right="10.0" bottom="10.0" left="10.0" />
-            </padding>
-            <columnConstraints>
-                <ColumnConstraints hgrow="ALWAYS" />
-            </columnConstraints>
-            <rowConstraints>
-                <RowConstraints percentHeight="67.0" vgrow="ALWAYS" />
-                <RowConstraints percentHeight="33.0" vgrow="ALWAYS" />
-            </rowConstraints>
-
-            <GridPane hgap="10.0" GridPane.rowIndex="0">
-                <columnConstraints>
-                    <ColumnConstraints percentWidth="24.0" hgrow="ALWAYS" />
-                    <ColumnConstraints percentWidth="46.0" hgrow="ALWAYS" />
-                    <ColumnConstraints percentWidth="30.0" hgrow="ALWAYS" />
-                </columnConstraints>
-                <rowConstraints>
-                    <RowConstraints vgrow="ALWAYS" />
-                </rowConstraints>
-
-                <!-- Simulator Control -->
-                <ScrollPane fitToWidth="true" hbarPolicy="NEVER"
-                            styleClass="configuration-scroll" GridPane.columnIndex="0">
-                <VBox spacing="4.0"
-                      maxWidth="Infinity"
-                      maxHeight="Infinity"
-                      styleClass="dashboard-panel"
-                      GridPane.columnIndex="0">
-                    <Label text="SIMULATOR CONTROL" styleClass="panel-header" />
-
-                    <VBox spacing='10.0' styleClass='control-section'>
-                        <Label text='MEMORY CONFIGURATION' styleClass='section-title' />
+        <SplitPane dividerPositions="0.24" styleClass="dashboard-split">
+            <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="configuration-scroll" minWidth="225.0">
+                <VBox spacing="4.0" maxWidth="Infinity" maxHeight="Infinity" styleClass="dashboard-panel">
+                    <Label text="SIMULATOR CONTROL" styleClass="panel-header"/>
+                    <VBox spacing="10.0" styleClass="control-section">
+                        <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
-                                <Label text="Main Memory" styleClass="configuration-label" />
-                                <Region HBox.hgrow="ALWAYS" />
-                                <Label fx:id="mainMemoryValue" styleClass="configuration-value" />
+                                <Label text="Main Memory" styleClass="configuration-label"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="mainMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="mainMemorySlider" min="128" max="1024" value="256"
-                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
-                                    snapToTicks="true" styleClass="configuration-slider" />
-                            <Label fx:id="mainMemoryRange" styleClass="configuration-range" />
+                            <Slider fx:id="mainMemorySlider" min="128" max="1024" value="256" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Label fx:id="mainMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
-                                <Label text="Kernel Memory" styleClass="configuration-label" />
-                                <Region HBox.hgrow="ALWAYS" />
-                                <Label fx:id="kernelMemoryValue" styleClass="configuration-value" />
+                                <Label text="Kernel Memory" styleClass="configuration-label"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="kernelMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="kernelMemorySlider" min="32" max="255" value="32"
-                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
-                                    snapToTicks="true" styleClass="configuration-slider" />
-                            <Label fx:id="kernelMemoryRange" styleClass="configuration-range" />
+                            <Slider fx:id="kernelMemorySlider" min="32" max="255" value="32" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Label fx:id="kernelMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
-                                <Label text="Secondary Storage" styleClass="configuration-label" />
-                                <Region HBox.hgrow="ALWAYS" />
-                                <Label fx:id="secondaryStorageValue" styleClass="configuration-value" />
+                                <Label text="Secondary Storage" styleClass="configuration-label"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="secondaryStorageValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="secondaryStorageSlider" min="128" max="2048" value="512"
-                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
-                                    snapToTicks="true" styleClass="configuration-slider" />
-                            <Label fx:id="secondaryStorageRange" styleClass="configuration-range" />
+                            <Slider fx:id="secondaryStorageSlider" min="128" max="2048" value="512" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Label fx:id="secondaryStorageRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
-                                <Label text="Virtual Memory" styleClass="configuration-label" />
-                                <Region HBox.hgrow="ALWAYS" />
-                                <Label fx:id="virtualMemoryValue" styleClass="configuration-value" />
+                                <Label text="Virtual Memory" styleClass="configuration-label"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="virtualMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="virtualMemorySlider" min="64" max="511" value="64"
-                                    blockIncrement="1" majorTickUnit="1" minorTickCount="0"
-                                    snapToTicks="true" styleClass="configuration-slider" />
-                            <Label fx:id="virtualMemoryRange" styleClass="configuration-range" />
+                            <Slider fx:id="virtualMemorySlider" min="64" max="511" value="64" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Label fx:id="virtualMemoryRange" styleClass="configuration-range"/>
                         </VBox>
-                        <Button fx:id="initializeButton" onAction="#handleInitialize"
-                                text="Initialize" maxWidth="Infinity" styleClass="primary-button" />
+                        <Button fx:id="initializeButton" onAction="#handleInitialize" text="Initialize" maxWidth="Infinity" styleClass="primary-button"/>
                     </VBox>
                     <VBox spacing="4.0" styleClass="control-section">
-                        <Label text="PROGRAM" styleClass="section-title" />
+                        <Label text="PROGRAM" styleClass="section-title"/>
                         <GridPane hgap="6.0" vgap="4.0">
                             <columnConstraints>
-                                <ColumnConstraints percentWidth="38.0" />
-                                <ColumnConstraints percentWidth="62.0" hgrow="ALWAYS" />
+                                <ColumnConstraints percentWidth="38.0"/>
+                                <ColumnConstraints percentWidth="62.0" hgrow="ALWAYS"/>
                             </columnConstraints>
-                            <Label text="Program file (.asm)"
-                                   wrapText="true"
-                                   styleClass="section-label" />
-                            <TextField fx:id="programPathField"
-                                       editable="false"
-                                       maxWidth="Infinity"
-                                       promptText="No program selected"
-                                       styleClass="input-field"
-                                       GridPane.columnIndex="1" />
-                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram"
-                                    text="Browse"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.rowIndex="1" />
-                            <Button fx:id="loadProgramButton" onAction="#handleLoadProgram"
-                                    text="Load Program"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.columnIndex="1"
-                                    GridPane.rowIndex="1" />
+                            <Label text="Program file (.asm)" wrapText="true" styleClass="section-label"/>
+                            <TextField fx:id="programPathField" editable="false" maxWidth="Infinity" promptText="No program selected" styleClass="input-field" GridPane.columnIndex="1"/>
+                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
+                            <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Program" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
                         </GridPane>
                     </VBox>
-
                     <VBox spacing="4.0" styleClass="control-section">
-                        <Label text="EXECUTION" styleClass="section-title" />
+                        <Label text="EXECUTION" styleClass="section-title"/>
                         <GridPane hgap="5.0" vgap="4.0">
                             <columnConstraints>
-                                <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS" />
-                                <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS" />
+                                <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS"/>
+                                <ColumnConstraints percentWidth="50.0" hgrow="ALWAYS"/>
                             </columnConstraints>
-                            <Button fx:id="startButton" onAction="#handleStart"
-                                    text="Start"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="primary-button" />
-                            <Button fx:id="stepButton" onAction="#handleStep"
-                                    text="Step"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.columnIndex="1" />
-                            <Button fx:id="automaticButton" onAction="#handleAutomatic"
-                                    text="Automatic"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.rowIndex="1" />
-                            <Button fx:id="pauseButton" onAction="#handlePause"
-                                    text="Pause"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.columnIndex="1"
-                                    GridPane.rowIndex="1" />
-                            <Button fx:id="resumeButton" onAction="#handleResume"
-                                    text="Resume"
-                                    disable="true"
-                                    maxWidth="Infinity"
-                                    styleClass="secondary-button"
-                                    GridPane.rowIndex="2" />
-                            <Button fx:id="resetButton" onAction="#handleReset"
-                                    text="Reset"
-                                    maxWidth="Infinity"
-                                    styleClass="reset-button"
-                                    GridPane.columnIndex="1"
-                                    GridPane.rowIndex="2" />
+                            <Button fx:id="startButton" onAction="#handleStart" text="Start" disable="true" maxWidth="Infinity" styleClass="primary-button"/>
+                            <Button fx:id="stepButton" onAction="#handleStep" text="Step" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1"/>
+                            <Button fx:id="automaticButton" onAction="#handleAutomatic" text="Automatic" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
+                            <Button fx:id="pauseButton" onAction="#handlePause" text="Pause" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                            <Button fx:id="resumeButton" onAction="#handleResume" text="Resume" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="2"/>
+                            <Button fx:id="resetButton" onAction="#handleReset" text="Reset" maxWidth="Infinity" styleClass="reset-button" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
                         </GridPane>
                     </VBox>
                 </VBox>
+            </ScrollPane>
+            <SplitPane orientation="VERTICAL" dividerPositions="0.57" styleClass="dashboard-split" minWidth="0">
+                <SplitPane dividerPositions="0.37" styleClass="dashboard-split" minHeight="180">
+                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="dashboard-scroll" minWidth="200">
+                        <VBox spacing="8" styleClass="dashboard-panel">
+                            <Label text="CPU / CURRENT INSTRUCTION" styleClass="panel-header"/>
+                            <Label fx:id="cpuOwnerLabel" text="Idle" styleClass="helper-text"/>
+                        <VBox spacing="5" styleClass="instruction-panel">
+                                <Label text="CURRENT INSTRUCTION" styleClass="panel-header"/>
+                                <Label fx:id="currentInstructionLabel" text="—" wrapText="true" maxWidth="Infinity" styleClass="instruction-value"/>
+                                <HBox spacing="6">
+                                    <Label fx:id="opcodeValueLabel" text="—" styleClass="technical-value"/>
+                                    <Label fx:id="operandValueLabel" text="—" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <Label fx:id="executionStatusLabel" text="Waiting for execution" wrapText="true" styleClass="helper-text"/>
+                            </VBox>
+                            <GridPane hgap="6" vgap="5">
+                                <columnConstraints>
+                                    <ColumnConstraints percentWidth="50"/>
+                                    <ColumnConstraints percentWidth="50"/>
+                                </columnConstraints>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="0">
+                                    <Label text="PC" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="pcValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="0">
+                                    <Label text="AC" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="acValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="1">
+                                    <Label text="AX" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="axValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="1">
+                                    <Label text="BX" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="bxValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="2">
+                                    <Label text="CX" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="cxValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="2">
+                                    <Label text="DX" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="dxValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="3">
+                                    <Label text="AH" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="ahValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="3">
+                                    <Label text="AL" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="alValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="4">
+                                    <Label text="Equal" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="equalValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="4">
+                                    <Label text="Overflow" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label fx:id="overflowValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
+                                </HBox>
+                            </GridPane>
+                            <Label text="IR (physical CPU)" minWidth="-Infinity" styleClass="metric-label"/>
+                            <Label fx:id="irValueLabel" text="—" wrapText="true" maxWidth="Infinity" styleClass="technical-value"/>
 
-                </ScrollPane>
-
-                <!-- CPU Status and Current Instruction -->
-                <VBox spacing="8.0"
-                      maxWidth="Infinity"
-                      maxHeight="Infinity"
-                      GridPane.columnIndex="1">
-                    <VBox spacing="6.0" styleClass="dashboard-panel">
-                        <Label text="CPU STATUS" styleClass="panel-header" />
-                        <GridPane hgap="6.0" vgap="6.0">
-                            <columnConstraints>
-                                <ColumnConstraints percentWidth="25.0" hgrow="ALWAYS" />
-                                <ColumnConstraints percentWidth="25.0" hgrow="ALWAYS" />
-                                <ColumnConstraints percentWidth="25.0" hgrow="ALWAYS" />
-                                <ColumnConstraints percentWidth="25.0" hgrow="ALWAYS" />
-                            </columnConstraints>
-                            <VBox spacing="1.0" styleClass="metric-card">
-                                <Label text="PC" styleClass="metric-label" />
-                                <Label fx:id="pcValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.columnIndex="1">
-                                <Label text="AC" styleClass="metric-label" />
-                                <Label fx:id="acValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.columnIndex="2"
-                                  GridPane.columnSpan="2">
-                                <Label text="IR" styleClass="metric-label" />
-                                <Label fx:id="irValueLabel"
-                                       text="—"
-                                       maxWidth="Infinity"
-                                       wrapText="true"
-                                       styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.rowIndex="1">
-                                <Label text="AX" styleClass="metric-label" />
-                                <Label fx:id="axValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.columnIndex="1"
-                                  GridPane.rowIndex="1">
-                                <Label text="BX" styleClass="metric-label" />
-                                <Label fx:id="bxValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.columnIndex="2"
-                                  GridPane.rowIndex="1">
-                                <Label text="CX" styleClass="metric-label" />
-                                <Label fx:id="cxValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0"
-                                  styleClass="metric-card"
-                                  GridPane.columnIndex="3"
-                                  GridPane.rowIndex="1">
-                                <Label text="DX" styleClass="metric-label" />
-                                <Label fx:id="dxValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                        </GridPane>
-                    </VBox>
-
-                    <VBox spacing="6.0"
-                          maxHeight="Infinity"
-                          styleClass="instruction-panel"
-                          VBox.vgrow="ALWAYS">
-                        <Label text="CURRENT INSTRUCTION" styleClass="panel-header" />
-                        <VBox spacing="1.0">
-                            <Label text="Semantic Instruction" styleClass="section-label" />
-                            <Label fx:id="currentInstructionLabel"
-                                   text="—"
-                                   maxWidth="Infinity"
-                                   wrapText="true"
-                                   styleClass="instruction-value" />
                         </VBox>
-                        <HBox spacing="6.0">
-                            <VBox spacing="1.0" styleClass="instruction-detail" HBox.hgrow="ALWAYS">
-                                <Label text="Opcode" styleClass="metric-label" />
-                                <Label fx:id="opcodeValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                            <VBox spacing="1.0" styleClass="instruction-detail" HBox.hgrow="ALWAYS">
-                                <Label text="Operand" styleClass="metric-label" />
-                                <Label fx:id="operandValueLabel" text="—" styleClass="technical-value" />
-                            </VBox>
-                        </HBox>
-                        <Label fx:id="executionStatusLabel" text="Waiting for execution" styleClass="helper-text" />
-                    </VBox>
-                </VBox>
-
-                <!-- Loaded Program and PCB -->
-                <VBox spacing="8.0"
-                      maxWidth="Infinity"
-                      maxHeight="Infinity"
-                      GridPane.columnIndex="2">
-                    <VBox spacing="6.0"
-                          maxHeight="Infinity"
-                          styleClass="dashboard-panel"
-                          VBox.vgrow="ALWAYS">
-                        <Label text="LOADED PROGRAM" styleClass="panel-header" />
-                        <TableView fx:id="programTable"
-                                   maxHeight="Infinity"
-                                   VBox.vgrow="ALWAYS">
-                            <columnResizePolicy>
-                                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN" />
-                            </columnResizePolicy>
-                            <placeholder>
-                                <Label text="No program loaded" styleClass="empty-state" />
-                            </placeholder>
-                            <columns>
-                                <TableColumn fx:id="programAddressColumn"
-                                             text="Address"
-                                             minWidth="64.0"
-                                             prefWidth="82.0"
-                                             maxWidth="110.0" />
-                                <TableColumn fx:id="programInstructionColumn"
-                                             text="Instruction"
-                                             minWidth="150.0"
-                                             prefWidth="230.0" />
-                            </columns>
-                        </TableView>
-                    </VBox>
-
-                    <VBox spacing="5.0" styleClass="dashboard-panel">
-                        <Label text="PROCESS CONTROL BLOCK" styleClass="panel-header" />
-                        <GridPane hgap="8.0" vgap="3.0">
-                            <columnConstraints>
-                                <ColumnConstraints percentWidth="58.0" />
-                                <ColumnConstraints percentWidth="42.0" hgrow="ALWAYS" />
-                            </columnConstraints>
-                            <Label text="PID" styleClass="pcb-label" />
-                            <Label fx:id="processIdValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1" />
-                            <Label text="PROCESS STATE"
-                                   styleClass="pcb-label"
-                                   GridPane.rowIndex="1" />
-                            <Label fx:id="processStateValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1"
-                                   GridPane.rowIndex="1" />
-                            <Label text="Start Address"
-                                   styleClass="pcb-label"
-                                   GridPane.rowIndex="2" />
-                            <Label fx:id="processStartValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1"
-                                   GridPane.rowIndex="2" />
-                            <Label text="Instruction Count"
-                                   styleClass="pcb-label"
-                                   GridPane.rowIndex="3" />
-                            <Label fx:id="processInstructionCountValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1"
-                                   GridPane.rowIndex="3" />
-                            <Label text="End Exclusive"
-                                   styleClass="pcb-label"
-                                   GridPane.rowIndex="4" />
-                            <Label fx:id="processEndValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1"
-                                   GridPane.rowIndex="4" />
-                            <Label text="Saved PC"
-                                   styleClass="pcb-label"
-                                   GridPane.rowIndex="5" />
-                            <Label fx:id="processSavedPcValueLabel"
-                                   text="—"
-                                   styleClass="pcb-value"
-                                   GridPane.columnIndex="1"
-                                   GridPane.rowIndex="5" />
-                        </GridPane>
-                    </VBox>
-                </VBox>
-            </GridPane>
-
-            <!-- Memory View -->
-            <VBox spacing="6.0"
-                  maxWidth="Infinity"
-                  maxHeight="Infinity"
-                  styleClass="dashboard-panel"
-                  GridPane.rowIndex="1">
-                <Label text="MEMORY VIEW" styleClass="panel-header" />
-                <TableView fx:id="memoryTable"
-                           maxHeight="Infinity"
-                           VBox.vgrow="ALWAYS">
-                    <columnResizePolicy>
-                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN" />
-                    </columnResizePolicy>
-                    <placeholder>
-                        <Label text="Memory not initialized" styleClass="empty-state" />
-                    </placeholder>
-                    <columns>
-                        <TableColumn fx:id="memoryAddressColumn"
-                                     text="Address"
-                                     minWidth="72.0"
-                                     prefWidth="110.0"
-                                     maxWidth="150.0" />
-                        <TableColumn fx:id="memoryRegionColumn"
-                                     text="Region"
-                                     minWidth="90.0"
-                                     prefWidth="130.0"
-                                     maxWidth="180.0" />
-                        <TableColumn fx:id="memoryContentColumn"
-                                     text="Content"
-                                     minWidth="320.0"
-                                     prefWidth="900.0" />
-                    </columns>
-                </TableView>
-            </VBox>
-        </GridPane>
+                    </ScrollPane>
+                    <TabPane tabClosingPolicy="UNAVAILABLE" styleClass="dashboard-tabs" minWidth="240">
+                        <tabs>
+                            <Tab text="Workload">
+                                <VBox spacing="8" styleClass="dashboard-panel">
+                                    <TableView fx:id="jobsTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                        <placeholder>
+                                            <Label text="No jobs" styleClass="empty-state"/>
+                                        </placeholder>
+                                        <columns>
+                                            <TableColumn fx:id="jobIdColumn" text="Job ID" prefWidth="70"/>
+                                            <TableColumn fx:id="jobNameColumn" text="Program" prefWidth="220"/>
+                                            <TableColumn fx:id="jobStateColumn" text="State" prefWidth="100"/>
+                                        </columns>
+                                    </TableView>
+                                    <GridPane hgap="6" vgap="4">
+                                        <columnConstraints>
+                                            <ColumnConstraints percentWidth="33.3"/>
+                                            <ColumnConstraints percentWidth="33.3"/>
+                                            <ColumnConstraints percentWidth="33.4"/>
+                                        </columnConstraints>
+                                        <Label text="Ready" styleClass="section-title"/>
+                                        <Label text="Suspended Ready" styleClass="section-title" GridPane.columnIndex="1"/>
+                                        <Label text="Keyboard Pending" styleClass="section-title" GridPane.columnIndex="2"/>
+                                        <ListView fx:id="readyList" minHeight="74" prefHeight="92" GridPane.rowIndex="1">
+                                            <placeholder>
+                                                <Label text="No ready processes" wrapText="true" styleClass="empty-state"/>
+                                            </placeholder>
+                                        </ListView>
+                                        <ListView fx:id="suspendedList" minHeight="74" prefHeight="92" GridPane.columnIndex="1" GridPane.rowIndex="1">
+                                            <placeholder>
+                                                <Label text="No suspended ready processes" wrapText="true" styleClass="empty-state"/>
+                                            </placeholder>
+                                        </ListView>
+                                        <ListView fx:id="pendingList" minHeight="74" prefHeight="92" GridPane.columnIndex="2" GridPane.rowIndex="1">
+                                            <placeholder>
+                                                <Label text="No pending input" wrapText="true" styleClass="empty-state"/>
+                                            </placeholder>
+                                        </ListView>
+                                    </GridPane>
+                                </VBox>
+                            </Tab>
+                            <Tab text="Processes">
+                                <SplitPane orientation="VERTICAL" dividerPositions="0.5" styleClass="dashboard-split">
+                                    <TableView fx:id="processTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                        <placeholder>
+                                            <Label text="No active processes" styleClass="empty-state"/>
+                                        </placeholder>
+                                        <columns>
+                                            <TableColumn fx:id="pidColumn" text="PID" prefWidth="55"/>
+                                            <TableColumn fx:id="processStateColumn" text="State" prefWidth="145"/>
+                                            <TableColumn fx:id="processPcColumn" text="PC" prefWidth="55"/>
+                                            <TableColumn fx:id="residencyColumn" text="Residency" prefWidth="100"/>
+                                            <TableColumn fx:id="baseColumn" text="Base" prefWidth="60"/>
+                                            <TableColumn fx:id="limitColumn" text="Limit" prefWidth="60"/>
+                                            <TableColumn fx:id="priorityColumn" text="Priority" prefWidth="65"/>
+                                        </columns>
+                                    </TableView>
+                                    <TextArea fx:id="pcbDetailArea" editable="false" wrapText="true" text="Select a process" styleClass="detail-area"/>
+                                </SplitPane>
+                            </Tab>
+                        </tabs>
+                    </TabPane>
+                </SplitPane>
+                <TabPane tabClosingPolicy="UNAVAILABLE" styleClass="dashboard-tabs" minHeight="130">
+                    <tabs>
+                        <Tab text="Main Memory">
+                            <TableView fx:id="memoryTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                <placeholder>
+                                    <Label text="Memory not initialized" styleClass="empty-state"/>
+                                </placeholder>
+                                <columns>
+                                    <TableColumn fx:id="memoryAddressColumn" text="Address" prefWidth="90"/>
+                                    <TableColumn fx:id="memoryRegionColumn" text="Region" prefWidth="110"/>
+                                    <TableColumn fx:id="memoryContentColumn" text="Content" prefWidth="600"/>
+                                </columns>
+                            </TableView>
+                        </Tab>
+                        <Tab text="Secondary Storage">
+                            <TableView fx:id="storageTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                <placeholder>
+                                    <Label text="Storage not initialized" styleClass="empty-state"/>
+                                </placeholder>
+                                <columns>
+                                    <TableColumn fx:id="storageAddressColumn" text="Address" prefWidth="90"/>
+                                    <TableColumn fx:id="storageRegionColumn" text="Region" prefWidth="140"/>
+                                    <TableColumn fx:id="storageContentColumn" text="Content" prefWidth="600"/>
+                                </columns>
+                            </TableView>
+                        </Tab>
+                        <Tab text="Active Program">
+                            <TableView fx:id="programTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                <placeholder>
+                                    <Label text="No active program" styleClass="empty-state"/>
+                                </placeholder>
+                                <columns>
+                                    <TableColumn fx:id="programAddressColumn" text="Address" prefWidth="100"/>
+                                    <TableColumn fx:id="programInstructionColumn" text="Instruction" prefWidth="550"/>
+                                </columns>
+                            </TableView>
+                        </Tab>
+                        <Tab text="I/O">
+                            <HBox spacing="12" styleClass="dashboard-panel">
+                                <VBox spacing="6" HBox.hgrow="ALWAYS">
+                                    <Label text="SIMULATED SCREEN" styleClass="panel-header"/>
+                                    <ListView fx:id="screenList" VBox.vgrow="ALWAYS">
+                                        <placeholder>
+                                            <Label text="No output" styleClass="empty-state"/>
+                                        </placeholder>
+                                    </ListView>
+                                </VBox>
+                                <VBox spacing="8" prefWidth="260" minWidth="200">
+                                    <Label text="SIMULATED KEYBOARD" styleClass="panel-header"/>
+                                    <TextField fx:id="keyboardField" promptText="0..255" onAction="#handleKeyboardSend" styleClass="input-field"/>
+                                    <Button fx:id="keyboardSendButton" text="Send" onAction="#handleKeyboardSend" styleClass="primary-button"/>
+                                    <Label text="FIFO input. While paused, values remain queued until Resume." wrapText="true" styleClass="helper-text"/>
+                                    <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
+                                </VBox>
+                            </HBox>
+                        </Tab>
+                        <Tab text="Completed">
+                            <SplitPane dividerPositions="0.48" styleClass="dashboard-split">
+                                <TableView fx:id="completedTable" minHeight="70.0" VBox.vgrow="ALWAYS">
+                                    <placeholder>
+                                        <Label text="No completed processes" styleClass="empty-state"/>
+                                    </placeholder>
+                                    <columns>
+                                        <TableColumn fx:id="completedPidColumn" text="PID" prefWidth="70"/>
+                                        <TableColumn fx:id="completedPcColumn" text="Final PC" prefWidth="90"/>
+                                        <TableColumn fx:id="completedIrColumn" text="Final IR" prefWidth="400"/>
+                                    </columns>
+                                </TableView>
+                                <TextArea fx:id="completedDetailArea" editable="false" wrapText="true" text="Select a completed process" styleClass="detail-area"/>
+                            </SplitPane>
+                        </Tab>
+                    </tabs>
+                </TabPane>
+            </SplitPane>
+        </SplitPane>
     </center>
+    <bottom>
+        <Label fx:id="statusLabel" text="Configure the simulator" maxWidth="Infinity" wrapText="true" styleClass="status-feedback"/>
+    </bottom>
 </BorderPane>

@@ -1,0 +1,177 @@
+package io.github.rajami1205.osimulator.presentation;
+
+import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
+import io.github.rajami1205.osimulator.application.program.ProgramLoader;
+import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
+import io.github.rajami1205.osimulator.application.simulator.*;
+import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
+import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
+import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
+import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.storage.StorageRegion;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.*;
+import javafx.animation.Timeline;
+import javafx.application.Platform;
+import javafx.fxml.*;
+import javafx.scene.*;
+import javafx.scene.control.*;
+import javafx.scene.layout.BorderPane;
+import javafx.stage.Window;
+import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+class DashboardControllerTest {
+    @BeforeAll static void toolkit() {
+        assumeTrue(!System.getProperty("os.name").toLowerCase().contains("linux") || System.getenv("DISPLAY") != null);
+        try { Platform.startup(() -> Platform.setImplicitExit(false)); } catch (IllegalStateException alreadyStarted) { }
+    }
+    @FunctionalInterface interface FxTest { void run() throws Exception; }
+    private static void onFx(FxTest test) throws Exception {
+        var task = new FutureTask<Void>(() -> {
+            try { test.run(); } finally { for (var window : List.copyOf(Window.getWindows())) window.hide(); }
+            return null;
+        });
+        Platform.runLater(task); task.get(30, TimeUnit.SECONDS);
+    }
+    private static Object get(Object object, String name) throws Exception {
+        var field = object.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(object);
+    }
+    private static void set(Object object, String name, Object value) throws Exception {
+        var field = object.getClass().getDeclaredField(name); field.setAccessible(true); field.set(object, value);
+    }
+    private static void call(Object object, String name) throws Exception {
+        var method = object.getClass().getDeclaredMethod(name); method.setAccessible(true); method.invoke(object);
+    }
+    private static final class Fixture {
+        final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine());
+        final Map<String, List<Instruction>> programs = new HashMap<>();
+        final SimulatorController controller = new SimulatorController(simulator, path -> {
+            if (path.getFileName().toString().equals("broken.asm")) throw new ProgramImportException("Invalid ASM", null);
+            return programs.getOrDefault(path.getFileName().toString(), List.of());
+        });
+        final BorderPane root;
+        Fixture() throws Exception {
+            var loader = new FXMLLoader(SimulatorApplication.class.getResource("/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"));
+            loader.setController(controller); root = loader.load(); new Scene(root, 1280, 720);
+        }
+        void action(String method) throws Exception { call(controller, method); }
+        <T> T widget(String name, Class<T> type) throws Exception { return type.cast(get(controller, name)); }
+        void load(String path, String... lines) throws Exception {
+            Path selected = Path.of(path); programs.put(selected.getFileName().toString(), new AsmParser().parse(List.of(lines)));
+            set(controller, "selectedProgramPath", selected); widget("programPathField", TextField.class).setText(path);
+            action("refresh"); action("handleLoadProgram");
+        }
+        void enabled(String name, boolean expected) throws Exception { assertEquals(expected, !widget(name, Control.class).isDisabled(), name); }
+        void closeAlerts() { for (var window : List.copyOf(Window.getWindows())) window.hide(); }
+    }
+    @Test void fxmlInjectionHandlersAndRepeatedBasenameLoading() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        for (var field : SimulatorController.class.getDeclaredFields()) if (field.isAnnotationPresent(FXML.class)) {
+            field.setAccessible(true); var value = field.get(f.controller); assertNotNull(value, field.getName());
+            if (value instanceof Button button) assertNotNull(button.getOnAction(), field.getName());
+        }
+        assertNotNull(f.widget("keyboardField", TextField.class).getOnAction());
+        f.enabled("initializeButton", true); f.enabled("browseProgramButton", false); f.enabled("keyboardSendButton", false);
+        f.action("handleInitialize"); f.enabled("browseProgramButton", true); f.enabled("loadProgramButton", false);
+        f.load("folder/one.asm", "INC"); f.load("other/two.asm", "ADD AX");
+        assertEquals(List.of("one.asm", "two.asm"), f.simulator.snapshot().jobs().stream().map(j -> j.programName()).toList());
+        f.load("different/one.asm", "INC"); assertEquals(2, f.simulator.snapshot().jobs().size());
+        assertFalse(f.widget("statusLabel", Label.class).getText().isBlank()); f.closeAlerts();
+        f.load("empty.asm"); assertEquals(2, f.simulator.snapshot().jobs().size()); f.closeAlerts();
+        f.load("broken.asm"); assertTrue(f.widget("statusLabel", Label.class).getText().contains("Invalid ASM")); f.closeAlerts();
+        f.enabled("startButton", true); f.action("handleStart"); f.enabled("loadProgramButton", false); f.enabled("browseProgramButton", false);
+        f.enabled("stepButton", true); f.enabled("pauseButton", true); f.enabled("resumeButton", false);
+        f.action("handlePause"); f.enabled("stepButton", false); f.enabled("resumeButton", true); f.enabled("keyboardSendButton", true);
+        f.action("handleResume"); f.action("handleAutomatic"); f.enabled("stepButton", false); f.enabled("automaticButton", false);
+        f.action("handleReset");
+        assertEquals(256, f.widget("mainMemorySlider", Slider.class).getValue());
+        assertEquals(32, f.widget("kernelMemorySlider", Slider.class).getValue());
+        assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
+        assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
+        assertTrue(f.widget("programPathField", TextField.class).getText().isEmpty());
+    }); }
+    @Test void keyboardValidationPausedCompletionAndScreenReplacement() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        var input = f.widget("keyboardField", TextField.class);
+        for (String invalid : List.of("", "text", "256", "-1", "99999999999")) {
+            input.setText(invalid); f.action("handleKeyboardSend"); assertEquals(invalid, input.getText()); f.closeAlerts();
+        }
+        input.setText("255"); f.action("handleKeyboardSend"); assertEquals("", input.getText());
+        f.load("io.asm", "INT 09H", "INT 10H", "INT 09H", "INC"); f.action("handleStart");
+        for (int i = 0; i < 6; i++) f.action("handleStep");
+        assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
+        f.action("refresh"); f.action("refresh"); assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
+        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
+        f.enabled("stepButton", false); f.enabled("automaticButton", false); f.enabled("pauseButton", true);
+        f.action("handlePause"); input.setText("0"); f.action("handleKeyboardSend");
+        assertEquals(1, f.simulator.snapshot().pendingKeyboardRequests().size()); assertEquals(SimulatorState.PAUSED, f.simulator.snapshot().simulatorState());
+        f.action("handleResume"); f.action("handleStep");
+        assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
+        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton", "keyboardSendButton")) f.enabled(name, false);
+        f.enabled("resetButton", true); assertEquals("Idle", f.widget("ownerValueLabel", Label.class).getText());
+        assertEquals("—", f.widget("currentInstructionLabel", Label.class).getText());
+        f.action("handleReset");
+        for (String name : List.of("jobsTable", "processTable", "memoryTable", "storageTable", "completedTable", "programTable")) assertTrue(f.widget(name, TableView.class).getItems().isEmpty());
+        for (String name : List.of("readyList", "suspendedList", "pendingList", "screenList")) assertTrue(f.widget(name, ListView.class).getItems().isEmpty());
+    }); }
+    @Test void selectionFollowsPidThroughRefreshSuspensionAndCompletion() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize"); f.load("one.asm", "INC"); f.load("two.asm", "INC");
+        f.simulator.attemptNextAdmission(); f.simulator.attemptNextAdmission(); f.action("refresh");
+        TableView<?> table = f.widget("processTable", TableView.class); table.getSelectionModel().select(0);
+        assertEquals(1, get(f.controller, "selectedProcessId")); f.action("refresh");
+        assertEquals(1, get(f.controller, "selectedProcessId"));
+        f.simulator.swapOut(1); f.action("refresh");
+        assertEquals(1, get(f.controller, "selectedProcessId"));
+        assertTrue(f.widget("pcbDetailArea", TextArea.class).getText().contains("SUSPENDED"));
+        f.action("handleStart"); f.action("handleStep");
+        assertEquals(1, get(f.controller, "selectedProcessId"));
+        f.action("handleStep"); assertNull(get(f.controller, "selectedProcessId"));
+        assertEquals("Select a process", f.widget("pcbDetailArea", TextArea.class).getText());
+        f.action("handleReset"); assertNull(get(f.controller, "selectedProcessId"));
+    }); }
+    @Test void matrixIncludesCapacityAndSafeErrorAndRowStylesAreRecycled() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(128); f.widget("kernelMemorySlider", Slider.class).setValue(127);
+        f.action("handleInitialize"); f.load("large.asm", "INC", "INC"); f.action("handleStart");
+        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_CAPACITY), f.simulator.snapshot().runtimeStatus());
+        f.enabled("stepButton", false); f.enabled("pauseButton", true); f.enabled("keyboardSendButton", true);
+        var queue = get(f.simulator, "readyQueue"); queue.getClass().getMethod("enqueue", int.class).invoke(queue, 999);
+        f.action("refresh"); assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
+        f.closeAlerts(); f.action("refresh"); assertTrue(Window.getWindows().isEmpty());
+        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton", "keyboardSendButton")) f.enabled(name, false);
+        f.enabled("resetButton", true);
+        @SuppressWarnings("unchecked") TableView<MemoryEntry> memory = (TableView<MemoryEntry>) get(f.controller, "memoryTable");
+        var row = memory.getRowFactory().call(memory);
+        updateRow(row, new MemoryEntry(0, "KERNEL", Optional.empty()), false); assertTrue(row.getStyleClass().contains("kernel-row"));
+        updateRow(row, new MemoryEntry(32, "USER", Optional.empty()), false); assertTrue(row.getStyleClass().contains("user-row")); assertFalse(row.getStyleClass().contains("kernel-row"));
+        updateRow(row, null, true); assertFalse(row.getStyleClass().contains("user-row"));
+        @SuppressWarnings("unchecked") TableView<StorageEntry> storage = (TableView<StorageEntry>) get(f.controller, "storageTable");
+        var storageRow = storage.getRowFactory().call(storage);
+        String[] styles = {"file-index-row", "program-data-row", "swap-row"}; int i = 0;
+        for (StorageRegion region : StorageRegion.values()) { updateRow(storageRow, new StorageEntry(0, region, "—"), false); assertTrue(storageRow.getStyleClass().contains(styles[i++])); }
+        updateRow(storageRow, null, true); for (String style : styles) assertFalse(storageRow.getStyleClass().contains(style));
+    }); }
+    private static void updateRow(TableRow<?> row, Object value, boolean empty) throws Exception {
+        var method = row.getClass().getDeclaredMethod("updateItem", Object.class, boolean.class); method.setAccessible(true); method.invoke(row, value, empty);
+    }
+    @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        f.load("example.asm", "MOV DX, \"a-long-program-name-with-readable-text.txt\"", "MOV AL, \"A long text value that must not widen the CPU pane\"", "ADD AX");
+        f.load("input.asm", "INT 09H", "INC"); f.action("handleStart"); f.action("handleStep"); f.action("handleStep");
+        for (int[] size : List.of(new int[]{1100,650}, new int[]{1280,720})) {
+            f.root.resize(size[0], size[1]); f.root.applyCss(); f.root.layout();
+            assertEquals(size[0], f.root.getWidth()); assertEquals(size[1], f.root.getHeight());
+            assertTrue(f.widget("jobsTable", TableView.class).getWidth() > 200);
+            assertTrue(f.widget("memoryTable", TableView.class).getHeight() > 100);
+            assertTrue(f.widget("readyList", ListView.class).getHeight() >= 74);
+            var image = f.root.snapshot(null, null);
+            var pixels = new java.awt.image.BufferedImage((int) image.getWidth(), (int) image.getHeight(), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y=0; y<pixels.getHeight(); y++) for (int x=0; x<pixels.getWidth(); x++) pixels.setRGB(x,y,image.getPixelReader().getArgb(x,y));
+            javax.imageio.ImageIO.write(pixels,"png",Path.of("target","f18-"+size[0]+"x"+size[1]+".png").toFile());
+        }
+        assertTrue(f.widget("dxValueLabel", Label.class).getTooltip().getText().contains("long-program"));
+        assertTrue(f.widget("alValueLabel", Label.class).getTooltip().getText().contains("long text"));
+    }); }
+}

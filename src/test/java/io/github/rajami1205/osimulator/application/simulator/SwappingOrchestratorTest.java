@@ -25,7 +25,7 @@ class SwappingOrchestratorTest {
         admit(1,40);admit(2,40);
         assertEquals(new SwapResult.Completed(),simulator.swapOut(1));
         assertEquals(new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_SWAP),simulator.swapOut(2));
-        assertEquals(SimulatorState.INITIALIZED,simulator.snapshot().simulatorState());
+        assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState());
         assertEquals(Optional.of(2),simulator.selectNextReadyProcess());
         simulator.swapIn(1);assertEquals(Optional.of(2),simulator.selectNextReadyProcess());
         simulator.swapOut(1);simulator.reset();
@@ -35,18 +35,18 @@ class SwappingOrchestratorTest {
         assertThrows(IllegalArgumentException.class,()->simulator.swapIn(1));
         admit(1,64);assertEquals(new SwapResult.Completed(),simulator.swapOut(1));simulator.swapIn(1);
     }
-    @Test void legacyReadyRunningPausedAndKeyboardWaitAreNeverSwapped() {
+    @Test void activeOwnerCannotSwapButDetachedKeyboardWaitCan() {
         initialize();simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC")));
-        assertThrows(IllegalStateException.class,()->simulator.swapOut(1));simulator.start();simulator.step();
+        assertThrows(IllegalArgumentException.class,()->simulator.swapOut(1));
+        simulator.start();simulator.step();
         assertThrows(IllegalStateException.class,()->simulator.swapOut(1));
-        simulator.step();assertTrue(simulator.waitingForInput());var before=simulator.snapshot();
-        assertThrows(IllegalStateException.class,()->simulator.swapOut(1));
-        assertThrows(IllegalStateException.class,()->simulator.swapIn(1));
-        assertThrows(IllegalStateException.class,()->simulator.swapOut(2));
-        assertEquals(before,simulator.snapshot());simulator.pause();
-        assertThrows(IllegalStateException.class,()->simulator.swapOut(1));
-        simulator.submitKeyboardInput(25);simulator.resume();
-        assertFalse(simulator.waitingForInput());assertEquals(25,simulator.snapshot().cpu().orElseThrow().dx());
+        simulator.pause();assertThrows(IllegalStateException.class,()->simulator.swapOut(1));simulator.resume();
+        simulator.step();assertTrue(simulator.waitingForInput());
+        assertEquals(new SwapResult.Completed(),simulator.swapOut(1));
+        assertEquals(1,simulator.pendingKeyboardRequests().size());
+        simulator.pause();simulator.submitKeyboardInput(25);simulator.resume();
+        assertFalse(simulator.waitingForInput());
         simulator.step();assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
+        assertEquals(25,simulator.completedProcesses().getFirst().finalContext().dx());
     }
 }

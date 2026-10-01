@@ -60,6 +60,8 @@ class BasicIoControllerTest {
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));
                 assertFalse(((Button)field(controller,"stepButton")).isDisabled());
+                assertEquals(0,simulator.snapshot().cpu().orElseThrow().dx());
+                invoke(controller,"handleStep");
                 assertEquals(55,simulator.snapshot().cpu().orElseThrow().dx());
                 invoke(controller,"handleReset");
                 simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
@@ -69,6 +71,46 @@ class BasicIoControllerTest {
                 assertEquals("notes.txt",((javafx.scene.control.Label)field(controller,"dxValueLabel")).getText());
                 invoke(controller,"handleStep");
                 assertEquals("7",((javafx.scene.control.Label)field(controller,"dxValueLabel")).getText());
+
+                invoke(controller,"handleReset");
+                simulator.initialize(SimulatorConfiguration.defaults());
+                simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC")));
+                simulator.loadProgram(new AsmParser().parse(List.of("INC")));
+                simulator.loadProgram(new AsmParser().parse(List.of("ADD AX")));
+                simulator.start();invoke(controller,"handleAutomatic");
+                callback.handle(new javafx.event.ActionEvent()); // INT09 1/2
+                assertEquals(0,simulator.snapshot().cpu().orElseThrow().programCounter());
+                callback.handle(new javafx.event.ActionEvent()); // P1 blocked; P2 remains READY
+                assertEquals(Animation.Status.RUNNING,timeline.getStatus());
+                assertTrue(simulator.completedProcesses().isEmpty());
+                callback.handle(new javafx.event.ActionEvent()); // P2 finishes, no P3 tick
+                assertEquals(1,simulator.completedProcesses().size());
+                assertEquals(Animation.Status.RUNNING,timeline.getStatus());
+                callback.handle(new javafx.event.ActionEvent()); // P3 ADD 1/3
+                invoke(controller,"handlePause");
+                var paused=simulator.snapshot();
+                callback.handle(new javafx.event.ActionEvent());
+                assertEquals(paused,simulator.snapshot());
+                invoke(controller,"handleResume");
+                callback.handle(new javafx.event.ActionEvent()); // ADD 2/3
+                assertEquals(1,simulator.completedProcesses().size());
+                callback.handle(new javafx.event.ActionEvent()); // ADD 3/3 -> all remaining blocked
+                assertEquals(Animation.Status.STOPPED,timeline.getStatus());
+                assertEquals(false,field(controller,"automaticMode"));
+                simulator.submitKeyboardInput(12);
+                assertEquals(Animation.Status.STOPPED,timeline.getStatus());
+                callback.handle(new javafx.event.ActionEvent()); // stopped mode never progresses
+                assertEquals(2,simulator.completedProcesses().size());
+                invoke(controller,"handleAutomatic");callback.handle(new javafx.event.ActionEvent());
+                assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
+                assertEquals(Animation.Status.STOPPED,timeline.getStatus());
+                invoke(controller,"handleReset");
+                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),512,64));
+                simulator.loadProgram(new AsmParser().parse(List.of("INC","INC")));simulator.start();
+                invoke(controller,"handleAutomatic");invoke(controller,"handleStep");
+                assertEquals(Animation.Status.STOPPED,timeline.getStatus());
+                assertEquals(false,field(controller,"automaticMode"));
+                assertEquals(SimulatorState.RUNNING,simulator.snapshot().simulatorState());
 
             } finally { timeline.stop(); }
             return null;

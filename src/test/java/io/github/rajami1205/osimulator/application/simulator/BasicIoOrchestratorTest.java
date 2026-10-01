@@ -20,10 +20,24 @@ class BasicIoOrchestratorTest {
     private void twoTicks() { simulator.step(); simulator.step(); }
     private void state(SimulatorState lifecycle,String process,int pc,int dx) {
         var snapshot=simulator.snapshot(); assertEquals(lifecycle,snapshot.simulatorState());
-        assertEquals(process,snapshot.process().orElseThrow().processState());
-        assertEquals(pc,snapshot.cpu().orElseThrow().programCounter());
-        assertEquals(pc,snapshot.process().orElseThrow().savedProgramCounter());
-        assertEquals(dx,snapshot.cpu().orElseThrow().dx());
+        if (process.equals("TERMINATED")) {
+            assertTrue(snapshot.process().isEmpty());
+            var context=simulator.completedProcesses().getFirst().finalContext();
+            assertEquals(pc,context.programCounter());assertEquals(dx,context.dx());
+        } else if (process.equals("RUNNING")) {
+            assertEquals(process,snapshot.process().orElseThrow().processState());
+            assertEquals(pc,snapshot.cpu().orElseThrow().programCounter());
+            assertEquals(dx,snapshot.cpu().orElseThrow().dx());
+        } else {
+            assertTrue(snapshot.process().isEmpty());
+            try {
+                var field=SimulatorOrchestrator.class.getDeclaredField("processTable");field.setAccessible(true);
+                var table=(io.github.rajami1205.osimulator.model.process.ProcessTable)field.get(simulator);
+                var pcb=table.find(1).orElseThrow();
+                assertEquals(process,pcb.state().name());assertEquals(pc,pcb.programCounter());
+                assertEquals(dx,pcb.cpuContext().dx());
+            } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+        }
     }
     @Test void runningSubmissionCompletesWaitAndInvalidSubmissionDoesNotChangeRuntime() {
         load("INT 09H","INC"); twoTicks(); state(SimulatorState.RUNNING,"BLOCKED",0,0);
@@ -73,7 +87,7 @@ class BasicIoOrchestratorTest {
         load("INT 20H","INC"); simulator.step(); state(SimulatorState.RUNNING,"RUNNING",0,0);
         simulator.step(); state(SimulatorState.FINISHED,"TERMINATED",0,0);
         assertEquals("INT 20H",simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
-        assertTrue(simulator.configuration().isPresent()); assertEquals(2,simulator.snapshot().program().size());
+        assertTrue(simulator.configuration().isPresent()); assertTrue(simulator.snapshot().program().isEmpty());
         assertEquals(0,simulator.snapshot().cpu().orElseThrow().accumulator());
         assertThrows(IllegalStateException.class,simulator::step);
     }

@@ -68,10 +68,6 @@ public final class ExecutionEngine {
         Objects.requireNonNull(filesystem, "filesystem must not be null");
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(keyboard, "keyboard must not be null");
-        if (progress.waitingForInput()) {
-            progress.validateKeyboardWait(memory, cpu, pcb);
-            return TickResult.WAITING_FOR_INPUT;
-        }
         validateExecutableState(pcb);
         progress.validateContext(memory, cpu, pcb);
 
@@ -116,28 +112,11 @@ public final class ExecutionEngine {
                 yield TickResult.PROGRAM_FINISHED;
             }
             case WaitForKeyboard ignored -> {
-                progress.waitForKeyboard();
+                progress.clear();
                 pcb.changeState(ProcessState.BLOCKED);
                 yield TickResult.WAITING_FOR_INPUT;
             }
         };
-    }
-
-    /** Completes external input without consuming another CPU tick. */
-    public TickResult completeKeyboardInput(KeyboardDevice keyboard, MainMemory memory,
-            CpuRegisters<Instruction> cpu, ProcessControlBlock pcb, ExecutionProgress progress) {
-        Objects.requireNonNull(keyboard, "keyboard must not be null");
-        Objects.requireNonNull(memory, "memory must not be null");
-        Objects.requireNonNull(cpu, "cpu must not be null");
-        Objects.requireNonNull(pcb, "pcb must not be null");
-        Objects.requireNonNull(progress, "progress must not be null");
-        progress.validateKeyboardWait(memory, cpu, pcb);
-        var value = keyboard.poll();
-        if (value.isEmpty()) return TickResult.WAITING_FOR_INPUT;
-        cpu.writeRegister(RegisterName.DX, value.getAsInt());
-        TickResult result = publishNextPc(cpu, pcb, progress, pcb.programCounter() + 1);
-        if (result != TickResult.PROGRAM_FINISHED) pcb.changeState(ProcessState.READY);
-        return result;
     }
 
     private TickResult publishNextPc(CpuRegisters<Instruction> cpu, ProcessControlBlock pcb,

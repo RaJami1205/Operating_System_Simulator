@@ -5,11 +5,13 @@ import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorOrchestrator;
+import io.github.rajami1205.osimulator.application.simulator.RuntimeStatus;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.ProgramEntry;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.MemoryEntry;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import javafx.beans.binding.Bindings;
 import javafx.scene.control.Slider;
@@ -162,6 +164,8 @@ public final class SimulatorController {
             orchestrator.loadProgram(instructions);
         } catch (ProgramImportException exception) {
             showError("Unable to import ASM program. " + exception.getMessage());
+        } catch (StorageException exception) {
+            showError("Unable to store program. " + exception.getMessage());
         } catch (ProgramLoadException exception) {
             showError("Unable to load program. " + exception.getMessage());
         } catch (IllegalStateException exception) {
@@ -178,7 +182,7 @@ public final class SimulatorController {
     }
 
     @FXML
-    // Solicita una instrucción mediante el camino compartido de ejecución.
+    // Solicita un tick mediante el runtime compartido.
     private void handleStep() {
         executeSingleStep();
     }
@@ -186,24 +190,24 @@ public final class SimulatorController {
     @FXML
     // Activa el avance periódico cuando la sesión está en RUNNING manual.
     private void handleAutomatic() {
-        var snapshot = orchestrator.snapshot();
-        if (snapshot.simulatorState() != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput()) {
-            return;
-        }
-        automaticMode = true;
-        render(snapshot);
-        automaticTimeline.playFromStart();
+        runStateOperation(() -> {
+            if (orchestrator.snapshot().simulatorState() != SimulatorState.RUNNING || automaticMode
+                    || orchestrator.runtimeStatus() != RuntimeStatus.RUNNABLE) return;
+            automaticMode = true;
+            automaticTimeline.playFromStart();
+        });
     }
 
     // Ejecuta un paso, actualiza la vista y detiene Automatic al finalizar o fallar.
     private void executeSingleStep() {
-        if (orchestrator.waitingForInput()) {
-            stopAutomaticExecution();
-            render(orchestrator.snapshot());
-            return;
-        }
         try {
-            orchestrator.step();
+            if (orchestrator.runtimeStatus() != RuntimeStatus.RUNNABLE) {
+                stopAutomaticExecution();
+                render(orchestrator.snapshot());
+                return;
+            }
+            var result = orchestrator.step();
+            if (result.status() != RuntimeStatus.RUNNABLE) stopAutomaticExecution();
         } catch (ExecutionEngineException exception) {
             stopAutomaticExecution();
             render(orchestrator.snapshot());
@@ -215,11 +219,7 @@ public final class SimulatorController {
             showError("Operation unavailable. " + exception.getMessage());
             return;
         }
-        var snapshot = orchestrator.snapshot();
-        if (snapshot.simulatorState() == SimulatorState.FINISHED || orchestrator.waitingForInput()) {
-            stopAutomaticExecution();
-        }
-        render(snapshot);
+        render(orchestrator.snapshot());
     }
 
     // Detiene el Timeline y descarta el modo de reproducción automática.
@@ -242,13 +242,18 @@ public final class SimulatorController {
     private void handleResume() {
         try {
             orchestrator.resume();
+        } catch (ExecutionEngineException exception) {
+            stopAutomaticExecution();
+            render(orchestrator.snapshot());
+            showError("Execution failed. " + exception.getMessage());
+            return;
         } catch (IllegalStateException exception) {
             stopAutomaticExecution();
             render(orchestrator.snapshot());
             showError("Operation unavailable. " + exception.getMessage());
             return;
         }
-        if (orchestrator.waitingForInput() || orchestrator.snapshot().simulatorState() == SimulatorState.FINISHED) {
+        if (orchestrator.runtimeStatus() != RuntimeStatus.RUNNABLE || orchestrator.snapshot().simulatorState() == SimulatorState.FINISHED) {
             stopAutomaticExecution();
         } else if (automaticMode) {
             automaticTimeline.play();
@@ -271,6 +276,9 @@ public final class SimulatorController {
     private void runStateOperation(Runnable operation) {
         try {
             operation.run();
+        } catch (ExecutionEngineException exception) {
+            stopAutomaticExecution();
+            showError("Execution failed. " + exception.getMessage());
         } catch (IllegalStateException exception) {
             showError("Operation unavailable. " + exception.getMessage());
         } finally {
@@ -333,14 +341,14 @@ public final class SimulatorController {
         SimulatorState state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
         initializeButton.setDisable(!configuring);
-        browseProgramButton.setDisable(!configuring && state != SimulatorState.INITIALIZED);
-        loadProgramButton.setDisable(state != SimulatorState.INITIALIZED || selectedProgramPath == null);
+        browseProgramButton.setDisable(!configuring && state != SimulatorState.INITIALIZED && state != SimulatorState.PROGRAM_LOADED);
+        loadProgramButton.setDisable((state != SimulatorState.INITIALIZED && state != SimulatorState.PROGRAM_LOADED) || selectedProgramPath == null);
         startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
-        stepButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput());
+        stepButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.runtimeStatus() != RuntimeStatus.RUNNABLE);
         pauseButton.setDisable(state != SimulatorState.RUNNING);
         resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false);
-        automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.waitingForInput());
+        automaticButton.setDisable(state != SimulatorState.RUNNING || automaticMode || orchestrator.runtimeStatus() != RuntimeStatus.RUNNABLE);
         mainMemorySlider.setDisable(!configuring);
         kernelMemorySlider.setDisable(!configuring);
         secondaryStorageSlider.setDisable(!configuring);

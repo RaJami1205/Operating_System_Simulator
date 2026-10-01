@@ -6,9 +6,16 @@ import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.AdmissionResult;
+import io.github.rajami1205.osimulator.application.process.Dispatcher;
+import io.github.rajami1205.osimulator.application.process.KeyboardCompletionService;
+import io.github.rajami1205.osimulator.application.process.ProcessCompletionService;
+import io.github.rajami1205.osimulator.application.process.CompletedProcessRecord;
+import io.github.rajami1205.osimulator.application.process.PendingKeyboardRequest;
+import io.github.rajami1205.osimulator.model.scheduling.SuspendedReadyQueue;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
 import io.github.rajami1205.osimulator.application.process.SwapResult;
+import io.github.rajami1205.osimulator.application.process.UserImageResidence;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
@@ -26,7 +33,6 @@ import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.execution.ExecutionProgress;
-import io.github.rajami1205.osimulator.model.execution.TickResult;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.AddInstruction;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
@@ -54,7 +60,6 @@ import io.github.rajami1205.osimulator.model.memory.InstructionContent;
 import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
@@ -69,7 +74,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Coordina una sesión de un proceso y mantiene privados los objetos mutables del modelo. */
+/** Lifecycle/session facade over the single-CPU multiprocess runtime. */
 public final class SimulatorOrchestrator {
     private final ProgramLoader programLoader;
     private final ExecutionEngine executionEngine;
@@ -90,7 +95,11 @@ public final class SimulatorOrchestrator {
     private ExecutionProgress executionProgress;
     private ScreenDevice screen;
     private KeyboardDevice keyboard;
-    private ProcessControlBlock pcb;
+    private Dispatcher dispatcher;
+    private KeyboardCompletionService keyboardCompletion;
+    private ProcessCompletionService processCompletion;
+    private MultiprocessRuntime runtime;
+    private long compatibilitySequence;
     private SimulatorConfiguration configuration;
 
     // Recibe los servicios que coordinan la carga y ejecución.
@@ -140,6 +149,14 @@ public final class SimulatorOrchestrator {
         jobScheduler = newScheduler;
         readyQueue = newReadyQueue;
         processScheduler = newProcessScheduler;
+        var suspended = new SuspendedReadyQueue();
+        dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources);
+        keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended);
+        processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
+                readyQueue, suspended, keyboardCompletion, dispatcher);
+        runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,
+                screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
+                jobList, processTable, processResources, readyQueue, suspended, processScheduler);
         this.configuration = configuration;
     }
 
@@ -148,10 +165,12 @@ public final class SimulatorOrchestrator {
         return Optional.ofNullable(configuration);
     }
 
-    /** Presenta trabajo sin crear un proceso ni cambiar el lifecycle. */
+    /** Presenta trabajo y prepara el workload sin crear todavía un proceso. */
     public Job submitProgram(ProgramImage program) {
-        requireState("submitProgram", SimulatorState.INITIALIZED);
-        return jobSubmissionService.submit(program);
+        requirePreparedState("submitProgram");
+        var job = jobSubmissionService.submit(program);
+        if (lifecycle.state() == SimulatorState.INITIALIZED) lifecycle.markProgramLoaded();
+        return job;
     }
 
     /** Vista histórica inmutable; vacía cuando no existe sesión. */
@@ -159,80 +178,104 @@ public final class SimulatorOrchestrator {
         return jobList == null ? List.of() : jobList.entries();
     }
 
-    /** Admite a lo sumo un Job, sin habilitar la ejecución multiproceso. */
+    /** Admits at most one prepared Job without dispatching or consuming ticks. */
     public Optional<AdmissionResult> attemptNextAdmission() {
-        requireState("attemptNextAdmission", SimulatorState.INITIALIZED);
+        requirePreparedState("attemptNextAdmission");
         return jobScheduler.attemptNextAdmission();
     }
 
     /** Consulta el próximo candidato sin consumir READY ni activar la CPU. */
     public Optional<Integer> selectNextReadyProcess() {
-        requireState("selectNextReadyProcess", SimulatorState.INITIALIZED);
+        requirePreparedState("selectNextReadyProcess");
         return processScheduler.selectNext();
     }
 
     public SwapResult swapOut(int processId) {
-        requireSwapSession(processId);
-        return processSwapService.swapOut(processId);
+        requireSwapSession();
+        var result = runtime.swapOut(processId);
+        if (result instanceof SwapResult.Completed) {
+            try { runtime.retryAdmissionAfterRelease(); }
+            catch (RuntimeException failure) { throw runtimeFailure(failure); }
+        }
+        completePendingKeyboardInput();
+        return result;
     }
 
     public SwapResult swapIn(int processId) {
-        requireSwapSession(processId);
-        return processSwapService.swapIn(processId);
+        requireSwapSession();
+        var result = runtime.swapIn(processId);
+        completePendingKeyboardInput();
+        return result;
     }
 
-    private void requireSwapSession(int processId) {
-        if (pcb != null && pcb.processId() == processId) {
-            throw new IllegalStateException("Current legacy process cannot be swapped");
-        }
-        if (pcb != null || (executionProgress != null && !executionProgress.isIdle())) {
-            throw new IllegalStateException("Swapping requires an inactive legacy runtime");
-        }
-        requireState("swap", SimulatorState.INITIALIZED);
+    private void requireSwapSession() {
+        if (runtime == null || (lifecycle.state() != SimulatorState.INITIALIZED
+                && lifecycle.state() != SimulatorState.PROGRAM_LOADED && lifecycle.state() != SimulatorState.RUNNING
+                && lifecycle.state() != SimulatorState.PAUSED)) throw new IllegalStateException("Swapping requires a live session");
     }
 
-    // Carga el programa como único proceso antes de marcarlo disponible para ejecución.
+    private void requirePreparedState(String operation) {
+        if (lifecycle.state() != SimulatorState.INITIALIZED && lifecycle.state() != SimulatorState.PROGRAM_LOADED) {
+            throw new IllegalStateException(operation + " requires a prepared, unstarted workload");
+        }
+    }
+
+    /** Compatibility submission adapter: never creates a private executable PCB. */
     public void loadProgram(List<Instruction> instructions) {
-        requireState("loadProgram", SimulatorState.INITIALIZED);
-        if (processTable.size() != 0) {
-            throw new IllegalStateException("Legacy loading is unavailable while admitted processes are resident");
-        }
-        List<Instruction> program = List.copyOf(
-                Objects.requireNonNull(instructions, "instructions must not be null"));
-        pcb = programLoader.load(memory, 1, program);
-        lifecycle.markProgramLoaded();
+        requirePreparedState("loadProgram");
+        var existingNames = secondaryStorage.entries().stream().map(entry -> entry.name()).toList();
+        String name;
+        do { name = "compatibility-program-" + (++compatibilitySequence); }
+        while (existingNames.contains(name));
+        submitProgram(new ProgramImage(name, instructions));
     }
 
-    // Inicia la ejecución lógica sin ejecutar instrucciones.
     public void start() {
-        lifecycle.startExecution();
-    }
-
-    // Consume un tick y propaga al lifecycle la finalización o el fallo.
-    public void step() {
-        requireState("step", SimulatorState.RUNNING);
-        if (memory == null || cpu == null || pcb == null) {
-            throw new IllegalStateException("Step requires active Memory, CPU and PCB");
-        }
-        if (waitingForInput()) return;
+        requireState("start", SimulatorState.PROGRAM_LOADED);
         try {
-            TickResult result = executionEngine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, executionProgress);
-            if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
-        } catch (ExecutionEngineException exception) {
-            lifecycle.markError();
-            throw exception;
-        }
+            runtime.start();
+            lifecycle.startExecution();
+        } catch (RuntimeException failure) { throw runtimeFailure(failure); }
     }
 
-    /** Immutable session output; empty before initialization and after Reset. */
+    public RuntimeStepResult step() {
+        requireState("step", SimulatorState.RUNNING);
+        try {
+            var result = runtime.step();
+            finishIfComplete(result.status());
+            return result;
+        } catch (RuntimeException failure) { throw runtimeFailure(failure); }
+    }
+
+    public RuntimeStatus runtimeStatus() {
+        if (runtime == null) return RuntimeStatus.WAITING_FOR_CAPACITY;
+        try { return runtime.status(); }
+        catch (RuntimeException failure) { throw runtimeFailure(failure); }
+    }
+
+    private void finishIfComplete(RuntimeStatus status) {
+        if (status == RuntimeStatus.FINISHED && lifecycle.state() == SimulatorState.RUNNING) lifecycle.finishExecution();
+    }
+
+    private ExecutionEngineException runtimeFailure(RuntimeException failure) {
+        lifecycle.markError();
+        return failure instanceof ExecutionEngineException execution ? execution
+                : new ExecutionEngineException("Runtime coordination failed: " + failure.getMessage(), failure);
+    }
+
+    public List<CompletedProcessRecord> completedProcesses() {
+        return processCompletion == null ? List.of() : processCompletion.completed();
+    }
+
+    public List<PendingKeyboardRequest> pendingKeyboardRequests() {
+        return keyboardCompletion == null ? List.of() : keyboardCompletion.pending();
+    }
+
     public List<Integer> screenOutput() { return screen == null ? List.of() : screen.outputs(); }
 
-    /** True only while an INT09 request is awaiting external completion. */
-    public boolean waitingForInput() {
-        return executionProgress != null && executionProgress.waitingForInput();
-    }
+    /** Global external wait, not merely the presence of one blocked process. */
+    public boolean waitingForInput() { return runtimeStatus() == RuntimeStatus.WAITING_FOR_INPUT; }
 
-    /** Queues validated input; completes a pending request only while RUNNING. */
     public void submitKeyboardInput(int value) {
         if (keyboard == null) throw new IllegalStateException("Keyboard requires an initialized session");
         keyboard.submit(value);
@@ -240,9 +283,11 @@ public final class SimulatorOrchestrator {
     }
 
     private void completePendingKeyboardInput() {
-        if (lifecycle.state() == SimulatorState.RUNNING && waitingForInput() && keyboard.hasInput()) {
-            TickResult result = executionEngine.completeKeyboardInput(keyboard, memory, cpu, pcb, executionProgress);
-            if (result == TickResult.PROGRAM_FINISHED) lifecycle.finishExecution();
+        if (lifecycle.state() == SimulatorState.RUNNING) {
+            try {
+                runtime.drainInput();
+                finishIfComplete(runtime.status());
+            } catch (RuntimeException failure) { throw runtimeFailure(failure); }
         }
     }
 
@@ -276,7 +321,11 @@ public final class SimulatorOrchestrator {
         executionProgress = null;
         screen = null;
         keyboard = null;
-        pcb = null;
+        dispatcher = null;
+        keyboardCompletion = null;
+        processCompletion = null;
+        runtime = null;
+        compatibilitySequence = 0;
         configuration = null;
     }
 
@@ -294,13 +343,18 @@ public final class SimulatorOrchestrator {
         }
         Optional<ProcessSnapshot> process = Optional.empty();
         List<ProgramEntry> program = new ArrayList<>();
+        var pcb = dispatcher == null ? null : dispatcher.owner().orElse(null);
         if (pcb != null) {
             process = Optional.of(new ProcessSnapshot(
                     pcb.processId(), pcb.state().name(), pcb.programStartAddress(),
                     pcb.instructionCount(), pcb.programEndAddressExclusive(), pcb.programCounter()));
-            for (int address = pcb.programStartAddress(); address < pcb.programEndAddressExclusive(); address++) {
-                program.add(new ProgramEntry(address, semanticText(
-                        memory.readInstruction(pcb.memoryBounds(), address - pcb.programStartAddress()))));
+            var residence = processResources.find(pcb.processId()).orElseThrow().residence();
+            if (!(residence instanceof UserImageResidence.Resident resident)) {
+                throw new IllegalStateException("CPU owner must have resident resources");
+            }
+            var image = memory.readUserBlock(resident.allocation());
+            for (int offset = 0; offset < image.size(); offset++) {
+                program.add(new ProgramEntry(resident.allocation().base() + offset, semanticText(image.get(offset))));
             }
         }
         List<MemoryEntry> memoryEntries = new ArrayList<>();

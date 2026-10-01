@@ -28,7 +28,8 @@ class FilesystemOrchestratorTest {
             assertEquals("notes.txt",snapshot.cpu().orElseThrow().dxValue().textValue());
             String expected=i==1?"MOV AH, 3CH":program.get(i);
             assertEquals(expected,snapshot.currentInstruction().orElseThrow().semanticInstruction());
-            assertEquals(expected,snapshot.program().get(i).instruction());
+            if (i < parsed.size()-1) assertEquals(expected,snapshot.program().get(i).instruction());
+            else assertTrue(snapshot.program().isEmpty());
         }
         assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
         simulator.reset();

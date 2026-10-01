@@ -31,6 +31,12 @@ public record CpuContext<I>(
                 ax, bx, cx, dxValue, ah, alValue, conditionFlags);
     }
 
+    /** Replaces DX without touching another process's active CPU. */
+    public CpuContext<I> withDx(RegisterValue value) {
+        return new CpuContext<>(programCounter, instructionRegister, accumulator,
+                ax, bx, cx, value, ah, alValue, conditionFlags);
+    }
+
     public CpuContext {
         if (programCounter < 0) {
             throw new InvalidProgramCounterException("Program Counter address must not be negative: " + programCounter);

@@ -26,7 +26,6 @@ class BasicInterruptExecutionTest {
     private InterruptInstruction interrupt(InterruptVector vector) { return new InterruptInstruction(vector); }
     private void load(Instruction... instructions) { pcb = new ProgramLoader().load(memory,1,List.of(instructions)); }
     private TickResult tick() { return engine.executeTick(filesystem, screen,keyboard,memory,cpu,pcb,progress); }
-    private TickResult complete() { return engine.completeKeyboardInput(keyboard,memory,cpu,pcb,progress); }
     private void pc(int expected) { assertEquals(expected,cpu.programCounter()); assertEquals(expected,pcb.programCounter()); }
 
     @Test void screenAppendsOncePerFinalTickInOrderAndCanFinish() {
@@ -56,39 +55,22 @@ class BasicInterruptExecutionTest {
         assertEquals(TickResult.IN_PROGRESS,tick()); assertEquals(42,cpu.readRegister(RegisterName.DX));
         assertEquals(TickResult.INSTRUCTION_COMPLETED,tick()); pc(1);
         assertEquals(0,cpu.readRegister(RegisterName.DX)); assertEquals(ProcessState.RUNNING,pcb.state());
-        assertFalse(progress.waitingForInput()); assertTrue(progress.isIdle());
+        assertTrue(progress.isIdle());
         tick(); assertEquals(0,cpu.readRegister(RegisterName.DX));
         assertEquals(TickResult.PROGRAM_FINISHED,tick()); pc(2);
         assertEquals(255,cpu.readRegister(RegisterName.DX)); assertFalse(keyboard.hasInput());
     }
-    @Test void pendingWaitPreservesCostAndContextAndCompletesWithoutTick() {
+    @Test void completedInt09CostDetachesProgressWithoutChangingPcOrDx() {
         var input=interrupt(InterruptVector.KEYBOARD);
-        load(input,new IncInstruction()); cpu.writeRegister(RegisterName.DX,77);
+        load(input,new IncInstruction());cpu.writeRegister(RegisterName.DX,77);
         assertEquals(TickResult.IN_PROGRESS,tick());
         assertEquals(TickResult.WAITING_FOR_INPUT,tick());
-        assertEquals(ProcessState.BLOCKED,pcb.state()); assertTrue(progress.waitingForInput());
-        assertSame(input,cpu.instructionRegister().orElseThrow());
-        for(int i=0;i<5;i++) {
-            assertEquals(TickResult.WAITING_FOR_INPUT,tick()); pc(0);
-            assertEquals(2,progress.consumedTicks()); assertEquals(77,cpu.readRegister(RegisterName.DX));
-        }
-        assertEquals(TickResult.WAITING_FOR_INPUT,complete());
+        assertEquals(ProcessState.BLOCKED,pcb.state());assertTrue(progress.isIdle());
+        assertSame(input,cpu.instructionRegister().orElseThrow());pc(0);
+        assertEquals(0,progress.consumedTicks());assertEquals(77,cpu.readRegister(RegisterName.DX));
         keyboard.submit(255);
-        // Normal tick does not silently complete external I/O, even with queued input.
-        assertEquals(TickResult.WAITING_FOR_INPUT,tick()); assertTrue(keyboard.hasInput());
-        assertEquals(TickResult.INSTRUCTION_COMPLETED,complete()); pc(1);
-        assertEquals(255,cpu.readRegister(RegisterName.DX)); assertEquals(ProcessState.READY,pcb.state());
-        assertTrue(progress.isIdle()); assertFalse(progress.waitingForInput()); assertEquals(0,progress.consumedTicks());
-        assertThrows(ExecutionEngineException.class,this::complete);
-        assertEquals(TickResult.PROGRAM_FINISHED,tick());
-    }
-    @Test void lastInputCompletionTerminatesAndMismatchDoesNotConsumeInput() {
-        load(interrupt(InterruptVector.KEYBOARD)); tick(); tick(); keyboard.submit(0);
-        var other=new ProcessControlBlock(1,pcb.programStartAddress(),1); other.changeState(ProcessState.BLOCKED);
-        assertThrows(ExecutionEngineException.class,()->engine.completeKeyboardInput(keyboard,memory,cpu,other,progress));
-        assertThrows(ExecutionEngineException.class,()->engine.executeTick(filesystem, screen,keyboard,memory,new CpuRegisters<>(),pcb,progress));
-        assertTrue(keyboard.hasInput()); assertEquals(2,progress.consumedTicks());
-        assertEquals(TickResult.PROGRAM_FINISHED,complete()); pc(1);
-        assertEquals(ProcessState.TERMINATED,pcb.state()); assertTrue(progress.isIdle());
+        assertThrows(ExecutionEngineException.class,this::tick);
+        assertTrue(keyboard.hasInput());pc(0);
+        assertEquals(77,cpu.readRegister(RegisterName.DX));
     }
 }

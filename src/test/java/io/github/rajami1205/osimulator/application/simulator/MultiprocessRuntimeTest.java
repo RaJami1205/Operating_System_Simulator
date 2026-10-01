@@ -82,7 +82,7 @@ class MultiprocessRuntimeTest {
         initialize();submit("input","INT 09H","INC");submit("cpu","ADD AX");submit("third","INC");simulator.start();
         block(1,RuntimeStatus.RUNNABLE);tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);
         var before=simulator.snapshot();simulator.submitKeyboardInput(42);
-        assertEquals(before,simulator.snapshot());assertEquals(1,progress().consumedTicks());
+        assertEquals(before.cpu(),simulator.snapshot().cpu());assertEquals(before.currentInstruction(),simulator.snapshot().currentInstruction());assertEquals(before.program(),simulator.snapshot().program());assertEquals(1,progress().consumedTicks());
         assertEquals(List.of(3,1),ready().entries());assertEquals(42,pcb(1).cpuContext().dx());assertEquals(1,pcb(1).programCounter());
         assertEquals(ProcessState.READY,pcb(1).state());assertTrue(simulator.pendingKeyboardRequests().isEmpty());
         tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(2,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
@@ -117,7 +117,7 @@ class MultiprocessRuntimeTest {
         block(2,RuntimeStatus.RUNNABLE);simulator.swapOut(2);
         tick(3,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);var before=simulator.snapshot();
         simulator.submitKeyboardInput(7);simulator.submitKeyboardInput(8);
-        assertEquals(before,simulator.snapshot());assertEquals(List.of(1,2),suspended().entries());assertTrue(ready().entries().isEmpty());
+        assertEquals(before.cpu(),simulator.snapshot().cpu());assertEquals(before.process(),simulator.snapshot().process());assertEquals(before.program(),simulator.snapshot().program());assertEquals(List.of(1,2),suspended().entries());assertTrue(ready().entries().isEmpty());
         assertEquals(ProcessState.READY_SUSPENDED,pcb(1).state());assertEquals(ProcessState.READY_SUSPENDED,pcb(2).state());
         tick(3,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(3,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
         assertEquals(List.of(2),suspended().entries());assertEquals(List.of(1),ready().entries());

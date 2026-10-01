@@ -147,9 +147,8 @@ class SimulatorOrchestratorTest {
         assertEquals(2, last.cpu().orElseThrow().programCounter());
         assertEquals(2, simulator.completedProcesses().getFirst().finalContext().programCounter());
         assertEquals(5, last.cpu().orElseThrow().accumulator());
-        assertEquals(new SimulatorSnapshot.InstructionSnapshot(
-                "LOAD AX", "LOAD", "AX"),
-                last.currentInstruction().orElseThrow());
+        assertTrue(last.currentInstruction().isEmpty());
+        assertEquals(Optional.of("LOAD AX"), last.cpu().orElseThrow().instructionRegister());
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(last, simulator.snapshot());
     }
@@ -510,7 +509,8 @@ class SimulatorOrchestratorTest {
         for (int index = 0; index < expected.size(); index++) {
             simulator.step();
             var snapshot = simulator.snapshot();
-            assertEquals(expected.get(index), snapshot.currentInstruction().orElseThrow().semanticInstruction());
+            if (snapshot.ownerPid().isPresent()) assertEquals(expected.get(index), snapshot.currentInstruction().orElseThrow().semanticInstruction());
+            else assertTrue(snapshot.currentInstruction().isEmpty());
             assertEquals(Optional.of(expected.get(index)), snapshot.cpu().orElseThrow().instructionRegister());
             if (index < expected.size() - 1) {
                 assertEquals(expected.get(index), snapshot.program().get(index).instruction());
@@ -539,7 +539,8 @@ class SimulatorOrchestratorTest {
             assertEquals(Optional.of(text), simulator.snapshot().memory().get(32).content());
             if (text.equals("POP BX")) assertThrows(ExecutionEngineException.class, simulator::step);
             else simulator.step();
-            assertEquals(text, simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
+            if (simulator.snapshot().ownerPid().isPresent()) assertEquals(text, simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
+            else assertTrue(simulator.snapshot().currentInstruction().isEmpty());
             assertEquals(Optional.of(text), simulator.snapshot().cpu().orElseThrow().instructionRegister());
         }
     }

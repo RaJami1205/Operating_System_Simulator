@@ -162,6 +162,9 @@ public final class MultiprocessRuntime {
         }
     }
 
+    /** Immutable FIFO observation; no scheduling or transfer is performed. */
+    public java.util.List<Integer> suspendedReadyProcessIds() { return suspended.entries(); }
+
     /** Read-only status after coordination; history does not count as active workload. */
     public RuntimeStatus status() {
         validateStructure();

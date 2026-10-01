@@ -15,7 +15,6 @@ import io.github.rajami1205.osimulator.model.scheduling.SuspendedReadyQueue;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
 import io.github.rajami1205.osimulator.application.process.SwapResult;
-import io.github.rajami1205.osimulator.application.process.UserImageResidence;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
@@ -24,52 +23,18 @@ import io.github.rajami1205.osimulator.model.scheduling.FcfsProcessScheduler;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
-import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.CpuSnapshot;
-import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.InstructionSnapshot;
-import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.MemoryEntry;
-import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.ProcessSnapshot;
-import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.ProgramEntry;
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
-import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.execution.ExecutionProgress;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
-import io.github.rajami1205.osimulator.model.instruction.AddInstruction;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
-import io.github.rajami1205.osimulator.model.instruction.CmpInstruction;
-import io.github.rajami1205.osimulator.model.instruction.JmpInstruction;
-import io.github.rajami1205.osimulator.model.instruction.JeInstruction;
-import io.github.rajami1205.osimulator.model.instruction.JneInstruction;
-import io.github.rajami1205.osimulator.model.instruction.ParamInstruction;
-import io.github.rajami1205.osimulator.model.instruction.PushInstruction;
-import io.github.rajami1205.osimulator.model.instruction.PopInstruction;
-import io.github.rajami1205.osimulator.model.instruction.operand.BranchDisplacement;
-import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
-import io.github.rajami1205.osimulator.model.instruction.MovInstruction;
-import io.github.rajami1205.osimulator.model.instruction.StoreInstruction;
-import io.github.rajami1205.osimulator.model.instruction.SubInstruction;
-import io.github.rajami1205.osimulator.model.instruction.IncInstruction;
-import io.github.rajami1205.osimulator.model.instruction.DecInstruction;
-import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
-import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
-import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.memory.MemoryContent;
-import io.github.rajami1205.osimulator.model.memory.EmptyContent;
-import io.github.rajami1205.osimulator.model.memory.InstructionContent;
-import io.github.rajami1205.osimulator.model.memory.PcbContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
-import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
-import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
-import io.github.rajami1205.osimulator.model.filesystem.FileService;
-import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
-import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
-import io.github.rajami1205.osimulator.model.instruction.operand.ServiceRegisterOperand;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -329,100 +294,23 @@ public final class SimulatorOrchestrator {
         configuration = null;
     }
 
-    // Construye una vista inmutable de la CPU, el proceso y la memoria de la sesión.
+    /** One immutable read of the session. ERROR never revalidates a failed runtime. */
     public SimulatorSnapshot snapshot() {
-        Optional<CpuSnapshot> cpuSnapshot = Optional.empty();
-        Optional<InstructionSnapshot> currentInstruction = Optional.empty();
-        if (cpu != null) {
-            cpuSnapshot = Optional.of(new CpuSnapshot(
-                    cpu.programCounter(), cpu.accumulator(),
-                    cpu.readRegister(RegisterName.AX), cpu.readRegister(RegisterName.BX),
-                    cpu.readRegister(RegisterName.CX), cpu.dxValue(),
-                    cpu.instructionRegister().map(this::semanticText)));
-            currentInstruction = cpu.instructionRegister().map(this::instructionSnapshot);
+        Optional<RuntimeStatus> status = Optional.empty();
+        if (lifecycle.state() == SimulatorState.FINISHED) status = Optional.of(RuntimeStatus.FINISHED);
+        else if (lifecycle.state() == SimulatorState.RUNNING || lifecycle.state() == SimulatorState.PAUSED) {
+            try { status = Optional.of(runtime.status()); }
+            catch (RuntimeException failure) { lifecycle.markError(); }
         }
-        Optional<ProcessSnapshot> process = Optional.empty();
-        List<ProgramEntry> program = new ArrayList<>();
-        var pcb = dispatcher == null ? null : dispatcher.owner().orElse(null);
-        if (pcb != null) {
-            process = Optional.of(new ProcessSnapshot(
-                    pcb.processId(), pcb.state().name(), pcb.programStartAddress(),
-                    pcb.instructionCount(), pcb.programEndAddressExclusive(), pcb.programCounter()));
-            var residence = processResources.find(pcb.processId()).orElseThrow().residence();
-            if (!(residence instanceof UserImageResidence.Resident resident)) {
-                throw new IllegalStateException("CPU owner must have resident resources");
-            }
-            var image = memory.readUserBlock(resident.allocation());
-            for (int offset = 0; offset < image.size(); offset++) {
-                program.add(new ProgramEntry(resident.allocation().base() + offset, semanticText(image.get(offset))));
-            }
-        }
-        List<MemoryEntry> memoryEntries = new ArrayList<>();
-        if (memory != null) {
-            for (int address = 0; address < memory.size(); address++) {
-                memoryEntries.add(new MemoryEntry(address, memory.regionOf(address).name(),
-                        contentText(memory.read(address))));
-            }
-        }
-        return new SimulatorSnapshot(lifecycle.state(), cpuSnapshot, currentInstruction,
-                process, program, memoryEntries);
+        return SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
+                dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
+                jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
+                runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
+                completedProcesses(), screenOutput());
     }
 
-    // Sólo texto inmutable cruza hacia Presentation, nunca el PCB canónico.
     Optional<String> contentText(MemoryContent content) {
-        return switch (content) {
-            case EmptyContent ignored -> Optional.empty();
-            case InstructionContent instruction -> Optional.of(semanticText(instruction.instruction()));
-            case PcbContent process -> Optional.of("PCB PID=" + process.pcb().processId());
-        };
-    }
-
-    // Obtiene la representación semántica de una instrucción.
-    private InstructionSnapshot instructionSnapshot(Instruction instruction) {
-        return new InstructionSnapshot(semanticText(instruction), instruction.opcode().name(),
-                operandText(instruction));
-    }
-
-    // Compone el texto de una instrucción para su visualización.
-    private String semanticText(Instruction instruction) {
-        String operands = operandText(instruction);
-        return instruction.opcode().name() + (operands.isEmpty() ? "" : " " + operands);
-    }
-
-    // Describe los operandos según el tipo de instrucción.
-    private String operandText(Instruction instruction) {
-        return switch (instruction) {
-            case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
-                case ImmediateOperand immediate -> mov.destination() == ServiceRegister.AH
-                        ? FileService.find(immediate.value()).map(FileService::canonicalText).orElse(Integer.toString(immediate.value()))
-                        : Integer.toString(immediate.value());
-                case TextOperand text -> "\"" + text.value() + "\"";
-                case ServiceRegisterOperand ignored -> throw new IllegalStateException("Invalid MOV source");
-                case RegisterOperand register -> register.register().name();
-                case InterruptVector ignored -> throw new IllegalStateException("Invalid MOV source");
-                case BranchDisplacement ignored -> throw new IllegalStateException("Invalid MOV source");
-            };
-            case InterruptInstruction interrupt -> interrupt.vector().canonicalText();
-            case CmpInstruction cmp -> cmp.left().name() + ", " + cmp.right().name();
-            case JmpInstruction jump -> displacementText(jump.displacement());
-            case JeInstruction jump -> displacementText(jump.displacement());
-            case JneInstruction jump -> displacementText(jump.displacement());
-            case PushInstruction push -> push.source().name();
-            case PopInstruction pop -> pop.destination().name();
-            case ParamInstruction param -> param.values().stream().map(value -> Integer.toString(value.value()))
-                    .collect(java.util.stream.Collectors.joining(", "));
-            case IncInstruction inc -> inc.target().map(RegisterName::name).orElse("");
-            case DecInstruction dec -> dec.target().map(RegisterName::name).orElse("");
-            case SwapInstruction swap -> swap.left().name() + ", " + swap.right().name();
-            case LoadInstruction load -> load.source().name();
-            case StoreInstruction store -> store.destination().name();
-            case AddInstruction add -> add.source().name();
-            case SubInstruction sub -> sub.source().name();
-        };
-    }
-
-    private String displacementText(BranchDisplacement displacement) {
-        return displacement.value() > 0 ? "+" + displacement.value() : Integer.toString(displacement.value());
+        return SimulatorSnapshotMapper.memoryText(content);
     }
 
     // Rechaza operaciones que no corresponden al estado actual de la sesión.

@@ -1,0 +1,165 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 65
+skinparam ranksep 100
+skinparam padding 12
+
+title Operating System Simulator - Dependencias internas
+' Raíz común: io.github.rajami1205.osimulator
+' Dependencias derivadas de imports internos; tipos anidados se atribuyen a su paquete.
+
+package "Presentation" as pkg_presentation {}
+package "Application" as pkg_application {
+  package "job" as pkg_application_job {}
+  package "lifecycle" as pkg_application_lifecycle {
+    package "exception" as pkg_application_lifecycle_exception {}
+  }
+  package "process" as pkg_application_process {}
+  package "program" as pkg_application_program {
+    package "exception" as pkg_application_program_exception {}
+  }
+  package "simulator" as pkg_application_simulator {}
+}
+package "Infrastructure" as pkg_infrastructure {
+  package "asm" as pkg_infrastructure_asm {
+    package "exception" as pkg_infrastructure_asm_exception {}
+  }
+}
+package "Model" as pkg_model {
+  package "configuration" as pkg_model_configuration {}
+  package "cpu" as pkg_model_cpu {
+    package "exception" as pkg_model_cpu_exception {}
+  }
+  package "execution" as pkg_model_execution {
+    package "exception" as pkg_model_execution_exception {}
+  }
+  package "filesystem" as pkg_model_filesystem {}
+  package "instruction" as pkg_model_instruction {
+    package "exception" as pkg_model_instruction_exception {}
+    package "operand" as pkg_model_instruction_operand {}
+  }
+  package "io" as pkg_model_io {}
+  package "job" as pkg_model_job {}
+  package "memory" as pkg_model_memory {
+    package "exception" as pkg_model_memory_exception {}
+  }
+  package "process" as pkg_model_process {
+    package "exception" as pkg_model_process_exception {}
+  }
+  package "program" as pkg_model_program {}
+  package "scheduling" as pkg_model_scheduling {}
+  package "storage" as pkg_model_storage {
+    package "exception" as pkg_model_storage_exception {}
+  }
+}
+
+pkg_application_job ..> pkg_application_process
+pkg_application_job ..> pkg_model_job
+pkg_application_job ..> pkg_model_program
+pkg_application_job ..> pkg_model_storage
+pkg_application_lifecycle ..> pkg_application_lifecycle_exception
+pkg_application_process ..> pkg_application_program
+pkg_application_process ..> pkg_application_program_exception
+pkg_application_process ..> pkg_model_cpu
+pkg_application_process ..> pkg_model_instruction
+pkg_application_process ..> pkg_model_io
+pkg_application_process ..> pkg_model_job
+pkg_application_process ..> pkg_model_memory
+pkg_application_process ..> pkg_model_memory_exception
+pkg_application_process ..> pkg_model_process
+pkg_application_process ..> pkg_model_scheduling
+pkg_application_process ..> pkg_model_storage
+pkg_application_process ..> pkg_model_storage_exception
+pkg_application_program ..> pkg_application_program_exception
+pkg_application_program ..> pkg_model_instruction
+pkg_application_program ..> pkg_model_memory
+pkg_application_program ..> pkg_model_memory_exception
+pkg_application_program ..> pkg_model_process
+pkg_application_program ..> pkg_model_process_exception
+pkg_application_simulator ..> pkg_application_job
+pkg_application_simulator ..> pkg_application_lifecycle
+pkg_application_simulator ..> pkg_application_process
+pkg_application_simulator ..> pkg_application_program
+pkg_application_simulator ..> pkg_application_program_exception
+pkg_application_simulator ..> pkg_model_configuration
+pkg_application_simulator ..> pkg_model_cpu
+pkg_application_simulator ..> pkg_model_execution
+pkg_application_simulator ..> pkg_model_execution_exception
+pkg_application_simulator ..> pkg_model_filesystem
+pkg_application_simulator ..> pkg_model_instruction
+pkg_application_simulator ..> pkg_model_instruction_operand
+pkg_application_simulator ..> pkg_model_io
+pkg_application_simulator ..> pkg_model_job
+pkg_application_simulator ..> pkg_model_memory
+pkg_application_simulator ..> pkg_model_memory_exception
+pkg_application_simulator ..> pkg_model_process
+pkg_application_simulator ..> pkg_model_program
+pkg_application_simulator ..> pkg_model_scheduling
+pkg_application_simulator ..> pkg_model_storage
+pkg_application_simulator ..> pkg_model_storage_exception
+pkg_infrastructure_asm ..> pkg_application_program
+pkg_infrastructure_asm ..> pkg_application_program_exception
+pkg_infrastructure_asm ..> pkg_infrastructure_asm_exception
+pkg_infrastructure_asm ..> pkg_model_cpu
+pkg_infrastructure_asm ..> pkg_model_instruction
+pkg_infrastructure_asm ..> pkg_model_instruction_exception
+pkg_infrastructure_asm ..> pkg_model_instruction_operand
+pkg_model_configuration ..> pkg_model_memory
+pkg_model_cpu ..> pkg_model_cpu_exception
+pkg_model_execution ..> pkg_model_cpu
+pkg_model_execution ..> pkg_model_cpu_exception
+pkg_model_execution ..> pkg_model_execution_exception
+pkg_model_execution ..> pkg_model_filesystem
+pkg_model_execution ..> pkg_model_instruction
+pkg_model_execution ..> pkg_model_instruction_operand
+pkg_model_execution ..> pkg_model_io
+pkg_model_execution ..> pkg_model_memory
+pkg_model_execution ..> pkg_model_memory_exception
+pkg_model_execution ..> pkg_model_process
+pkg_model_execution ..> pkg_model_process_exception
+pkg_model_filesystem ..> pkg_model_cpu
+pkg_model_filesystem ..> pkg_model_instruction
+pkg_model_filesystem ..> pkg_model_process
+pkg_model_filesystem ..> pkg_model_storage
+pkg_model_filesystem ..> pkg_model_storage_exception
+pkg_model_instruction ..> pkg_model_cpu
+pkg_model_instruction ..> pkg_model_instruction_operand
+pkg_model_instruction_operand ..> pkg_model_cpu
+pkg_model_instruction_operand ..> pkg_model_instruction
+pkg_model_instruction_operand ..> pkg_model_instruction_exception
+pkg_model_memory ..> pkg_model_instruction
+pkg_model_memory ..> pkg_model_memory_exception
+pkg_model_memory ..> pkg_model_process
+pkg_model_process ..> pkg_model_cpu
+pkg_model_process ..> pkg_model_instruction
+pkg_model_process ..> pkg_model_process_exception
+pkg_model_program ..> pkg_model_instruction
+pkg_model_scheduling ..> pkg_model_process
+pkg_model_storage ..> pkg_model_instruction
+pkg_model_storage ..> pkg_model_storage_exception
+pkg_presentation ..> pkg_application_lifecycle
+pkg_presentation ..> pkg_application_program
+pkg_presentation ..> pkg_application_program_exception
+pkg_presentation ..> pkg_application_simulator
+pkg_presentation ..> pkg_infrastructure_asm
+pkg_presentation ..> pkg_model_configuration
+pkg_presentation ..> pkg_model_execution
+pkg_presentation ..> pkg_model_execution_exception
+pkg_presentation ..> pkg_model_job
+pkg_presentation ..> pkg_model_memory
+pkg_presentation ..> pkg_model_process
+pkg_presentation ..> pkg_model_program
+pkg_presentation ..> pkg_model_storage_exception
+
+' Sólo layout: estos enlaces ocultos no representan dependencias reales.
+pkg_presentation -[hidden]right-> pkg_application_simulator
+pkg_application_simulator -[hidden]right-> pkg_model_execution
+pkg_presentation -[hidden]right-> pkg_infrastructure
+pkg_infrastructure -[hidden]right-> pkg_application
+pkg_application -[hidden]right-> pkg_model
+
+@enduml

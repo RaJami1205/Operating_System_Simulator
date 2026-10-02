@@ -481,8 +481,11 @@ class SimulatorOrchestratorTest {
         assertThrows(IllegalStateException.class, simulator::step);
         simulator.resume();
         assertEquals(partial, simulator.snapshot());
-        simulator.step(); // ADD 2/3
-        assertEquals(partial, simulator.snapshot());
+        simulator.step(); // ADD 2/3: semantics stay atomic, successful CPU usage advances.
+        assertEquals(partial.cpu(), simulator.snapshot().cpu());
+        assertEquals(partial.currentInstruction(), simulator.snapshot().currentInstruction());
+        assertEquals(partial.cpuTicks().orElseThrow() + 1, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(3, simulator.snapshot().processes().getFirst().accounting().cpuTicks());
         simulator.step(); // ADD 3/3
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
         assertEquals(5, simulator.snapshot().cpu().orElseThrow().accumulator());

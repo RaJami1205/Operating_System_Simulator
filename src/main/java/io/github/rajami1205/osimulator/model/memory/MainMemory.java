@@ -109,6 +109,23 @@ public final class MainMemory {
         throw new MemoryProtectionException("No instruction at process address: " + logicalAddress);
     }
 
+    /** Validates identity and PCB extent without reading or modifying instruction content. */
+    public void validateUserAllocation(MemoryAllocation allocation, ProcessMemoryBounds bounds) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        Objects.requireNonNull(allocation, "allocation must not be null");
+        validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
+        if (allocation.base() != bounds.base() || allocation.size() != bounds.limit()) {
+            throw new MemoryProtectionException("USER allocation and process bounds disagree");
+        }
+    }
+
+    /** Runtime fetch must carry the original active USER allocation, never only a reusable range. */
+    public Instruction readInstruction(MemoryAllocation allocation, int logicalPc) {
+        validateWrite(allocation, MemoryRegion.USER, logicalPc, 1);
+        if (positions[allocation.base() + logicalPc] instanceof InstructionContent content) return content.instruction();
+        throw new MemoryProtectionException("No instruction at process address: " + logicalPc);
+    }
+
     public void clearUserSpace() {
         Arrays.fill(positions, configuration.userStartAddress(), size(), EmptyContent.INSTANCE);
         user.reset();

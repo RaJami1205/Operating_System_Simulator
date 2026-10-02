@@ -6,6 +6,7 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.instruction.LoadInstruction;
 import io.github.rajami1205.osimulator.model.process.exception.*;
 import java.util.*;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -54,17 +55,17 @@ class ProcessDomainTest {
         var initial = ProcessAccounting.initial();
         assertTrue(initial.cpuId().isEmpty());
         assertTrue(initial.startTime().isEmpty());
-        assertEquals(0, initial.cpuTime());
+        assertEquals(0, initial.cpuTicks());
         assertTrue(initial.finishTime().isEmpty());
-        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.of(0), OptionalLong.of(5), 0, OptionalLong.of(5)));
-        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.empty(), Long.MAX_VALUE, OptionalLong.of(Long.MAX_VALUE)));
-        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.of(-1), 0, OptionalLong.empty()));
-        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.empty(), -1, OptionalLong.empty()));
-        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.empty(), 0, OptionalLong.of(-1)));
-        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.of(5), 0, OptionalLong.of(4)));
-        assertThrows(NullPointerException.class, () -> new ProcessAccounting(null, OptionalLong.empty(), 0, OptionalLong.empty()));
-        assertThrows(NullPointerException.class, () -> new ProcessAccounting(OptionalInt.empty(), null, 0, OptionalLong.empty()));
-        assertThrows(NullPointerException.class, () -> new ProcessAccounting(OptionalInt.empty(), OptionalLong.empty(), 0, null));
+        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.of(0), Optional.of(Instant.ofEpochSecond(5)), 0, Optional.of(Instant.ofEpochSecond(5))));
+        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.empty(), Optional.empty(), Long.MAX_VALUE, Optional.of(Instant.MAX)));
+        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.empty(), Optional.of(Instant.ofEpochSecond(-1)), 0, Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), Optional.empty(), -1, Optional.empty()));
+        assertDoesNotThrow(() -> new ProcessAccounting(OptionalInt.empty(), Optional.empty(), 0, Optional.of(Instant.ofEpochSecond(-1))));
+        assertThrows(IllegalArgumentException.class, () -> new ProcessAccounting(OptionalInt.empty(), Optional.of(Instant.ofEpochSecond(5)), 0, Optional.of(Instant.ofEpochSecond(4))));
+        assertThrows(NullPointerException.class, () -> new ProcessAccounting(null, Optional.empty(), 0, Optional.empty()));
+        assertThrows(NullPointerException.class, () -> new ProcessAccounting(OptionalInt.empty(), null, 0, Optional.empty()));
+        assertThrows(NullPointerException.class, () -> new ProcessAccounting(OptionalInt.empty(), Optional.empty(), 0, null));
     }
 
     @Test
@@ -125,7 +126,7 @@ class ProcessDomainTest {
         assertEquals(Optional.of(new PcbAddress(10)), pcb.nextPcbAddress());
         pcb.setNextPcbAddress(Optional.empty());
         assertTrue(pcb.nextPcbAddress().isEmpty());
-        var accounting = new ProcessAccounting(OptionalInt.of(0), OptionalLong.of(1), 2, OptionalLong.of(4));
+        var accounting = new ProcessAccounting(OptionalInt.of(0), Optional.of(Instant.ofEpochSecond(1)), 2, Optional.of(Instant.ofEpochSecond(4)));
         pcb.replaceAccounting(accounting);
         assertThrows(NullPointerException.class, () -> pcb.replaceAccounting(null));
         assertEquals(accounting, pcb.accounting());

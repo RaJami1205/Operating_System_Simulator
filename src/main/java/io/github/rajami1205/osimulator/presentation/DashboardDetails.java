@@ -13,10 +13,17 @@ final class DashboardDetails {
                 + "\nEqual: " + cpu.flags().equal() + "   Overflow: " + cpu.flags().overflow();
     }
     static String accounting(ProcessAccounting value) {
-        return "\nExisting accounting: CPU=" + (value.cpuId().isPresent() ? value.cpuId().getAsInt() : "\u2014")
-                + "   Start=" + (value.startTime().isPresent() ? value.startTime().getAsLong() : "\u2014")
-                + "   CPU time=" + value.cpuTime()
-                + "   Finish=" + (value.finishTime().isPresent() ? value.finishTime().getAsLong() : "\u2014");
+        return accounting(value, java.time.ZoneId.systemDefault());
+    }
+    static String accounting(ProcessAccounting value, java.time.ZoneId zone) {
+        var format = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a", java.util.Locale.ENGLISH)
+                .withZone(zone);
+        return "\nCPU ID: " + (value.cpuId().isPresent() ? value.cpuId().getAsInt() : "—")
+                + "   Start Time: " + value.startTime().map(format::format).orElse("—")
+                + "   CPU Ticks: " + value.cpuTicks()
+                + "\nFinish Time: " + value.finishTime().map(format::format).orElse("—")
+                + "   Elapsed Time: " + value.elapsedTime().map(duration -> String.format(java.util.Locale.ROOT,
+                        "%02d:%02d:%02d", duration.toHours(), duration.toMinutesPart(), duration.toSecondsPart())).orElse("—");
     }
     static String process(ProcessDetails value) {
         return "PID " + value.processId() + " | " + value.state() + " | " + value.residency()

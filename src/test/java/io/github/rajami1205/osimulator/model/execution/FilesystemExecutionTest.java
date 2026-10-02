@@ -25,8 +25,9 @@ class FilesystemExecutionTest {
     private final ScreenDevice screen=new ScreenDevice();
     private final KeyboardDevice keyboard=new KeyboardDevice();
     private ProcessControlBlock pcb;
-    private void load(Instruction instruction) { pcb=new ProgramLoader().load(memory,1,List.of(instruction)); }
-    private TickResult tick() { return engine.executeTick(filesystem,screen,keyboard,memory,cpu,pcb,progress); }
+    private io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
+    private void load(Instruction instruction) { var loaded = new ProgramLoader().loadWithAllocation(memory,1,List.of(instruction)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
+    private TickResult tick() { return engine.executeTick(filesystem,screen,keyboard,memory,cpu,pcb,progress,allocation); }
     private void setupService(FileService service) {
         load(new InterruptInstruction(InterruptVector.FILESYSTEM));
         cpu.writeAh(service.code());cpu.writeDx(new TextRegisterValue("file"));

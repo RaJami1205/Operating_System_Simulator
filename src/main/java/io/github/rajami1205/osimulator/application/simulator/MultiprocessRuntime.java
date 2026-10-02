@@ -35,6 +35,8 @@ public final class MultiprocessRuntime {
     private final SuspendedReadyQueue suspended;
     private final ProcessScheduler scheduler;
     private boolean started;
+    private final CpuTickCounter tickCounter;
+    private final java.time.Clock realClock;
     // Failed swap-in is retried only after a relevant change, never on each idle Step.
     private boolean reconsiderSwap = true;
 
@@ -43,7 +45,9 @@ public final class MultiprocessRuntime {
             ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
             ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
             JobList jobs, ProcessTable table, ProcessResourceRegistry resources, ReadyQueue ready,
-            SuspendedReadyQueue suspended, ProcessScheduler scheduler) {
+            SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter, java.time.Clock realClock) {
+        this.tickCounter = Objects.requireNonNull(tickCounter);
+        this.realClock = Objects.requireNonNull(realClock);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.engine = Objects.requireNonNull(engine);
         this.progress = Objects.requireNonNull(progress);
@@ -112,7 +116,22 @@ public final class MultiprocessRuntime {
         if (dispatcher.owner().isEmpty()) return new RuntimeStepResult.Idle(status());
 
         var pcb = dispatcher.owner().orElseThrow();
-        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress);
+        if (pcb.programCounter() < 0 || pcb.programCounter() >= pcb.instructionCount()) {
+            throw new IllegalStateException("Executable owner must have a fetchable logical PC");
+        }
+        var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
+        if (!(resource.residence() instanceof UserImageResidence.Resident resident)) {
+            throw new IllegalStateException("CPU owner must be resident");
+        }
+        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        memory.validatePcbAllocation(resource.kernel(), pcb);
+        tickCounter.validateCanAdvance();
+        var tickStart = realClock.instant();
+        // Prepare immutable accounting before execution so overflow cannot occur after semantic effects.
+        var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
+        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, resident.allocation());
+        pcb.replaceAccounting(accounted);
+        tickCounter.advance();
         if (result == TickResult.WAITING_FOR_INPUT) {
             dispatcher.release();
             input.register(pcb);

@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.ArrayList;
+import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -12,6 +13,7 @@ import java.util.Optional;
 /** Prevalidates canonical resources and links, then retires a completed process. */
 public final class ProcessCompletionService {
     private final MainMemory memory;
+    private final Clock realClock;
     private final SecondaryStorage storage;
     private final ProcessTable table;
     private final ProcessResourceRegistry resources;
@@ -23,7 +25,8 @@ public final class ProcessCompletionService {
 
     public ProcessCompletionService(MainMemory memory, SecondaryStorage storage, ProcessTable table,
             ProcessResourceRegistry resources, ReadyQueue ready, SuspendedReadyQueue suspended,
-            KeyboardCompletionService keyboard, Dispatcher dispatcher) {
+            KeyboardCompletionService keyboard, Dispatcher dispatcher, Clock realClock) {
+        this.realClock = Objects.requireNonNull(realClock);
         this.memory = Objects.requireNonNull(memory);
         this.storage = Objects.requireNonNull(storage);
         this.table = Objects.requireNonNull(table);
@@ -69,6 +72,7 @@ public final class ProcessCompletionService {
             }
         }
 
+        pcb.replaceAccounting(pcb.accounting().finishAt(realClock.instant()));
         var record = new CompletedProcessRecord(pid, pcb.cpuContext(), pcb.accounting());
         // All fallible identity, content and link checks precede destructive operations.
         switch (resource.residence()) {

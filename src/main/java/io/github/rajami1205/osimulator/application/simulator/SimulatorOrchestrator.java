@@ -36,6 +36,15 @@ import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import java.util.List;
+import java.time.Clock;
+import io.github.rajami1205.osimulator.model.execution.CpuTickCounter;
+import io.github.rajami1205.osimulator.model.process.ProcessState;
+import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
+import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
+import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryReleaseException;
+import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddressException;
+import java.util.OptionalLong;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -67,11 +76,19 @@ public final class SimulatorOrchestrator {
     private long compatibilitySequence;
     private SimulatorConfiguration configuration;
 
+    private CpuTickCounter tickCounter;
+    private final Clock realClock;
+
     // Recibe los servicios que coordinan la carga y ejecución.
     public SimulatorOrchestrator(
             ProgramLoader programLoader,
             ExecutionEngine executionEngine
     ) {
+        this(programLoader, executionEngine, Clock.systemUTC());
+    }
+
+    public SimulatorOrchestrator(ProgramLoader programLoader, ExecutionEngine executionEngine, Clock realClock) {
+        this.realClock = Objects.requireNonNull(realClock, "realClock must not be null");
         this.programLoader = Objects.requireNonNull(programLoader, "programLoader must not be null");
         this.executionEngine = Objects.requireNonNull(executionEngine, "executionEngine must not be null");
     }
@@ -101,6 +118,7 @@ public final class SimulatorOrchestrator {
         memory = newMemory;
         cpu = newCpu;
         executionProgress = newProgress;
+        tickCounter = new CpuTickCounter();
         screen = newScreen;
         keyboard = newKeyboard;
         secondaryStorage = newStorage;
@@ -115,13 +133,13 @@ public final class SimulatorOrchestrator {
         readyQueue = newReadyQueue;
         processScheduler = newProcessScheduler;
         var suspended = new SuspendedReadyQueue();
-        dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources);
+        dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources, memory);
         keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended);
         processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
-                readyQueue, suspended, keyboardCompletion, dispatcher);
+                readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
         runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,
                 screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
-                jobList, processTable, processResources, readyQueue, suspended, processScheduler);
+                jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, realClock);
         this.configuration = configuration;
     }
 
@@ -146,7 +164,9 @@ public final class SimulatorOrchestrator {
     /** Admits at most one prepared Job without dispatching or consuming ticks. */
     public Optional<AdmissionResult> attemptNextAdmission() {
         requirePreparedState("attemptNextAdmission");
-        return jobScheduler.attemptNextAdmission();
+        try { return jobScheduler.attemptNextAdmission(); }
+        catch (IllegalStateException | ProgramLoadException | StorageException | MemoryProtectionException
+                | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
     }
 
     /** Consulta el próximo candidato sin consumir READY ni activar la CPU. */
@@ -157,7 +177,11 @@ public final class SimulatorOrchestrator {
 
     public SwapResult swapOut(int processId) {
         requireSwapSession();
-        var result = runtime.swapOut(processId);
+        requireSwapCandidate(processId, true);
+        SwapResult result;
+        try { result = runtime.swapOut(processId); }
+        catch (IllegalStateException | StorageException | MemoryProtectionException
+                | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
         if (result instanceof SwapResult.Completed) {
             try { runtime.retryAdmissionAfterRelease(); }
             catch (RuntimeException failure) { throw runtimeFailure(failure); }
@@ -168,9 +192,21 @@ public final class SimulatorOrchestrator {
 
     public SwapResult swapIn(int processId) {
         requireSwapSession();
-        var result = runtime.swapIn(processId);
+        requireSwapCandidate(processId, false);
+        SwapResult result;
+        try { result = runtime.swapIn(processId); }
+        catch (IllegalStateException | StorageException | MemoryProtectionException
+                | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
         completePendingKeyboardInput();
         return result;
+    }
+
+    /** User operation preconditions remain recoverable; resource checks belong to the service. */
+    private void requireSwapCandidate(int pid, boolean out) {
+        var pcb = processTable.find(pid).orElseThrow(() -> new IllegalArgumentException("Unknown process: " + pid));
+        boolean eligible = out ? pcb.state() == ProcessState.READY || pcb.state() == ProcessState.BLOCKED
+                : pcb.state() == ProcessState.READY_SUSPENDED || pcb.state() == ProcessState.BLOCKED_SUSPENDED;
+        if (!eligible || dispatcher.owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
     }
 
     private void requireSwapSession() {
@@ -242,7 +278,11 @@ public final class SimulatorOrchestrator {
     public boolean waitingForInput() { return runtimeStatus() == RuntimeStatus.WAITING_FOR_INPUT; }
 
     public void submitKeyboardInput(int value) {
-        if (keyboard == null) throw new IllegalStateException("Keyboard requires an initialized session");
+        var state = lifecycle.state();
+        if (state != SimulatorState.INITIALIZED && state != SimulatorState.PROGRAM_LOADED
+                && state != SimulatorState.RUNNING && state != SimulatorState.PAUSED) {
+            throw new IllegalStateException("Keyboard input requires an active session");
+        }
         keyboard.submit(value);
         completePendingKeyboardInput();
     }
@@ -290,6 +330,7 @@ public final class SimulatorOrchestrator {
         keyboardCompletion = null;
         processCompletion = null;
         runtime = null;
+        tickCounter = null;
         compatibilitySequence = 0;
         configuration = null;
     }
@@ -306,7 +347,7 @@ public final class SimulatorOrchestrator {
                 dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
                 jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
                 runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
-                completedProcesses(), screenOutput());
+                completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()));
     }
 
     Optional<String> contentText(MemoryContent content) {

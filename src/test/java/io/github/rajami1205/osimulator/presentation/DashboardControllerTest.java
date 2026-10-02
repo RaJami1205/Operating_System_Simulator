@@ -10,6 +10,8 @@ import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
 import java.nio.file.Path;
+import java.time.*;
+import io.github.rajami1205.osimulator.testing.ControlledClock;
 import java.util.*;
 import java.util.concurrent.*;
 import javafx.animation.Timeline;
@@ -46,7 +48,8 @@ class DashboardControllerTest {
         var method = object.getClass().getDeclaredMethod(name); method.setAccessible(true); method.invoke(object);
     }
     private static final class Fixture {
-        final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine());
+        final ControlledClock realClock = new ControlledClock();
+        final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), realClock);
         final Map<String, List<Instruction>> programs = new HashMap<>();
         final SimulatorController controller = new SimulatorController(simulator, path -> {
             if (path.getFileName().toString().equals("broken.asm")) throw new ProgramImportException("Invalid ASM", null);
@@ -156,6 +159,40 @@ class DashboardControllerTest {
     private static void updateRow(TableRow<?> row, Object value, boolean empty) throws Exception {
         var method = row.getClass().getDeclaredMethod("updateItem", Object.class, boolean.class); method.setAccessible(true); method.invoke(row, value, empty);
     }
+    @Test void cpuTicksAndAccountingRenderAndAutomaticCountsOnce() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        assertEquals("—", f.widget("cpuTicksLabel", Label.class).getText());
+        String initial = DashboardDetails.accounting(io.github.rajami1205.osimulator.model.process.ProcessAccounting.initial());
+        assertTrue(initial.contains("CPU ID: —")); assertTrue(initial.contains("Start Time: —"));
+        assertTrue(initial.contains("CPU Ticks: 0")); assertTrue(initial.contains("Finish Time: —"));
+        f.action("handleInitialize"); assertEquals("0", f.widget("cpuTicksLabel", Label.class).getText());
+        f.load("ticks.asm", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
+        var timeline = (Timeline)get(f.controller, "automaticTimeline");
+        try {
+            assertEquals(1000, timeline.getKeyFrames().getFirst().getTime().toMillis());
+            var callback = timeline.getKeyFrames().getFirst().getOnFinished();
+            for(int tick=1;tick<=3;tick++) {
+                if (tick > 1) f.realClock.advance(java.time.Duration.ofSeconds(1));
+                callback.handle(new javafx.event.ActionEvent());
+                assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(Integer.toString(tick), f.widget("cpuTicksLabel", Label.class).getText());
+                f.action("refresh"); assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+            }
+            var completed = f.simulator.snapshot().completedProcesses().getFirst();
+            @SuppressWarnings("unchecked") TableColumn<CompletedProcess,String> column = (TableColumn<CompletedProcess,String>) get(f.controller,"completedCpuTicksColumn");
+            assertEquals("3", column.getCellObservableValue(completed).getValue());
+            var detail = DashboardDetails.accounting(completed.accounting());
+            assertEquals(Instant.parse("2026-10-01T12:00:00Z"), completed.accounting().startTime().orElseThrow());
+            assertEquals(Instant.parse("2026-10-01T12:00:02Z"), completed.accounting().finishTime().orElseThrow());
+            assertTrue(detail.contains("Elapsed Time: 00:00:02"));
+            @SuppressWarnings("unchecked") TableView<CompletedProcess> table = (TableView<CompletedProcess>) get(f.controller, "completedTable");
+            table.getSelectionModel().selectFirst();
+            assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Elapsed Time: 00:00:02"));
+            String fxml = new String(SimulatorController.class.getResourceAsStream("SimulatorView.fxml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(fxml.contains("CPU TICKS")); assertFalse(fxml.contains("CPU CLOCK"));
+            f.action("handleReset"); assertEquals("—", f.widget("cpuTicksLabel",Label.class).getText());
+        } finally { timeline.stop(); }
+    }); }
     @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
         f.load("example.asm", "MOV DX, \"a-long-program-name-with-readable-text.txt\"", "MOV AL, \"A long text value that must not widen the CPU pane\"", "ADD AX");

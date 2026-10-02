@@ -24,9 +24,9 @@ class ProcessCompletionServiceTest {
     private final SuspendedReadyQueue suspended=new SuspendedReadyQueue();
     private final JobList jobs=new JobList();
     private final CpuRegisters<Instruction> cpu=new CpuRegisters<>();
-    private final Dispatcher dispatcher=new Dispatcher(cpu,table,ready,registry);
+    private final Dispatcher dispatcher=new Dispatcher(cpu,table,ready,registry,memory);
     private final KeyboardCompletionService input=new KeyboardCompletionService(new KeyboardDevice(),table,registry,ready,suspended);
-    private final ProcessCompletionService completion=new ProcessCompletionService(memory,storage,table,registry,ready,suspended,input,dispatcher);
+    private final ProcessCompletionService completion=new ProcessCompletionService(memory,storage,table,registry,ready,suspended,input,dispatcher,java.time.Clock.fixed(java.time.Instant.parse("2026-10-01T12:00:00Z"), java.time.ZoneOffset.UTC));
     private final ProcessAdmissionService admission=new ProcessAdmissionService(jobs,storage,memory,table,new ProgramLoader(),ready,registry);
     private ProcessControlBlock add(int pid) {
         storage.storeProgram("p"+pid,List.of(new IncInstruction(),new IncInstruction()));

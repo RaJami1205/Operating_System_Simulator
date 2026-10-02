@@ -46,6 +46,8 @@ class ExecutionEngineTest {
     private final KeyboardDevice keyboard = new KeyboardDevice();
 
     private static final int USER_START_ADDRESS = 32;
+    // Retain original handles supplied by each fixture; never reconstruct allocation identities.
+    private final java.util.Map<MainMemory, io.github.rajami1205.osimulator.model.memory.MemoryAllocation> allocations = new java.util.IdentityHashMap<>();
 
     @Test
     void shouldRejectNullRequiredArguments() {
@@ -737,6 +739,7 @@ class ExecutionEngineTest {
     void shouldStopAtLogicalLimitWithoutExecutingAdjacentAllocationOrReleasingProgram() {
         var memory = createMemory();
         var first = memory.allocateUser(1);
+        allocations.put(memory, first);
         var next = memory.allocateUser(1);
         var instruction = new MovInstruction(RegisterName.AX, 7);
         memory.writeInstruction(first, 0, instruction);
@@ -762,12 +765,13 @@ class ExecutionEngineTest {
     // Semantic regression helper: completes an instruction through the public tick API only.
     private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
         var progress = new ExecutionProgress();
-        while (engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress) == TickResult.IN_PROGRESS) { }
+        while (engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, allocations.get(memory)) == TickResult.IN_PROGRESS) { }
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {
         var gap = memory.allocateUser(address - USER_START_ADDRESS);
         var allocation = memory.allocateUser(1);
+        allocations.put(memory, allocation);
         memory.writeInstruction(allocation, 0, instruction);
         memory.release(gap);
     }
@@ -778,7 +782,9 @@ class ExecutionEngineTest {
 
     private MainMemory memoryWithProgram(List<Instruction> instructions) {
         MainMemory memory = createMemory();
-        memory.writeUserBlock(memory.allocateUser(instructions.size()), instructions);
+        var allocation = memory.allocateUser(instructions.size());
+        allocations.put(memory, allocation);
+        memory.writeUserBlock(allocation, instructions);
         return memory;
     }
 

@@ -13,6 +13,7 @@ import io.github.rajami1205.osimulator.application.process.PendingKeyboardReques
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /** Representa valores inmutables para mostrar una sesión sin exponer su modelo. */
 public record SimulatorSnapshot(
@@ -32,14 +33,15 @@ public record SimulatorSnapshot(
         List<PendingKeyboardRequest> pendingKeyboardRequests,
         List<CompletedProcess> completedProcesses,
         List<StorageEntry> storage,
-        List<Integer> screenOutput
+        List<Integer> screenOutput,
+        OptionalLong cpuTicks
 ) {
     /** Compatibility construction for the original read views. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
             List<ProgramEntry> program, List<MemoryEntry> memory) {
         this(state, cpu, instruction, process, program, memory, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty());
     }
     // Valida el snapshot y copia las listas para evitar cambios externos.
     public SimulatorSnapshot {
@@ -60,6 +62,8 @@ public record SimulatorSnapshot(
         completedProcesses = List.copyOf(completedProcesses);
         storage = List.copyOf(storage);
         screenOutput = List.copyOf(screenOutput);
+        Objects.requireNonNull(cpuTicks);
+        if (cpuTicks.isPresent() && cpuTicks.getAsLong() < 0) throw new IllegalArgumentException("Negative CPU ticks");
     }
     public record CpuSnapshot(
             int programCounter, int accumulator, int ax, int bx, int cx, RegisterValue dxValue,

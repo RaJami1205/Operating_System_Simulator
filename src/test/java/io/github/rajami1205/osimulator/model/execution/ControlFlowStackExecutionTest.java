@@ -28,8 +28,9 @@ class ControlFlowStackExecutionTest {
         final ExecutionProgress progress = new ExecutionProgress();
         final ExecutionEngine engine = new ExecutionEngine();
         final ProcessControlBlock pcb;
-        Session(Instruction... instructions) { pcb = new ProgramLoader().load(memory, 1, List.of(instructions)); }
-        TickResult tick() { return engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress); }
+        final io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
+        Session(Instruction... instructions) { var loaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instructions)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
+        TickResult tick() { return engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, allocation); }
         void pc(int value) { pcb.setProgramCounter(value); cpu.setProgramCounter(value); }
         void assertPc(int value) { assertEquals(value, cpu.programCounter()); assertEquals(value, pcb.programCounter()); }
         void failure(Instruction instruction, Class<? extends Throwable> cause) {

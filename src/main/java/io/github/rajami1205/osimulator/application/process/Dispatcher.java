@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import java.util.Optional;
 
 /** Sole CPU owner. Selection policy and execution remain outside this component. */
@@ -14,9 +15,11 @@ public final class Dispatcher {
     private final ReadyQueue ready;
     private final ProcessResourceRegistry resources;
     private ProcessControlBlock owner;
+    private final MainMemory memory;
 
     public Dispatcher(CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
-            ProcessResourceRegistry resources) {
+            ProcessResourceRegistry resources, MainMemory memory) {
+        this.memory = Objects.requireNonNull(memory);
         this.cpu = Objects.requireNonNull(cpu);
         this.table = Objects.requireNonNull(table);
         this.ready = Objects.requireNonNull(ready);
@@ -37,6 +40,8 @@ public final class Dispatcher {
                 || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING)) {
             throw new IllegalStateException("Invalid dispatch candidate or CPU ownership");
         }
+        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        memory.validatePcbAllocation(resource.kernel(), pcb);
         cpu.restore(pcb.cpuContext());
         ready.poll();
         pcb.changeState(ProcessState.RUNNING);

@@ -15,6 +15,7 @@ import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
 import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -58,7 +59,8 @@ public final class ExecutionEngine {
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
-            ExecutionProgress progress
+            ExecutionProgress progress,
+            MemoryAllocation allocation
     ) {
         Objects.requireNonNull(memory, "memory must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
@@ -69,7 +71,7 @@ public final class ExecutionEngine {
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(keyboard, "keyboard must not be null");
         validateExecutableState(pcb);
-        progress.validateContext(memory, cpu, pcb);
+        progress.validateContext(memory, cpu, pcb, allocation);
 
         int currentProgramCounter = pcb.programCounter();
         int instructionCount = pcb.instructionCount();
@@ -79,10 +81,15 @@ public final class ExecutionEngine {
             return TickResult.PROGRAM_FINISHED;
         }
 
+        try {
+            memory.validateUserAllocation(allocation, pcb.memoryBounds());
+        } catch (RuntimeException exception) {
+            throw new ExecutionEngineException("Invalid process allocation", exception);
+        }
         if (progress.isIdle()) {
             Instruction instruction;
             try {
-                instruction = memory.readInstruction(pcb.memoryBounds(), currentProgramCounter);
+                instruction = memory.readInstruction(allocation, currentProgramCounter);
             } catch (MemoryProtectionException exception) {
                 throw new ExecutionEngineException("Unable to fetch process instruction", exception);
             }
@@ -92,7 +99,7 @@ public final class ExecutionEngine {
             if (pcb.state() == ProcessState.READY) {
                 pcb.changeState(ProcessState.RUNNING);
             }
-            progress.begin(memory, cpu, pcb, instruction);
+            progress.begin(memory, cpu, pcb, instruction, allocation);
         }
 
         if (!progress.consumeTick()) return TickResult.IN_PROGRESS;

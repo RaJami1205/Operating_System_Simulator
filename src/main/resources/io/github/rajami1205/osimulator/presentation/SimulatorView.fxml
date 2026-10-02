@@ -11,6 +11,10 @@
             </VBox>
             <Region HBox.hgrow="ALWAYS"/>
             <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+                <Label text="CPU TICKS" styleClass="state-caption"/>
+                <Label fx:id="cpuTicksLabel" text="—" styleClass="state-value"/>
+            </VBox>
+            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
                 <Label text="LIFECYCLE" styleClass="state-caption"/>
                 <Label fx:id="simulatorStateLabel" text="CONFIGURING" styleClass="state-value"/>
             </VBox>
@@ -293,6 +297,7 @@
                                     <columns>
                                         <TableColumn fx:id="completedPidColumn" text="PID" prefWidth="70"/>
                                         <TableColumn fx:id="completedPcColumn" text="Final PC" prefWidth="90"/>
+                                        <TableColumn fx:id="completedCpuTicksColumn" text="CPU Ticks" prefWidth="95"/>
                                         <TableColumn fx:id="completedIrColumn" text="Final IR" prefWidth="400"/>
                                     </columns>
                                 </TableView>

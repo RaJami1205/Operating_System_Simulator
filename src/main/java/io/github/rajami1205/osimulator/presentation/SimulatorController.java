@@ -23,7 +23,7 @@ import static io.github.rajami1205.osimulator.presentation.DashboardTables.*;
 
 /** Commands go to Application; a single immutable observation drives each refresh. */
 public final class SimulatorController {
-    private static final Duration AUTOMATIC_STEP_INTERVAL = Duration.millis(750);
+    private static final Duration AUTOMATIC_STEP_INTERVAL = Duration.millis(1000);
     private final SimulatorOrchestrator orchestrator;
     private final ProgramImporter programImporter;
     private Timeline automaticTimeline;
@@ -33,6 +33,8 @@ public final class SimulatorController {
     private SimulatorSnapshot view;
     private boolean renderingSelection;
     private String feedback = "";
+    @FXML private Label cpuTicksLabel;
+    @FXML private TableColumn<CompletedProcess, String> completedCpuTicksColumn;
     @FXML private Label simulatorStateLabel;
     @FXML private Label runtimeStatusLabel;
     @FXML private Label ownerValueLabel;
@@ -153,6 +155,7 @@ public final class SimulatorController {
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
         column(baseColumn, v -> v.base().map(Object::toString).orElse("\u2014")); column(limitColumn, v -> Integer.toString(v.limit()));
         column(priorityColumn, v -> Integer.toString(v.priority()));
+        column(completedCpuTicksColumn, v -> Long.toString(v.accounting().cpuTicks()));
         column(completedPidColumn, v -> Integer.toString(v.processId())); column(completedPcColumn, v -> Integer.toString(v.finalContext().programCounter()));
         column(completedIrColumn, v -> v.finalContext().instructionRegister().orElse("\u2014"));
     }
@@ -251,6 +254,7 @@ public final class SimulatorController {
                 || (snapshot.simulatorState() == SimulatorState.RUNNING && snapshot.runtimeStatus().orElse(null) != RuntimeStatus.RUNNABLE)) {
             stopAutomaticExecution();
         }
+        cpuTicksLabel.setText(snapshot.cpuTicks().isPresent() ? Long.toString(snapshot.cpuTicks().getAsLong()) : "\u2014");
         simulatorStateLabel.setText(snapshot.simulatorState().name());
         runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014"));
         ownerValueLabel.setText(snapshot.ownerPid().map(pid -> "PID " + pid).orElse("Idle"));

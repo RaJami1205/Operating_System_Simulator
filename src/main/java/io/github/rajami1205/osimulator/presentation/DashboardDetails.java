@@ -5,7 +5,7 @@ import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
 
 /**
  * Formatea contexto y accounting de snapshots inmutables. Convierte timestamps a hora local y elapsed a
- * horas totales sin consultar el Clock del runtime.
+ * horas y segundos totales sin consultar el Clock del runtime.
  */
 final class DashboardDetails {
     /** Impide instanciar el helper de formatting de detalles. */
@@ -36,7 +36,8 @@ final class DashboardDetails {
                 + "   CPU Ticks: " + value.cpuTicks()
                 + "\nFinish Time: " + value.finishTime().map(format::format).orElse("—")
                 + "   Elapsed Time: " + value.elapsedTime().map(duration -> String.format(java.util.Locale.ROOT,
-                        "%02d:%02d:%02d", duration.toHours(), duration.toMinutesPart(), duration.toSecondsPart())).orElse("—");
+                        "%02d:%02d:%02d", duration.toHours(), duration.toMinutesPart(), duration.toSecondsPart())).orElse("—")
+                + "\nDuration (s): " + value.elapsedTime().map(duration -> Long.toString(duration.toSeconds())).orElse("—");
     }
     /** Compone el detalle de PCB guardado, residencia, recursos y accounting del snapshot seleccionado. */
     static String process(ProcessDetails value) {

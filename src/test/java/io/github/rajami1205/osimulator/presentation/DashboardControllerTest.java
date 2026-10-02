@@ -188,10 +188,27 @@ class DashboardControllerTest {
             @SuppressWarnings("unchecked") TableView<CompletedProcess> table = (TableView<CompletedProcess>) get(f.controller, "completedTable");
             table.getSelectionModel().selectFirst();
             assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Elapsed Time: 00:00:02"));
+            assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Duration (s): 2"));
             String fxml = new String(SimulatorController.class.getResourceAsStream("SimulatorView.fxml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertTrue(fxml.contains("CPU TICKS")); assertFalse(fxml.contains("CPU CLOCK"));
             f.action("handleReset"); assertEquals("—", f.widget("cpuTicksLabel",Label.class).getText());
         } finally { timeline.stop(); }
+    }); }
+    @Test void completedDurationIncludesKeyboardWaitingAndPauseWithoutExtraTicks() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        f.load("waiting.asm", "INT 09H"); f.action("handleStart");
+        f.action("handleStep"); f.action("handleStep");
+        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
+        f.action("handlePause"); f.realClock.advance(Duration.ofSeconds(420));
+        f.widget("keyboardField", TextField.class).setText("42"); f.action("handleKeyboardSend");
+        assertTrue(f.simulator.snapshot().completedProcesses().isEmpty());
+        f.action("handleResume");
+        assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
+        assertEquals(2, f.simulator.snapshot().cpuTicks().orElseThrow());
+        f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
+        var detail = f.widget("completedDetailArea", TextArea.class).getText();
+        assertTrue(detail.contains("CPU Ticks: 2"));
+        assertTrue(detail.endsWith("Elapsed Time: 00:07:00\nDuration (s): 420"));
     }); }
     @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
@@ -259,6 +276,11 @@ class DashboardControllerTest {
                     var detail=f.widget("completedDetailArea",TextArea.class);
                     assertEquals(13,detail.getFont().getSize()); assertTrue(detail.isWrapText());
                     assertTrue(detail.getText().contains("Start Time:")); assertTrue(detail.getText().contains("Elapsed Time:"));
+                    assertTrue(detail.getText().endsWith("Duration (s): 0"));
+                    var durationText = new javafx.scene.text.Text("Duration (s): 0");
+                    durationText.setFont(detail.getFont());
+                    assertTrue(durationText.getLayoutBounds().getWidth() < detail.getWidth() - 20,
+                            "Duration must fit at " + size[0]);
                 }
                 saveReadabilityImage(f.root,size,"lower-"+tab.getText().replace(" ","-").replace("/","-"));
             }

@@ -10,19 +10,19 @@
                 <Label text="Multiprocess Dashboard" styleClass="header-subtitle"/>
             </VBox>
             <Region HBox.hgrow="ALWAYS"/>
-            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+            <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
                 <Label text="CPU TICKS" styleClass="state-caption"/>
                 <Label fx:id="cpuTicksLabel" text="—" styleClass="state-value"/>
             </VBox>
-            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+            <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
                 <Label text="LIFECYCLE" styleClass="state-caption"/>
                 <Label fx:id="simulatorStateLabel" text="CONFIGURING" styleClass="state-value"/>
             </VBox>
-            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+            <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
                 <Label text="RUNTIME" styleClass="state-caption"/>
                 <Label fx:id="runtimeStatusLabel" text="—" styleClass="state-value"/>
             </VBox>
-            <VBox alignment="CENTER_RIGHT" styleClass="state-badge">
+            <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
                 <Label text="CPU OWNER" styleClass="state-caption"/>
                 <Label fx:id="ownerValueLabel" text="Idle" styleClass="state-value"/>
             </VBox>
@@ -107,10 +107,10 @@
                 <SplitPane dividerPositions="0.37" styleClass="dashboard-split" minHeight="180">
                     <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="dashboard-scroll" minWidth="200">
                         <VBox spacing="8" styleClass="dashboard-panel">
-                            <Label text="CPU / CURRENT INSTRUCTION" styleClass="panel-header"/>
+                            <Label text="CPU / CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>
                             <Label fx:id="cpuOwnerLabel" text="Idle" styleClass="helper-text"/>
                         <VBox spacing="5" styleClass="instruction-panel">
-                                <Label text="CURRENT INSTRUCTION" styleClass="panel-header"/>
+                                <Label text="CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>
                                 <Label fx:id="currentInstructionLabel" text="—" wrapText="true" maxWidth="Infinity" styleClass="instruction-value"/>
                                 <HBox spacing="6">
                                     <Label fx:id="opcodeValueLabel" text="—" styleClass="technical-value"/>
@@ -190,8 +190,8 @@
                                             <ColumnConstraints percentWidth="33.4"/>
                                         </columnConstraints>
                                         <Label text="Ready" styleClass="section-title"/>
-                                        <Label text="Suspended Ready" styleClass="section-title" GridPane.columnIndex="1"/>
-                                        <Label text="Keyboard Pending" styleClass="section-title" GridPane.columnIndex="2"/>
+                                        <Label text="Suspended Ready" wrapText="true" styleClass="section-title" GridPane.columnIndex="1"/>
+                                        <Label text="Keyboard Pending" wrapText="true" styleClass="section-title" GridPane.columnIndex="2"/>
                                         <ListView fx:id="readyList" minHeight="74" prefHeight="92" GridPane.rowIndex="1">
                                             <placeholder>
                                                 <Label text="No ready processes" wrapText="true" styleClass="empty-state"/>
@@ -283,7 +283,7 @@
                                     <Label text="SIMULATED KEYBOARD" styleClass="panel-header"/>
                                     <TextField fx:id="keyboardField" promptText="0..255" onAction="#handleKeyboardSend" styleClass="input-field"/>
                                     <Button fx:id="keyboardSendButton" text="Send" onAction="#handleKeyboardSend" styleClass="primary-button"/>
-                                    <Label text="FIFO input. While paused, values remain queued until Resume." wrapText="true" styleClass="helper-text"/>
+                                    <Label text="FIFO input. While paused, values remain queued until Resume." wrapText="true" minHeight="-Infinity" maxWidth="Infinity" styleClass="helper-text"/>
                                     <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
                                 </VBox>
                             </HBox>

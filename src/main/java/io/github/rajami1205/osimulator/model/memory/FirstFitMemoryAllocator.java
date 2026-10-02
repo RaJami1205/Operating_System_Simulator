@@ -16,6 +16,7 @@ public final class FirstFitMemoryAllocator implements MemoryAllocator {
     private final TreeMap<Integer, Integer> freeBlocks = new TreeMap<>();
     private final Map<UUID, MemoryAllocation> active = new HashMap<>();
 
+    /** Valida región y rango físico no vacío e inicia un único bloque libre dentro de esos límites. */
     public FirstFitMemoryAllocator(MemoryRegion region, int base, int size) {
         this.region = Objects.requireNonNull(region, "region must not be null");
         if (base < 0 || size <= 0 || (long) base + size > Integer.MAX_VALUE) {
@@ -26,6 +27,10 @@ public final class FirstFitMemoryAllocator implements MemoryAllocator {
         reset();
     }
 
+    /**
+     * Reserva en el primer bloque suficiente por dirección ascendente y conserva el sobrante; rechaza
+     * tamaño inválido o falta de espacio contiguo.
+     */
     @Override
     public MemoryAllocation allocate(int requestedSize) {
         if (requestedSize <= 0) throw new MemoryAllocationException("Allocation size must be positive");
@@ -41,16 +46,25 @@ public final class FirstFitMemoryAllocator implements MemoryAllocator {
         return allocation;
     }
 
+    /** Exige que identidad y metadata coincidan con una reserva actualmente registrada. */
     @Override
     public boolean isActive(MemoryAllocation allocation) {
         return allocation != null && allocation.equals(active.get(allocation.allocationId()));
     }
 
+    /**
+     * Consulta si existe una reserva activa con Base/tamaño exactos; no distingue handles antiguos
+     * reutilizados por rango.
+     */
     @Override
     public boolean ownsRange(int base, int size) {
         return active.values().stream().anyMatch(a -> a.base() == base && a.size() == size);
     }
 
+    /**
+     * Rechaza stale/double/foreign release y fusiona bloques libres adyacentes sin mover reservas ni hacer
+     * compaction.
+     */
     @Override
     public void release(MemoryAllocation allocation) {
         if (!isActive(allocation)) {

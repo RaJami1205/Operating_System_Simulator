@@ -3,7 +3,12 @@ package io.github.rajami1205.osimulator.model.instruction.operand;
 import io.github.rajami1205.osimulator.model.cpu.CpuValueRange;
 import io.github.rajami1205.osimulator.model.instruction.exception.InvalidImmediateValueException;
 
+/** Inmediato numérico inmutable validado contra CpuValueRange, compartido por MOV y PARAM. */
 public record ImmediateOperand(int value) implements InstructionOperand {
+    /**
+     * Valida el inmediato con CpuValueRange y conserva InvalidImmediateValueException como frontera del
+     * operando.
+     */
     public ImmediateOperand {
         validate(value);
     }

@@ -5,6 +5,10 @@ import java.util.Objects;
 
 /** Referencia al PCB canónico; su dirección simulada pertenece a la celda. */
 public record PcbContent(ProcessControlBlock pcb) implements MemoryContent {
+    /**
+     * Retiene el PCB canónico no nulo, sin copiarlo ni asignarle una dirección Java como dirección
+     * simulada.
+     */
     public PcbContent {
         Objects.requireNonNull(pcb, "pcb must not be null");
     }

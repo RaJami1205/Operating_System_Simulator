@@ -4,6 +4,7 @@ import java.util.Objects;
 
 /** Vista inmutable de una celda; PcbContent conserva el PCB canónico mutable. */
 public record MemoryCell(int address, MemoryRegion region, MemoryContent content) {
+    /** Exige dirección no negativa y región/contenido no nulos; no verifica ownership de una allocation. */
     public MemoryCell {
         if (address < 0) throw new IllegalArgumentException("Cell address must not be negative");
         Objects.requireNonNull(region, "region must not be null");

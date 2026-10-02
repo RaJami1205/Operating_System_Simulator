@@ -6,7 +6,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Gestiona el estado mutable y validado de los registros de la CPU simulada.
+ * Estado activo y mutable del único CPU, distinto del CpuContext guardado en cada PCB. Valida datos signed
+ * 16-bit y conserva DX/AL tipados.
  */
 public final class CpuRegisters<I> {
 
@@ -20,28 +21,28 @@ public final class CpuRegisters<I> {
     private RegisterValue al;
     private ConditionFlags conditionFlags;
 
-    // Inicializa los registros numéricos y el IR del procesador simulado.
+    /** Inicializa los registros numéricos y el IR del procesador simulado. */
     public CpuRegisters() {
         restoreInitialState();
     }
 
-    // Expone el valor lógico almacenado en AC.
+    /** Expone el valor lógico almacenado en AC. */
     public int accumulator() {
         return accumulator;
     }
 
-    // Valida el rango lógico antes de actualizar AC.
+    /** Valida el rango lógico antes de actualizar AC. */
     public void writeAccumulator(int value) {
         CpuValueRange.validateRegisterValue(value);
         accumulator = value;
     }
 
-    // Consulta el valor de un registro general válido.
+    /** Consulta un registro general no nulo; DX textual produce RegisterTypeMismatchException. */
     public int readRegister(RegisterName register) {
         return requireRegister(register) == RegisterName.DX ? dx.numericValue() : generalRegisters.get(register);
     }
 
-    // Valida el registro y el rango lógico antes de escribir su valor.
+    /** Valida el registro y el rango lógico antes de escribir su valor. */
     public void writeRegister(RegisterName register, int value) {
         RegisterName nonNullRegister = requireRegister(register);
         CpuValueRange.validateRegisterValue(value);
@@ -49,12 +50,12 @@ public final class CpuRegisters<I> {
         else generalRegisters.put(nonNullRegister, value);
     }
 
-    // Expone la posición actual del contador de programa.
+    /** Expone la posición actual del contador de programa. */
     public int programCounter() {
         return programCounter;
     }
 
-    // Rechaza direcciones negativas antes de actualizar el PC de la CPU.
+    /** Exige PC lógico no negativo, sin aplicarle el rango signed 16-bit de datos. */
     public void setProgramCounter(int address) {
         if (address < 0) {
             throw new InvalidProgramCounterException(
@@ -65,12 +66,12 @@ public final class CpuRegisters<I> {
         programCounter = address;
     }
 
-    // Expone la instrucción del IR, si existe.
+    /** Expone la instrucción del IR, si existe. */
     public Optional<I> instructionRegister() {
         return Optional.ofNullable(instructionRegister);
     }
 
-    // Conserva en IR la instrucción recibida para ejecución.
+    /** Conserva en IR la instrucción recibida para ejecución. */
     public void loadInstructionRegister(I instruction) {
         instructionRegister = Objects.requireNonNull(
                 instruction,
@@ -78,38 +79,54 @@ public final class CpuRegisters<I> {
         );
     }
 
-    // Descarta la instrucción actualmente almacenada en IR.
+    /** Descarta la instrucción actualmente almacenada en IR. */
     public void clearInstructionRegister() {
         instructionRegister = null;
     }
 
+    /** Consulta el registro lógico numérico de servicio AH, independiente de AX. */
     public int ah() {
         return ah;
     }
 
+    /** Valida signed 16-bit antes de reemplazar AH, sin modificar AX ni AL. */
     public void writeAh(int value) {
         CpuValueRange.validateRegisterValue(value);
         ah = value;
     }
 
+    /** Consulta AL como número; falla si actualmente contiene texto. */
     public int al() {
         return al.numericValue();
     }
 
+    /**
+     * Reemplaza AL numérico o tipado, validando rango en el overload numérico y rechazando referencias
+     * nulas.
+     */
     public void writeAl(int value) {
         CpuValueRange.validateRegisterValue(value);
         al = new NumericRegisterValue(value);
     }
 
+    /** Expone el valor inmutable tipado de DX sin convertirlo a número. */
     public RegisterValue dxValue() { return dx; }
+    /** Expone el valor inmutable tipado de AL sin convertirlo a número. */
     public RegisterValue alValue() { return al; }
+    /** Reemplaza DX por un valor tipado no nulo sin afectar otros registros. */
     public void writeDx(RegisterValue value) { dx = Objects.requireNonNull(value, "DX must not be null"); }
+    /**
+     * Reemplaza AL numérico o tipado, validando rango en el overload numérico y rechazando referencias
+     * nulas.
+     */
     public void writeAl(RegisterValue value) { al = Objects.requireNonNull(value, "AL must not be null"); }
 
+    /** Consulta las flags activas del CPU, distintas de las guardadas en PCB. */
     public ConditionFlags conditionFlags() {
         return conditionFlags;
     }
 
+    /** Sustituye las flags por un valor inmutable no nulo; no las calcula automáticamente. */
     public void writeConditionFlags(ConditionFlags flags) {
         conditionFlags = Objects.requireNonNull(flags, "flags must not be null");
     }
@@ -136,12 +153,12 @@ public final class CpuRegisters<I> {
         conditionFlags = context.conditionFlags();
     }
 
-    // Restablece los registros numéricos y vacía el IR.
+    /** Restablece los registros numéricos y vacía el IR. */
     public void reset() {
         restoreInitialState();
     }
 
-    // Lleva los registros numéricos a cero y deja el IR vacío.
+    /** Lleva los registros numéricos a cero y deja el IR vacío. */
     private void restoreInitialState() {
         accumulator = 0;
         ah = 0;
@@ -157,7 +174,7 @@ public final class CpuRegisters<I> {
         instructionRegister = null;
     }
 
-    // Rechaza referencias nulas a registros generales.
+    /** Rechaza referencias nulas a registros generales. */
     private RegisterName requireRegister(RegisterName register) {
         return Objects.requireNonNull(register, "register must not be null");
     }

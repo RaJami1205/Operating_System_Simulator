@@ -10,13 +10,17 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** Memoria física tipada con reservas Kernel/User y acceso lógico protegido. */
+/**
+ * Memoria física tipada con allocators First-Fit independientes para Kernel y USER. La disponibilidad
+ * pertenece a los allocators, no a EmptyContent; el fetch usa el handle canónico.
+ */
 public final class MainMemory {
     private final MemoryConfiguration configuration;
     private final MemoryContent[] positions;
     private final MemoryAllocator kernel;
     private final MemoryAllocator user;
 
+    /** Crea celdas vacías y dos allocators bounded independientes según MemoryConfiguration. */
     public MainMemory(MemoryConfiguration configuration) {
         this.configuration = Objects.requireNonNull(configuration, "configuration must not be null");
         positions = new MemoryContent[configuration.totalPositions()];
@@ -25,21 +29,32 @@ public final class MainMemory {
         Arrays.fill(positions, EmptyContent.INSTANCE);
     }
 
+    /** Expone la configuración inmutable que separa Kernel y USER. */
     public MemoryConfiguration configuration() { return configuration; }
+    /** Devuelve el total de posiciones físicas simuladas, incluidas ambas regiones. */
     public int size() { return positions.length; }
+    /** Valida la dirección física y devuelve Kernel o USER según la configuración. */
     public MemoryRegion regionOf(int address) { return configuration.regionOf(address); }
 
+    /**
+     * Lee contenido tipado por dirección física validada; es observación, no prueba de ownership del
+     * proceso.
+     */
     public MemoryContent read(int address) {
         regionOf(address);
         return positions[address];
     }
 
+    /** Construye la vista de dirección, región y contenido de una posición física válida. */
     public MemoryCell cell(int address) {
         return new MemoryCell(address, regionOf(address), read(address));
     }
 
+    /** Indica ausencia de contenido; una posición vacía puede seguir reservada por su allocator. */
     public boolean isEmpty(int address) { return read(address) == EmptyContent.INSTANCE; }
+    /** Reserva un bloque contiguo bounded exclusivamente en USER mediante First-Fit. */
     public MemoryAllocation allocateUser(int size) { return user.allocate(size); }
+    /** Reserva un bloque contiguo bounded exclusivamente en Kernel mediante First-Fit. */
     public MemoryAllocation allocateKernel(int size) { return kernel.allocate(size); }
 
     /** Valida antes de vaciar; una reserva inválida nunca modifica contenido. */
@@ -49,7 +64,10 @@ public final class MainMemory {
         Arrays.fill(positions, allocation.base(), allocation.endExclusive(), EmptyContent.INSTANCE);
     }
 
-    /** Reads the complete current image through its original active USER handle. */
+    /**
+     * Copia la imagen completa usando el handle USER activo original y rechaza celdas que no contengan
+     * instrucciones.
+     */
     public List<Instruction> readUserBlock(MemoryAllocation allocation) {
         Objects.requireNonNull(allocation, "allocation must not be null");
         validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
@@ -63,7 +81,10 @@ public final class MainMemory {
         return List.copyOf(image);
     }
 
-    /** Verifies the original Kernel reservation and canonical PCB before resource transfers. */
+    /**
+     * Exige la reserva Kernel original de una posición y que contenga exactamente el PCB canónico
+     * indicado.
+     */
     public void validatePcbAllocation(MemoryAllocation allocation, ProcessControlBlock pcb) {
         validateWrite(allocation, MemoryRegion.KERNEL, 0, 1);
         if (allocation.size() != 1 || !(positions[allocation.base()] instanceof PcbContent content)
@@ -72,6 +93,7 @@ public final class MainMemory {
         }
     }
 
+    /** Valida handle USER y offset antes de almacenar una instrucción no nula. */
     public void writeInstruction(MemoryAllocation allocation, int offset, Instruction instruction) {
         validateWrite(allocation, MemoryRegion.USER, offset, 1);
         positions[allocation.base() + offset] = new InstructionContent(instruction);
@@ -85,12 +107,16 @@ public final class MainMemory {
         System.arraycopy(content, 0, positions, allocation.base(), content.length);
     }
 
+    /** Valida handle Kernel y offset antes de conservar la referencia al PCB canónico. */
     public void writePcb(MemoryAllocation allocation, int offset, ProcessControlBlock pcb) {
         validateWrite(allocation, MemoryRegion.KERNEL, offset, 1);
         positions[allocation.base() + offset] = new PcbContent(pcb);
     }
 
-    /** Limit es una cantidad; el marcador terminal nunca es una dirección de fetch. */
+    /**
+     * Traduce un índice lógico dentro de Limit a Base más índice y verifica la reserva actual; esta API
+     * por bounds no acredita identidad histórica del handle.
+     */
     public int physicalAddress(ProcessMemoryBounds bounds, int logicalAddress) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if (logicalAddress < 0 || logicalAddress >= bounds.limit()) {
@@ -103,27 +129,52 @@ public final class MainMemory {
         return bounds.base() + logicalAddress;
     }
 
+    /** Lee una instrucción con protección Base/Limit y reserva actual; no sustituye la identidad del handle exigida por runtime. */
     public Instruction readInstruction(ProcessMemoryBounds bounds, int logicalAddress) {
         int address = physicalAddress(bounds, logicalAddress);
         if (positions[address] instanceof InstructionContent content) return content.instruction();
         throw new MemoryProtectionException("No instruction at process address: " + logicalAddress);
     }
 
+    /** Valida identidad activa USER y coincidencia de Base/Limit con el PCB sin modificar contenido. */
+    public void validateUserAllocation(MemoryAllocation allocation, ProcessMemoryBounds bounds) {
+        Objects.requireNonNull(bounds, "bounds must not be null");
+        Objects.requireNonNull(allocation, "allocation must not be null");
+        validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
+        if (allocation.base() != bounds.base() || allocation.size() != bounds.limit()) {
+            throw new MemoryProtectionException("USER allocation and process bounds disagree");
+        }
+    }
+
+    /** Exige el handle USER activo y un PC dentro del bloque; rechaza el marcador terminal y contenido que no sea InstructionContent. */
+    public Instruction readInstruction(MemoryAllocation allocation, int logicalPc) {
+        validateWrite(allocation, MemoryRegion.USER, logicalPc, 1);
+        if (positions[allocation.base() + logicalPc] instanceof InstructionContent content) return content.instruction();
+        throw new MemoryProtectionException("No instruction at process address: " + logicalPc);
+    }
+
+    /** Vacía USER e invalida sus handles; preserva Kernel y su allocator. */
     public void clearUserSpace() {
         Arrays.fill(positions, configuration.userStartAddress(), size(), EmptyContent.INSTANCE);
         user.reset();
     }
 
+    /** Vacía ambas regiones y reinicia allocators, invalidando todos los handles anteriores. */
     public void reset() {
         Arrays.fill(positions, EmptyContent.INSTANCE);
         kernel.reset();
         user.reset();
     }
 
+    /** Selecciona el allocator bounded que corresponde a la región solicitada. */
     private MemoryAllocator allocator(MemoryRegion region) {
         return region == MemoryRegion.KERNEL ? kernel : user;
     }
 
+    /**
+     * Exige identidad activa y región correcta; rechaza offsets/cantidades fuera de la reserva antes de
+     * cualquier escritura.
+     */
     private void validateWrite(MemoryAllocation allocation, MemoryRegion region, int offset, int count) {
         Objects.requireNonNull(allocation, "allocation must not be null");
         if (allocation.region() != region || !allocator(region).isActive(allocation)) {

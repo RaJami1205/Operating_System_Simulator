@@ -5,13 +5,18 @@ import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.ArrayList;
+import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Prevalidates canonical resources and links, then retires a completed process. */
+/**
+ * Centraliza cleanup e historial de procesos terminados. Prevalida recursos y enlaces antes de registrar
+ * finish con Clock y liberar recursos.
+ */
 public final class ProcessCompletionService {
     private final MainMemory memory;
+    private final Clock realClock;
     private final SecondaryStorage storage;
     private final ProcessTable table;
     private final ProcessResourceRegistry resources;
@@ -21,9 +26,11 @@ public final class ProcessCompletionService {
     private final Dispatcher dispatcher;
     private final List<CompletedProcessRecord> completed = new ArrayList<>();
 
+    /** Recibe recursos, Dispatcher y Clock de la sesión para validar cleanup y registrar timestamps reales. */
     public ProcessCompletionService(MainMemory memory, SecondaryStorage storage, ProcessTable table,
             ProcessResourceRegistry resources, ReadyQueue ready, SuspendedReadyQueue suspended,
-            KeyboardCompletionService keyboard, Dispatcher dispatcher) {
+            KeyboardCompletionService keyboard, Dispatcher dispatcher, Clock realClock) {
+        this.realClock = Objects.requireNonNull(realClock);
         this.memory = Objects.requireNonNull(memory);
         this.storage = Objects.requireNonNull(storage);
         this.table = Objects.requireNonNull(table);
@@ -34,9 +41,13 @@ public final class ProcessCompletionService {
         this.dispatcher = Objects.requireNonNull(dispatcher);
     }
 
+    /** Devuelve copia inmutable del historial en orden de completion, sin conservar PCBs vivos. */
     public List<CompletedProcessRecord> completed() { return List.copyOf(completed); }
 
-    /** Uses original handles; release/reallocation can never target a reconstructed address. */
+    /**
+     * Prevalida handles y cadena PCB, captura finish con Clock y crea historial antes del cleanup. Libera
+     * USER o SWAP y Kernel sin consumir ticks.
+     */
     public void complete(int pid) {
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Missing terminated PCB"));
         if (pcb.state() != ProcessState.TERMINATED || dispatcher.owner().orElse(null) == pcb
@@ -69,8 +80,9 @@ public final class ProcessCompletionService {
             }
         }
 
+        pcb.replaceAccounting(pcb.accounting().finishAt(realClock.instant()));
         var record = new CompletedProcessRecord(pid, pcb.cpuContext(), pcb.accounting());
-        // All fallible identity, content and link checks precede destructive operations.
+        // Todas las comprobaciones de identidad, contenido y enlaces preceden a las operaciones destructivas.
         switch (resource.residence()) {
             case UserImageResidence.Resident resident -> memory.release(resident.allocation());
             case UserImageResidence.Suspended swapped -> storage.releaseSwap(swapped.allocation());

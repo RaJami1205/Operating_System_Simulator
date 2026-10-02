@@ -14,7 +14,10 @@ import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.HashSet;
 import java.util.Objects;
 
-/** Single-CPU coordination; mechanism services retain their own focused responsibilities. */
+/**
+ * Coordina Step, bloqueo, completion y disponibilidad global sobre un CPU. Delega ownership al Dispatcher
+ * y mantiene FCFS non-preemptive; Step ejecuta como máximo un tick.
+ */
 public final class MultiprocessRuntime {
     private final Dispatcher dispatcher;
     private final ExecutionEngine engine;
@@ -35,15 +38,23 @@ public final class MultiprocessRuntime {
     private final SuspendedReadyQueue suspended;
     private final ProcessScheduler scheduler;
     private boolean started;
-    // Failed swap-in is retried only after a relevant change, never on each idle Step.
+    private final CpuTickCounter tickCounter;
+    private final java.time.Clock realClock;
+    // Un swap-in fallido sólo se reintenta tras un cambio relevante, no en cada Step sin trabajo.
     private boolean reconsiderSwap = true;
 
+    /**
+     * Recibe los servicios canónicos de sesión y separa el contador de ticks del Clock real; comienza sin
+     * workload iniciado.
+     */
     public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine, ExecutionProgress progress,
             CpuRegisters<Instruction> cpu, MainMemory memory, SimulatedFileSystem filesystem,
             ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
             ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
             JobList jobs, ProcessTable table, ProcessResourceRegistry resources, ReadyQueue ready,
-            SuspendedReadyQueue suspended, ProcessScheduler scheduler) {
+            SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter, java.time.Clock realClock) {
+        this.tickCounter = Objects.requireNonNull(tickCounter);
+        this.realClock = Objects.requireNonNull(realClock);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.engine = Objects.requireNonNull(engine);
         this.progress = Objects.requireNonNull(progress);
@@ -64,7 +75,7 @@ public final class MultiprocessRuntime {
         this.scheduler = Objects.requireNonNull(scheduler);
     }
 
-    /** Prepare admission without dispatching or consuming a CPU tick. */
+    /** Prepara admisión de un workload no vacío una sola vez, sin dispatch ni consumo de ticks. */
     public void start() {
         if (started || jobs.entries().isEmpty()) {
             throw new IllegalStateException("Nonempty unstarted workload required");
@@ -76,6 +87,7 @@ public final class MultiprocessRuntime {
         validateStructure();
     }
 
+    /** Admite en orden hasta agotar PENDING o encontrar el primer Job que debe esperar. */
     private void admitWaiting() {
         while (true) {
             var result = admission.attemptNextAdmission();
@@ -83,7 +95,10 @@ public final class MultiprocessRuntime {
         }
     }
 
-    /** Completes queued input without touching the active CPU or consuming ticks. */
+    /**
+     * Completa input en contextos guardados y procesa cleanup/admisión derivada; nunca ejecuta el CPU ni
+     * suma ticks.
+     */
     public void drainInput() {
         if (!started) return;
         int before = input.pending().size();
@@ -94,6 +109,10 @@ public final class MultiprocessRuntime {
         settle();
     }
 
+    /**
+     * Reintenta swap-in de la cabeza suspended sólo ante cambios relevantes y sin owner/READY; no
+     * selecciona víctimas de swap-out.
+     */
     private void settle() {
         if (started && reconsiderSwap && dispatcher.owner().isEmpty()
                 && ready.peek().isEmpty() && suspended.peek().isPresent()) {
@@ -103,7 +122,10 @@ public final class MultiprocessRuntime {
         }
     }
 
-    /** Dispatch is zero-cost; only this single engine call can consume a tick. */
+    /**
+     * Coordina input y dispatch gratuito, ejecuta como máximo un tick y publica accounting sólo tras
+     * éxito; después procesa bloqueo o completion sin preemption por tick.
+     */
     public RuntimeStepResult step() {
         if (!started) throw new IllegalStateException("Runtime has not started");
         drainInput();
@@ -112,7 +134,22 @@ public final class MultiprocessRuntime {
         if (dispatcher.owner().isEmpty()) return new RuntimeStepResult.Idle(status());
 
         var pcb = dispatcher.owner().orElseThrow();
-        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress);
+        if (pcb.programCounter() < 0 || pcb.programCounter() >= pcb.instructionCount()) {
+            throw new IllegalStateException("Executable owner must have a fetchable logical PC");
+        }
+        var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
+        if (!(resource.residence() instanceof UserImageResidence.Resident resident)) {
+            throw new IllegalStateException("CPU owner must be resident");
+        }
+        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        memory.validatePcbAllocation(resource.kernel(), pcb);
+        tickCounter.validateCanAdvance();
+        var tickStart = realClock.instant();
+        // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
+        var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
+        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, resident.allocation());
+        pcb.replaceAccounting(accounted);
+        tickCounter.advance();
         if (result == TickResult.WAITING_FOR_INPUT) {
             dispatcher.release();
             input.register(pcb);
@@ -127,6 +164,10 @@ public final class MultiprocessRuntime {
         return new RuntimeStepResult.Executed(pcb.processId(), result, status());
     }
 
+    /**
+     * Rechaza el owner y coordina salida explícita; añade a la cola suspended únicamente procesos que
+     * quedan READY_SUSPENDED.
+     */
     public SwapResult swapOut(int pid) {
         rejectOwner(pid);
         if (suspended.entries().contains(pid)) throw new IllegalStateException("Already queued suspended process");
@@ -138,11 +179,15 @@ public final class MultiprocessRuntime {
         return result;
     }
 
-    /** Called after an explicit resource release, including while the CPU is paused. */
+    /** Reintenta Jobs pendientes tras liberación explícita si el workload inició, incluso durante Pause. */
     void retryAdmissionAfterRelease() {
         if (started) admitWaiting();
     }
 
+    /**
+     * Coordina entrada explícita, retira membresía suspended al completarla y habilita reconsideración de
+     * disponibilidad.
+     */
     public SwapResult swapIn(int pid) {
         rejectOwner(pid);
         var result = swap.swapIn(pid);
@@ -153,6 +198,7 @@ public final class MultiprocessRuntime {
         return result;
     }
 
+    /** Impide transferir al owner del CPU o continuar con progreso activo sin owner. */
     private void rejectOwner(int pid) {
         if (dispatcher.owner().filter(p -> p.processId() == pid).isPresent()) {
             throw new IllegalStateException("CPU owner cannot be swapped");
@@ -162,10 +208,10 @@ public final class MultiprocessRuntime {
         }
     }
 
-    /** Immutable FIFO observation; no scheduling or transfer is performed. */
+    /** Devuelve observación FIFO inmutable sin hacer scheduling ni transferencias. */
     public java.util.List<Integer> suspendedReadyProcessIds() { return suspended.entries(); }
 
-    /** Read-only status after coordination; history does not count as active workload. */
+    /** Valida estructura y determina disponibilidad global sin contar historial como workload activo. */
     public RuntimeStatus status() {
         validateStructure();
         if (started && dispatcher.owner().isEmpty() && progress.isIdle() && table.size() == 0
@@ -178,7 +224,10 @@ public final class MultiprocessRuntime {
         return RuntimeStatus.WAITING_FOR_CAPACITY;
     }
 
-    /** Bounded consistency checks validate ownership; they never select a CPU owner. */
+    /**
+     * Comprueba correspondencia entre PCBs, estados, recursos, colas, pending input y único owner; no
+     * repara ni selecciona procesos.
+     */
     private void validateStructure() {
         var pids = new HashSet<Integer>();
         for (var pcb : table.entries()) pids.add(pcb.processId());

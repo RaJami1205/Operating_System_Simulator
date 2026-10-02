@@ -5,12 +5,12 @@ package io.github.rajami1205.osimulator.application.program.exception;
  */
 public final class ProgramLoadException extends RuntimeException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public ProgramLoadException(String message) {
         super(message);
     }
 
-    // Conserva el diagnóstico y la causa original del fallo.
+    /** Conserva el diagnóstico de la condición inválida y su causa original. */
     public ProgramLoadException(String message, Throwable cause) {
         super(message, cause);
     }

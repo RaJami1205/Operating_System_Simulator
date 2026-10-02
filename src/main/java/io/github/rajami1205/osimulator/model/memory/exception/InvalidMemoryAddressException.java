@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.memory.exception;
  */
 public class InvalidMemoryAddressException extends IndexOutOfBoundsException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidMemoryAddressException(String message) {
         super(message);
     }

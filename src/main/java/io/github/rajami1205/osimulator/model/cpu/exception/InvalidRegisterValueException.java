@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.cpu.exception;
  */
 public class InvalidRegisterValueException extends IllegalArgumentException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidRegisterValueException(String message) {
         super(message);
     }

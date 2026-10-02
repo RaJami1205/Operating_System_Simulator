@@ -10,6 +10,8 @@ import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
 import java.nio.file.Path;
+import java.time.*;
+import io.github.rajami1205.osimulator.testing.ControlledClock;
 import java.util.*;
 import java.util.concurrent.*;
 import javafx.animation.Timeline;
@@ -46,7 +48,8 @@ class DashboardControllerTest {
         var method = object.getClass().getDeclaredMethod(name); method.setAccessible(true); method.invoke(object);
     }
     private static final class Fixture {
-        final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine());
+        final ControlledClock realClock = new ControlledClock();
+        final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), realClock);
         final Map<String, List<Instruction>> programs = new HashMap<>();
         final SimulatorController controller = new SimulatorController(simulator, path -> {
             if (path.getFileName().toString().equals("broken.asm")) throw new ProgramImportException("Invalid ASM", null);
@@ -156,6 +159,40 @@ class DashboardControllerTest {
     private static void updateRow(TableRow<?> row, Object value, boolean empty) throws Exception {
         var method = row.getClass().getDeclaredMethod("updateItem", Object.class, boolean.class); method.setAccessible(true); method.invoke(row, value, empty);
     }
+    @Test void cpuTicksAndAccountingRenderAndAutomaticCountsOnce() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        assertEquals("—", f.widget("cpuTicksLabel", Label.class).getText());
+        String initial = DashboardDetails.accounting(io.github.rajami1205.osimulator.model.process.ProcessAccounting.initial());
+        assertTrue(initial.contains("CPU ID: —")); assertTrue(initial.contains("Start Time: —"));
+        assertTrue(initial.contains("CPU Ticks: 0")); assertTrue(initial.contains("Finish Time: —"));
+        f.action("handleInitialize"); assertEquals("0", f.widget("cpuTicksLabel", Label.class).getText());
+        f.load("ticks.asm", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
+        var timeline = (Timeline)get(f.controller, "automaticTimeline");
+        try {
+            assertEquals(1000, timeline.getKeyFrames().getFirst().getTime().toMillis());
+            var callback = timeline.getKeyFrames().getFirst().getOnFinished();
+            for(int tick=1;tick<=3;tick++) {
+                if (tick > 1) f.realClock.advance(java.time.Duration.ofSeconds(1));
+                callback.handle(new javafx.event.ActionEvent());
+                assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(Integer.toString(tick), f.widget("cpuTicksLabel", Label.class).getText());
+                f.action("refresh"); assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+            }
+            var completed = f.simulator.snapshot().completedProcesses().getFirst();
+            @SuppressWarnings("unchecked") TableColumn<CompletedProcess,String> column = (TableColumn<CompletedProcess,String>) get(f.controller,"completedCpuTicksColumn");
+            assertEquals("3", column.getCellObservableValue(completed).getValue());
+            var detail = DashboardDetails.accounting(completed.accounting());
+            assertEquals(Instant.parse("2026-10-01T12:00:00Z"), completed.accounting().startTime().orElseThrow());
+            assertEquals(Instant.parse("2026-10-01T12:00:02Z"), completed.accounting().finishTime().orElseThrow());
+            assertTrue(detail.contains("Elapsed Time: 00:00:02"));
+            @SuppressWarnings("unchecked") TableView<CompletedProcess> table = (TableView<CompletedProcess>) get(f.controller, "completedTable");
+            table.getSelectionModel().selectFirst();
+            assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Elapsed Time: 00:00:02"));
+            String fxml = new String(SimulatorController.class.getResourceAsStream("SimulatorView.fxml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(fxml.contains("CPU TICKS")); assertFalse(fxml.contains("CPU CLOCK"));
+            f.action("handleReset"); assertEquals("—", f.widget("cpuTicksLabel",Label.class).getText());
+        } finally { timeline.stop(); }
+    }); }
     @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
         f.load("example.asm", "MOV DX, \"a-long-program-name-with-readable-text.txt\"", "MOV AL, \"A long text value that must not widen the CPU pane\"", "ADD AX");
@@ -174,4 +211,76 @@ class DashboardControllerTest {
         assertTrue(f.widget("dxValueLabel", Label.class).getTooltip().getText().contains("long-program"));
         assertTrue(f.widget("alValueLabel", Label.class).getTooltip().getText().contains("long text"));
     }); }
+    @Test void readabilityAtThreeResolutionsAcrossExistingTabs() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        f.load("done.asm", "INC");
+        f.load("long-program-name.asm", "MOV DX, \"long-file-name-for-visible-tooltip.txt\"", "MOV AL, \"long text with preserved content\"", "ADD AX");
+        f.load("input.asm", "INT 09H", "INC");
+        f.action("handleStart"); f.action("handleStep"); f.action("handleStep"); f.action("handleStep");
+        f.root.applyCss(); f.root.layout();
+        var panes = f.root.lookupAll(".tab-pane").stream().map(TabPane.class::cast).toList();
+        var upper = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Processes"))).findFirst().orElseThrow();
+        var lower = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Completed"))).findFirst().orElseThrow();
+        assertEquals(List.of("Workload", "Processes"), upper.getTabs().stream().map(Tab::getText).toList());
+        assertEquals(List.of("Main Memory", "Secondary Storage", "Active Program", "I/O", "Completed"), lower.getTabs().stream().map(Tab::getText).toList());
+        for (int[] size : List.of(new int[]{1100,650},new int[]{1280,720},new int[]{1920,1080})) {
+            f.root.resize(size[0],size[1]);
+            for (String lifecycle : List.of("CONFIGURING","INITIALIZED","PROGRAM_LOADED","RUNNING","PAUSED","FINISHED","ERROR")) {
+                f.widget("simulatorStateLabel",Label.class).setText(lifecycle);
+                for (String runtime : List.of("RUNNABLE","WAITING_FOR_INPUT","WAITING_FOR_CAPACITY")) {
+                    f.widget("runtimeStatusLabel",Label.class).setText(runtime);
+                    f.widget("cpuTicksLabel",Label.class).setText("1234567890");
+                    f.root.applyCss(); f.root.layout();
+                    for(String id : List.of("simulatorStateLabel","runtimeStatusLabel","cpuTicksLabel","ownerValueLabel")) {
+                        var label=f.widget(id,Label.class);
+                        var text=new javafx.scene.text.Text(label.getText()); text.setFont(label.getFont());
+                        assertTrue(label.getWidth()+1>=text.getLayoutBounds().getWidth(),id+" clipped at "+size[0]);
+                        assertTrue(label.localToScene(label.getBoundsInLocal()).getMaxX()<=size[0],id);
+                    }
+                }
+            }
+            f.action("refresh");
+            for(var tab:upper.getTabs()) {
+                upper.getSelectionModel().select(tab); f.root.applyCss(); f.root.layout();
+                if(tab.getText().equals("Processes")) f.widget("processTable",TableView.class).getSelectionModel().selectFirst();
+                saveReadabilityImage(f.root,size,"upper-"+tab.getText());
+            }
+            for(var tab:lower.getTabs()) {
+                lower.getSelectionModel().select(tab); f.root.applyCss(); f.root.layout();
+                if(tab.getText().equals("I/O")) {
+                    @SuppressWarnings("unchecked") var output=(ListView<String>)get(f.controller,"screenList");
+                    output.getItems().setAll("17","42","255");
+                    f.root.applyCss(); f.root.layout();
+                    var cell=(ListCell<?>)output.lookup(".list-cell");
+                    assertEquals(14,cell.getFont().getSize());
+                }
+                if(tab.getText().equals("Completed")) {
+                    f.widget("completedTable",TableView.class).getSelectionModel().selectFirst();
+                    var detail=f.widget("completedDetailArea",TextArea.class);
+                    assertEquals(13,detail.getFont().getSize()); assertTrue(detail.isWrapText());
+                    assertTrue(detail.getText().contains("Start Time:")); assertTrue(detail.getText().contains("Elapsed Time:"));
+                }
+                saveReadabilityImage(f.root,size,"lower-"+tab.getText().replace(" ","-").replace("/","-"));
+            }
+            for(String id:List.of("jobsTable","processTable","memoryTable","storageTable","programTable","completedTable")) {
+                assertEquals(29,f.widget(id,TableView.class).getFixedCellSize());
+            }
+            assertEquals(15,f.widget("currentInstructionLabel",Label.class).getFont().getSize());
+            assertEquals(13,f.widget("pcbDetailArea",TextArea.class).getFont().getSize());
+            var scroll=(ScrollPane)f.root.lookup(".configuration-scroll");
+            scroll.setVvalue(1); f.root.layout();
+            var reset=f.widget("resetButton",Button.class).localToScene(f.widget("resetButton",Button.class).getBoundsInLocal());
+            var viewport=scroll.lookup(".viewport").localToScene(scroll.lookup(".viewport").getBoundsInLocal());
+            assertTrue(reset.getMaxY()<=viewport.getMaxY()+1,"Reset must be reachable by scrolling");
+            scroll.setVvalue(0);
+        }
+    }); }
+    private static void saveReadabilityImage(BorderPane root,int[] size,String view) throws Exception {
+        root.applyCss(); root.layout();
+        var image=root.snapshot(null,null);
+        var pixels=new java.awt.image.BufferedImage((int)image.getWidth(),(int)image.getHeight(),java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for(int y=0;y<pixels.getHeight();y++) for(int x=0;x<pixels.getWidth();x++) pixels.setRGB(x,y,image.getPixelReader().getArgb(x,y));
+        javax.imageio.ImageIO.write(pixels,"png",Path.of("target","f19-readability-"+size[0]+"x"+size[1]+"-"+view+".png").toFile());
+    }
+
 }

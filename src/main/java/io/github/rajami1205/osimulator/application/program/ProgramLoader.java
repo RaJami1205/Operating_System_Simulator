@@ -16,7 +16,7 @@ import java.util.Objects;
  */
 public final class ProgramLoader {
 
-    // Valida el programa y lo carga en User Memory con un PCB en READY.
+    /** Valida el programa y lo carga en User Memory con un PCB en READY. */
     public ProcessControlBlock load(
             MainMemory memory,
             int processId,
@@ -25,7 +25,10 @@ public final class ProgramLoader {
         return loadWithAllocation(memory, processId, instructions).pcb();
     }
 
-    /** Transfiere al caller el handle USER únicamente después de completar la carga. */
+    /**
+     * Reserva USER, escribe el bloque completo y crea un PCB READY con PC lógico cero; ante fallo
+     * posterior libera la reserva. No almacena el PCB en Kernel.
+     */
     public ProgramLoadResult loadWithAllocation(
             MainMemory memory, int processId, List<Instruction> instructions
     ) {
@@ -62,7 +65,7 @@ public final class ProgramLoader {
         }
     }
 
-    // Crea los metadatos del proceso y traduce errores de configuración a errores de carga.
+    /** Crea los metadatos del proceso y traduce errores de configuración a errores de carga. */
     private ProcessControlBlock createProcessControlBlock(
             int processId,
             int programStartAddress,

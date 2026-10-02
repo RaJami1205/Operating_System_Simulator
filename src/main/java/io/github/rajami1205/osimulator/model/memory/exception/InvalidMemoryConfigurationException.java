@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.memory.exception;
  */
 public class InvalidMemoryConfigurationException extends IllegalArgumentException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidMemoryConfigurationException(String message) {
         super(message);
     }

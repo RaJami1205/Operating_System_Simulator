@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.memory.exception;
  */
 public class MemoryProtectionException extends RuntimeException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public MemoryProtectionException(String message) {
         super(message);
     }

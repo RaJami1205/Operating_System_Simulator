@@ -15,11 +15,12 @@ class DispatcherTest {
     private final ProcessTable table = new ProcessTable();
     private final ReadyQueue ready = new ReadyQueue();
     private final ProcessResourceRegistry resources = new ProcessResourceRegistry();
-    private final Dispatcher dispatcher = new Dispatcher(cpu,table,ready,resources);
+    private final Dispatcher dispatcher = new Dispatcher(cpu,table,ready,resources,memory);
 
     private ProcessControlBlock add(int pid) {
         var user=memory.allocateUser(3);var kernel=memory.allocateKernel(1);
         var pcb=new ProcessControlBlock(pid,user.base(),3);
+        memory.writePcb(kernel,0,pcb);
         pcb.changeState(ProcessState.READY);table.register(pcb);ready.enqueue(pid);
         resources.register(pid,new ProcessResources(kernel,new PcbAddress(kernel.base()),new UserImageResidence.Resident(user)));
         return pcb;

@@ -8,7 +8,10 @@ import io.github.rajami1205.osimulator.model.storage.*;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageAllocationException;
 import java.util.Objects;
 
-/** Explicit single-threaded transfers. Caller excludes processes bound to active CPU/I/O. */
+/**
+ * Transfiere imágenes completas entre USER y SWAP sin paging ni selección automática de víctimas. Conserva
+ * el PCB Kernel y su contexto; el caller excluye al owner activo.
+ */
 public final class ProcessSwapService {
     private final MainMemory memory;
     private final SecondaryStorage storage;
@@ -16,6 +19,7 @@ public final class ProcessSwapService {
     private final ProcessResourceRegistry resources;
     private final ReadyQueue queue;
 
+    /** Asocia memoria, storage, PCBs, registry y ReadyQueue no nulos de una misma sesión. */
     public ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
             ProcessResourceRegistry resources, ReadyQueue queue) {
         this.memory = Objects.requireNonNull(memory);
@@ -25,6 +29,10 @@ public final class ProcessSwapService {
         this.queue = Objects.requireNonNull(queue);
     }
 
+    /**
+     * Copia una imagen READY/BLOCKED a SWAP antes de liberar USER; devuelve Waiting por capacidad y
+     * revierte la reserva destino ante fallo.
+     */
     public SwapResult swapOut(int processId) {
         var pcb = process(processId);
         var original = canonicalResources(pcb);
@@ -50,7 +58,7 @@ public final class ProcessSwapService {
             storage.writeSwapBlock(swap, image);
             replacement = original.withResidence(new UserImageResidence.Suspended(swap));
             validateCommit(pcb, original, ready);
-            // Release validates before mutation. No fallible preparation follows this point.
+            // Release valida antes de modificar; después de este punto no queda preparación que pueda fallar.
             memory.release(user);
         } catch (RuntimeException | Error failure) {
             cleanup(failure, () -> storage.releaseSwap(swap));
@@ -62,6 +70,10 @@ public final class ProcessSwapService {
         return new SwapResult.Completed();
     }
 
+    /**
+     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera SWAP; conserva PC
+     * lógico y devuelve Waiting por capacidad.
+     */
     public SwapResult swapIn(int processId) {
         var pcb = process(processId);
         var original = canonicalResources(pcb);
@@ -87,12 +99,12 @@ public final class ProcessSwapService {
             bounds = new ProcessMemoryBounds(user.base(), user.size());
             replacement = original.withResidence(new UserImageResidence.Resident(user));
             validateCommit(pcb, original, false);
-            storage.readSwapBlock(swap); // Validate source identity/content before the irreversible commit.
+            storage.readSwapBlock(swap); // Valida identidad y contenido de origen antes del commit irreversible.
         } catch (RuntimeException | Error failure) {
             cleanup(failure, () -> memory.release(user));
             throw failure;
         }
-        // All controlled preconditions have passed; these session-owned objects are not concurrent.
+        // Las precondiciones controladas ya se validaron; estos objetos de sesión no se usan concurrentemente.
         pcb.relocateSuspended(bounds);
         resources.replace(processId, original, replacement);
         storage.releaseSwap(swap);
@@ -101,20 +113,24 @@ public final class ProcessSwapService {
         return new SwapResult.Completed();
     }
 
+    /** Busca el PCB del PID solicitado o rechaza un proceso desconocido antes de transferir recursos. */
     private ProcessControlBlock process(int pid) {
         return processes.find(pid).orElseThrow(() -> new IllegalArgumentException("Unknown process: " + pid));
     }
 
+    /** Recupera los recursos registrados y valida que Kernel siga conteniendo el PCB canónico. */
     private ProcessResources canonicalResources(ProcessControlBlock pcb) {
         var value = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing process resources"));
         memory.validatePcbAllocation(value.kernel(), pcb);
         return value;
     }
 
+    /** Exige la membresía READY esperada para la transición, sin corregir silenciosamente la cola. */
     private void validateQueue(int pid, boolean expected) {
         if (queue.entries().contains(pid) != expected) throw new IllegalStateException("Inconsistent READY membership");
     }
 
+    /** Revalida identidad de PCB/recursos y membresía READY antes de publicar la transferencia. */
     private void validateCommit(ProcessControlBlock pcb, ProcessResources original, boolean queued) {
         if (process(pcb.processId()) != pcb || canonicalResources(pcb) != original) {
             throw new IllegalStateException("Canonical process resources changed");
@@ -122,6 +138,7 @@ public final class ProcessSwapService {
         validateQueue(pcb.processId(), queued);
     }
 
+    /** Intenta liberar la reserva destino y adjunta fallos secundarios al error original sin ocultarlo. */
     private static void cleanup(Throwable original, Runnable action) {
         try { action.run(); }
         catch (RuntimeException | Error failure) {

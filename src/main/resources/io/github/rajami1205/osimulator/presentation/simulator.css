@@ -449,14 +449,14 @@
     -fx-background-color: -app-background-deep;
     -fx-text-fill: -app-text-primary;
     -fx-font-family: "Monospaced";
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
 }
 .app-root .list-cell:filled:selected { -fx-background-color: derive(-app-electric-blue, -38%); }
 .app-root .detail-area, .app-root .detail-area .content {
     -fx-background-color: -app-background-deep;
     -fx-text-fill: -app-text-primary;
     -fx-font-family: "Monospaced";
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
 }
 .app-root .status-feedback {
     -fx-background-color: -app-surface-elevated;
@@ -464,12 +464,22 @@
     -fx-padding: 6px 10px;
     -fx-font-size: 12px;
 }
-.app-root .table-cell { -fx-font-size: 12px; -fx-padding: 5px 7px; }
-.app-root .table-view .column-header .label { -fx-font-size: 12px; }
-.app-root .section-title, .app-root .helper-text, .app-root .metric-label { -fx-font-size: 11px; }
-.app-root .button { -fx-font-size: 12px; -fx-min-height: 29px; -fx-pref-height: 29px; }
-.app-root .input-field { -fx-font-size: 12px; -fx-min-height: 29px; -fx-pref-height: 29px; }
-.app-root .state-value { -fx-font-size: 12px; }
+.app-root .table-view { -fx-fixed-cell-size: 29px; }
+.app-root .table-cell { -fx-font-size: 13px; -fx-padding: 5px 7px; }
+.app-root .table-view .column-header { -fx-size: 30px; }
+.app-root .table-view .column-header .label { -fx-font-size: 13px; }
+/* F19 readability: scoped type sizes, without scaling the root or sliders. */
+.app-root .panel-header, .app-root .section-title { -fx-font-size: 13px; }
+.app-root .section-label, .app-root .pcb-label, .app-root .metric-label { -fx-font-size: 12px; }
+.app-root .helper-text, .app-root .configuration-range, .app-root .header-subtitle { -fx-font-size: 12px; }
+.app-root .configuration-label, .app-root .pcb-value { -fx-font-size: 13px; }
+.app-root .instruction-value { -fx-font-size: 15px; }
+.app-root .state-caption { -fx-font-size: 11px; }
+.app-root .empty-state, .app-root .table-view .placeholder .label { -fx-font-size: 12px; }
+.app-root #screenList .list-cell { -fx-font-size: 14px; }
+.app-root .button { -fx-font-size: 13px; -fx-min-height: 31px; -fx-pref-height: 31px; }
+.app-root .input-field { -fx-font-size: 13px; -fx-min-height: 31px; -fx-pref-height: 31px; }
+.app-root .state-value { -fx-font-size: 13px; }
 .app-root .state-badge { -fx-effect: null; -fx-padding: 5px 8px; }
 .app-root .table-row-cell.file-index-row { -fx-border-color: transparent transparent transparent -app-violet; -fx-border-width: 0 0 0 3px; }
 .app-root .table-row-cell.program-data-row { -fx-border-color: transparent transparent transparent -app-cyan; -fx-border-width: 0 0 0 3px; }

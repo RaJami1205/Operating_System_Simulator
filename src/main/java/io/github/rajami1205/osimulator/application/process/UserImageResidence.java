@@ -5,15 +5,22 @@ import io.github.rajami1205.osimulator.model.memory.MemoryRegion;
 import io.github.rajami1205.osimulator.model.storage.StorageAllocation;
 import java.util.Objects;
 
-/** Exactly one committed image residence; handles are never reconstructed from bounds. */
+/**
+ * Residencia exclusiva de la imagen en USER o SWAP mediante su handle original; nunca reconstruye
+ * identidad a partir de Base/Limit.
+ */
 public sealed interface UserImageResidence {
+    /** Imagen con reserva física USER; conserva el handle original requerido por fetch y release. */
     record Resident(MemoryAllocation allocation) implements UserImageResidence {
+        /** Exige un handle no nulo perteneciente a la región USER. */
         public Resident {
             Objects.requireNonNull(allocation);
             if (allocation.region() != MemoryRegion.USER) throw new IllegalArgumentException("USER allocation required");
         }
     }
+    /** Imagen respaldada en SWAP; no mantiene una allocation física USER. */
     record Suspended(StorageAllocation allocation) implements UserImageResidence {
+        /** Exige el handle no nulo que identifica la imagen en SWAP. */
         public Suspended { Objects.requireNonNull(allocation); }
     }
 }

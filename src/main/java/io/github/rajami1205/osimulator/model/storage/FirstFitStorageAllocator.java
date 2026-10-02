@@ -14,6 +14,7 @@ public final class FirstFitStorageAllocator {
     private final TreeMap<Integer, Integer> freeBlocks = new TreeMap<>();
     private final Map<UUID, StorageAllocation> active = new HashMap<>();
 
+    /** Valida el intervalo físico bounded, incluso vacío, e inicia su lista de bloques libres. */
     public FirstFitStorageAllocator(int dataStart, int dataEnd) {
         if (dataStart < 0 || dataEnd < dataStart) {
             throw new IllegalArgumentException("Invalid PROGRAM_DATA bounds");
@@ -23,6 +24,10 @@ public final class FirstFitStorageAllocator {
         reset();
     }
 
+    /**
+     * Reserva el primer bloque contiguo suficiente en orden físico; rechaza tamaño no positivo o
+     * insuficiencia contigua.
+     */
     public StorageAllocation allocate(int size) {
         if (size < 1) throw new StorageAllocationException("Allocation size must be positive");
         var block = freeBlocks.entrySet().stream().filter(entry -> entry.getValue() >= size)
@@ -36,10 +41,12 @@ public final class FirstFitStorageAllocator {
         return allocation;
     }
 
+    /** Comprueba identidad y metadata contra las reservas activas de este allocator bounded. */
     public boolean isActive(StorageAllocation allocation) {
         return allocation != null && allocation.equals(active.get(allocation.allocationId()));
     }
 
+    /** Rechaza handles stale, ajenos o liberados y fusiona vecinos libres sin compaction. */
     public void release(StorageAllocation allocation) {
         if (!isActive(allocation)) {
             throw new InvalidStorageReleaseException("Allocation is stale, foreign or already released");

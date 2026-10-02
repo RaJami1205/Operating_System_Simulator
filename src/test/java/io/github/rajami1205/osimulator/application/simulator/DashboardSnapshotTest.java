@@ -126,7 +126,7 @@ class DashboardSnapshotTest {
         var program = new ArrayList<>(List.of(new SimulatorSnapshot.ProgramEntry(32, "INC")));
         var copy = new SimulatorSnapshot(value.simulatorState(), value.cpu(), value.currentInstruction(), value.process(),
                 program, memory, value.runtimeStatus(), value.ownerPid(), value.configuration(), jobs, processes,
-                ready, suspended, pending, completed, storage, screen);
+                ready, suspended, pending, completed, storage, screen, value.cpuTicks());
         for (List<?> input : List.of(jobs, processes, ready, suspended, pending, completed, memory, storage, screen, program)) input.clear();
         assertEquals(1, copy.jobs().size()); assertEquals(List.of(1), copy.readyQueue()); assertEquals(List.of(2), copy.suspendedReadyQueue());
         assertEquals(1, copy.pendingKeyboardRequests().size()); assertEquals(1, copy.completedProcesses().size());

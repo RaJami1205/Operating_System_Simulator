@@ -17,11 +17,16 @@ public final class JobSubmissionService {
     // long permite representar el agotamiento después de publicar Integer.MAX_VALUE.
     private long nextJobId = 1;
 
+    /** Asocia storage y JobList de la sesión e inicia la secuencia de identificadores en uno. */
     public JobSubmissionService(SecondaryStorage storage, JobList jobs) {
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.jobs = Objects.requireNonNull(jobs, "jobs must not be null");
     }
 
+    /**
+     * Almacena el programa y publica un Job PENDING; si falla JobList revierte sólo el programa recién
+     * creado y conserva el diagnóstico de rollback.
+     */
     public Job submit(ProgramImage program) {
         Objects.requireNonNull(program, "program must not be null");
         if (nextJobId > Integer.MAX_VALUE) throw new IllegalStateException("Job IDs exhausted");

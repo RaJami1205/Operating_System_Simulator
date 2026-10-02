@@ -13,13 +13,14 @@ import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOper
 import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 
 /**
- * Asigna un inmediato o el valor de un registro a un registro destino.
+ * Transfiere números entre registros generales o desde inmediatos; permite texto en DX/AL y un inmediato
+ * numérico en AH.
  */
 public record MovInstruction(MovDestination destination, InstructionOperand source) implements Instruction {
 
     private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(1);
 
-    // Los operandos tipados ya validan su contenido.
+    /** Exige destino y fuente no nulos, en ese orden, y rechaza combinaciones de tipos no admitidas por MOV. */
     public MovInstruction {
         Objects.requireNonNull(destination, "destination must not be null");
 
@@ -35,19 +36,22 @@ public record MovInstruction(MovDestination destination, InstructionOperand sour
         }
     }
 
+    /** Valida primero el destino y después el inmediato signed 16-bit, conservando InvalidImmediateValueException. */
     public MovInstruction(MovDestination destination, int immediate) {
         this(Objects.requireNonNull(destination, "destination must not be null"), new ImmediateOperand(immediate));
     }
 
+    /** Construye MOV entre registros generales; el wrapper valida la fuente antes de delegar al constructor canónico. */
     public MovInstruction(RegisterName destination, RegisterName source) {
         this(destination, new RegisterOperand(source));
     }
 
+    /** Identifica MOV para dispatch y representación semántica. */
     @Override
-    // Identifica la operación semántica representada.
     public Opcode opcode() {
         return Opcode.MOV;
     }
+    /** Devuelve la vista inmutable y ordenada de operandos, derivada del estado del record. */
     @Override
     public List<InstructionOperand> operands() {
         InstructionOperand target = switch (destination) {
@@ -57,6 +61,7 @@ public record MovInstruction(MovDestination destination, InstructionOperand sour
         return List.of(target, source);
     }
 
+    /** Devuelve el peso estático en CPU ticks de MOV, sin almacenar progreso. */
     @Override
     public ExecutionWeight executionWeight() {
         return EXECUTION_WEIGHT;

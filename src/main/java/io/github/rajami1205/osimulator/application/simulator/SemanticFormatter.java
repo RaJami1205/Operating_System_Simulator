@@ -28,22 +28,23 @@ import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
 import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
 import io.github.rajami1205.osimulator.model.instruction.operand.ServiceRegisterOperand;
 
-/** Canonical ASM display shared by all Application read views. */
+/** Representación ASM canónica compartida por las vistas de Application; no ejecuta instrucciones. */
 final class SemanticFormatter {
+    /** Impide instanciar el formatter canónico de instrucciones. */
     private SemanticFormatter() {}
-    // Obtiene la representación semántica de una instrucción.
+    /** Obtiene la representación semántica de una instrucción. */
     static InstructionSnapshot instructionSnapshot(Instruction instruction) {
         return new InstructionSnapshot(semanticText(instruction), instruction.opcode().name(),
                 operandText(instruction));
     }
 
-    // Compone el texto de una instrucción para su visualización.
+    /** Compone el texto de una instrucción para su visualización. */
     static String semanticText(Instruction instruction) {
         String operands = operandText(instruction);
         return instruction.opcode().name() + (operands.isEmpty() ? "" : " " + operands);
     }
 
-    // Describe los operandos según el tipo de instrucción.
+    /** Describe los operandos según el tipo de instrucción. */
     private static String operandText(Instruction instruction) {
         return switch (instruction) {
             case MovInstruction mov -> mov.destination().name() + ", " + switch (mov.source()) {
@@ -75,6 +76,7 @@ final class SemanticFormatter {
         };
     }
 
+    /** Muestra el signo más en desplazamientos positivos y conserva el signo negativo o cero. */
     private static String displacementText(BranchDisplacement displacement) {
         return displacement.value() > 0 ? "+" + displacement.value() : Integer.toString(displacement.value());
     }

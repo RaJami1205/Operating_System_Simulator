@@ -45,7 +45,7 @@ public final class AsmParser {
     );
     private static final Pattern DECIMAL_INTEGER = Pattern.compile("[+-]?[0-9]+");
 
-    // Convierte las líneas no vacías en una lista inmutable de instrucciones.
+    /** Convierte las líneas no vacías en una lista inmutable de instrucciones. */
     public List<Instruction> parse(List<String> sourceLines) {
         Objects.requireNonNull(sourceLines, "sourceLines must not be null");
         List<Instruction> instructions = new ArrayList<>();
@@ -67,7 +67,7 @@ public final class AsmParser {
         return List.copyOf(instructions);
     }
 
-    // Identifica la operación ASM y delega la validación de sus operandos.
+    /** Identifica la operación ASM y delega la validación de sus operandos. */
     private Instruction parseLine(String sourceLine, int lineNumber) {
         String normalizedLine = sourceLine.strip();
         String[] tokens = normalizedLine.split("\\s+");
@@ -122,11 +122,19 @@ public final class AsmParser {
         };
     }
 
+    /**
+     * Exige un único desplazamiento decimal int; la validez del destino depende del PC y se comprueba en
+     * ejecución.
+     */
     private BranchDisplacement parseDisplacement(String[] tokens, int lineNumber) {
         if (tokens.length != 2) throw new AsmParseException(lineNumber, "Branch requires one displacement");
         return new BranchDisplacement(parseImmediate(tokens[1], lineNumber));
     }
 
+    /**
+     * Exige de uno a tres inmediatos decimales signed 16-bit separados por coma y preserva el orden
+     * textual.
+     */
     private ParamInstruction parseParameters(String text, int lineNumber) {
         String[] tokens = text.split(",", -1);
         if (tokens.length > ParamInstruction.MAX_VALUES) {
@@ -143,7 +151,7 @@ public final class AsmParser {
         return new ParamInstruction(values);
     }
 
-    // Exige un único registro como operando de la instrucción.
+    /** Exige un único registro como operando de la instrucción. */
     private RegisterName parseSingleRegisterOperand(
             String[] tokens,
             String mnemonic,
@@ -159,6 +167,10 @@ public final class AsmParser {
         return parseRegister(tokens[1], lineNumber);
     }
 
+    /**
+     * Exige exactamente dos operandos separados por coma y devuelve sus grupos; informa la línea ASM si la
+     * sintaxis no coincide.
+     */
     private Matcher parseTwoOperands(String sourceLine, String mnemonic, int lineNumber) {
         Matcher matcher = TWO_OPERAND_SYNTAX.matcher(sourceLine);
         if (!matcher.matches()) {
@@ -170,7 +182,10 @@ public final class AsmParser {
         return matcher;
     }
 
-    // No escapes: quotes delimit one literal; commas and semicolons inside it are data.
+    /**
+     * Retira comentarios fuera de comillas y rechaza comillas abiertas o saltos de línea; no interpreta
+     * escapes.
+     */
     private String stripComment(String line, int lineNumber) {
         boolean quoted = false;
         for (int i = 0; i < line.length(); i++) {
@@ -183,6 +198,10 @@ public final class AsmParser {
         return line;
     }
 
+    /**
+     * Separa destino/fuente respetando texto entre comillas y delega compatibilidad tipada a
+     * MovInstruction.
+     */
     private Instruction parseMovInstruction(String sourceLine, int lineNumber) {
         String operands = sourceLine.substring(3).strip();
         boolean quoted = false;
@@ -223,6 +242,7 @@ public final class AsmParser {
         }
     }
 
+    /** Interpreta hexadecimal sin signo con sufijo H o decimal signed; rechaza overflow del literal int. */
     private int parseNumericLiteral(String token, int lineNumber) {
         if (token.matches("[0-9A-Fa-f]+[Hh]")) {
             try { return Integer.parseInt(token.substring(0, token.length() - 1), 16); }
@@ -233,7 +253,7 @@ public final class AsmParser {
         return parseImmediate(token, lineNumber);
     }
 
-    // Interpreta un entero decimal y conserva la línea de origen en los errores.
+    /** Interpreta un entero decimal y conserva la línea de origen en los errores. */
     private int parseImmediate(String immediateToken, int lineNumber) {
         if (!DECIMAL_INTEGER.matcher(immediateToken).matches()) {
             throw new AsmParseException(
@@ -253,7 +273,7 @@ public final class AsmParser {
         }
     }
 
-    // Resuelve el registro sin distinguir mayúsculas y reporta nombres inválidos.
+    /** Resuelve el registro sin distinguir mayúsculas y reporta nombres inválidos. */
     private RegisterName parseRegister(String registerToken, int lineNumber) {
 
         try {

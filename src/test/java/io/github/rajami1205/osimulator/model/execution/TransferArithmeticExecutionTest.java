@@ -32,10 +32,11 @@ class TransferArithmeticExecutionTest {
 
     private void execute(Instruction instruction, CpuRegisters<Instruction> cpu) {
         var memory = new MainMemory(new MemoryConfiguration(128, 32));
-        var pcb = new ProgramLoader().load(memory, 1, List.of(instruction));
+        var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
+        var pcb = pcbLoaded.pcb();
         var progress = new ExecutionProgress();
         var flags = cpu.conditionFlags();
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
         assertEquals(1, cpu.programCounter());
         assertEquals(1, pcb.programCounter());
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
@@ -105,11 +106,12 @@ class TransferArithmeticExecutionTest {
                 instruction = increment ? new IncInstruction(register) : new DecInstruction(register);
             }
             var memory = new MainMemory(new MemoryConfiguration(128, 32));
-            var pcb = new ProgramLoader().load(memory, 1, List.of(instruction));
+            var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
+        var pcb = pcbLoaded.pcb();
             var progress = new ExecutionProgress();
             cpu.loadInstructionRegister(instruction);
             var before = cpu.snapshot();
-            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
+            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
             assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
             assertEquals(before, cpu.snapshot());
             assertEquals(0, pcb.programCounter());

@@ -32,7 +32,8 @@ class ExecutionTickTest {
         var program = List.<Instruction>of(new MovInstruction(RegisterName.AX, 5),
                 new LoadInstruction(RegisterName.AX), new AddInstruction(RegisterName.AX),
                 new StoreInstruction(RegisterName.BX), new SubInstruction(RegisterName.AX));
-        var pcb = new ProgramLoader().load(memory, 1, program);
+        var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, program);
+        var pcb = pcbLoaded.pcb();
         assertTrue(progress.isIdle());
         assertTrue(progress.instruction().isEmpty());
         assertEquals(0, progress.consumedTicks());
@@ -42,7 +43,7 @@ class ExecutionTickTest {
             var before = cpu.snapshot();
             int weight = instruction.executionWeight().ticks();
             for (int tick = 1; tick <= weight; tick++) {
-                var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress);
+                var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation());
                 calls++;
                 assertSame(instruction, cpu.instructionRegister().orElseThrow());
                 if (tick < weight) {
@@ -77,12 +78,13 @@ class ExecutionTickTest {
     @Test
     void finalTickErrorClearsProgressWithoutCommittingAndPreservesCause() {
         var instruction = new AddInstruction(RegisterName.AX);
-        var pcb = new ProgramLoader().load(memory, 1, List.of(instruction));
+        var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
+        var pcb = pcbLoaded.pcb();
         cpu.writeAccumulator(32767);
         cpu.writeRegister(RegisterName.AX, 1);
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
-        var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+        var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
         assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
         assertEquals(32767, cpu.accumulator());
         assertEquals(0, cpu.programCounter());
@@ -94,39 +96,42 @@ class ExecutionTickTest {
 
     @Test
     void rejectsContextMismatchWithoutConsumingOriginalProgress() {
-        var pcb = new ProgramLoader().load(memory, 1, List.of(new AddInstruction(RegisterName.AX)));
-        engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress);
+        var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(new AddInstruction(RegisterName.AX)));
+        var pcb = pcbLoaded.pcb();
+        engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation());
         var impostor = new ProcessControlBlock(1, 32, 1);
         impostor.changeState(ProcessState.RUNNING);
-        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, impostor, progress));
-        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, new CpuRegisters<>(), pcb, progress));
-        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, new MainMemory(new MemoryConfiguration(128, 32)), cpu, pcb, progress));
+        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, impostor, progress, pcbLoaded.userAllocation()));
+        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, new CpuRegisters<>(), pcb, progress, pcbLoaded.userAllocation()));
+        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, new MainMemory(new MemoryConfiguration(128, 32)), cpu, pcb, progress, pcbLoaded.userAllocation()));
         pcb.setProgramCounter(1);
-        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
+        assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
         assertEquals(1, progress.consumedTicks());
         pcb.setProgramCounter(0);
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
     }
 
     @Test
     void statelessEngineInterleavesIndependentProgressAndTerminalGuardDoesNotFetch() {
-        var first = new ProgramLoader().load(memory, 1, List.of(new LoadInstruction(RegisterName.AX)));
-        var second = new ProgramLoader().load(memory, 2, List.of(new AddInstruction(RegisterName.BX)));
+        var firstLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(new LoadInstruction(RegisterName.AX)));
+        var first = firstLoaded.pcb();
+        var secondLoaded = new ProgramLoader().loadWithAllocation(memory, 2, List.of(new AddInstruction(RegisterName.BX)));
+        var second = secondLoaded.pcb();
         var otherCpu = new CpuRegisters<Instruction>();
         var otherProgress = new ExecutionProgress();
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, first, progress));
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress));
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, first, progress));
-        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress));
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, cpu, first, progress, firstLoaded.userAllocation()));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress, secondLoaded.userAllocation()));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, first, progress, firstLoaded.userAllocation()));
+        assertEquals(TickResult.IN_PROGRESS, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress, secondLoaded.userAllocation()));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, otherCpu, second, otherProgress, secondLoaded.userAllocation()));
         var terminal = new ProcessControlBlock(3, 0, 1);
         terminal.changeState(ProcessState.READY);
         terminal.setProgramCounter(1);
         var ir = cpu.instructionRegister();
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, terminal, progress));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, terminal, progress, null));
         assertEquals(ir, cpu.instructionRegister());
         assertTrue(progress.isIdle());
-        assertThrows(NullPointerException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, terminal, null));
+        assertThrows(NullPointerException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, terminal, null, null));
     }
 }

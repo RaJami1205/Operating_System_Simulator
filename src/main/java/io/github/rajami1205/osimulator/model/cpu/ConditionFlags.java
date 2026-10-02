@@ -1,6 +1,9 @@
 package io.github.rajami1205.osimulator.model.cpu;
 
-/** Immutable condition state; CMP updates equality while preserving overflow. */
+/**
+ * Estado inmutable de equal y overflow. CMP actualiza igualdad preservando overflow; no reproduce EFLAGS
+ * de x86.
+ */
 public record ConditionFlags(boolean equal, boolean overflow) {
     public static final ConditionFlags CLEAR = new ConditionFlags(false, false);
 }

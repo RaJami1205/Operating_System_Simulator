@@ -43,15 +43,23 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackOverf
 import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnderflowException;
 
 /**
- * Consume ticks sin conservar estado de sesión dentro del engine.
+ * Aplica instrucciones semánticas sobre el CPU activo. Consume un tick por llamada y publica efectos sólo
+ * al completar el peso; no conserva estado de sesión propio.
  */
 public final class ExecutionEngine {
+    /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
     private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
+    /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
     private record Continue(int nextLogicalPc) implements SemanticOutcome { }
+    /** Finalización explícita sin avanzar al siguiente PC. */
     private record Terminate() implements SemanticOutcome { }
+    /** INT09 sin entrada disponible; solicita BLOCKED sin avanzar PC todavía. */
     private record WaitForKeyboard() implements SemanticOutcome { }
 
-    // Consume un tick; los efectos semánticos se aplican únicamente en el tick final.
+    /**
+     * Consume como máximo un tick usando la allocation USER canónica; aplica efectos sólo al completar el
+     * peso y detecta PC terminal antes del fetch.
+     */
     public TickResult executeTick(
             SimulatedFileSystem filesystem,
             ScreenDevice screen,
@@ -126,6 +134,7 @@ public final class ExecutionEngine {
         };
     }
 
+    /** Publica el próximo PC en CPU/PCB, limpia progreso y marca TERMINATED si alcanza Limit. */
     private TickResult publishNextPc(CpuRegisters<Instruction> cpu, ProcessControlBlock pcb,
             ExecutionProgress progress, int nextProgramCounter) {
         cpu.setProgramCounter(nextProgramCounter);
@@ -138,7 +147,7 @@ public final class ExecutionEngine {
         return TickResult.INSTRUCTION_COMPLETED;
     }
 
-    // Permite ejecutar únicamente procesos READY o RUNNING.
+    /** Rechaza estados distintos de READY/RUNNING antes de consumir progreso. */
     private void validateExecutableState(ProcessControlBlock pcb) {
         if (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.RUNNING) {
             throw new ExecutionEngineException(
@@ -147,7 +156,10 @@ public final class ExecutionEngine {
         }
     }
 
-    // Aplica la semántica de la instrucción y traduce fallos de rango de la CPU.
+    /**
+     * Aplica los efectos finales sobre CPU/PCB y servicios simulados; traduce fallos de tipos, rango,
+     * stack y filesystem a ExecutionEngineException.
+     */
     private SemanticOutcome executeInstruction(
             Instruction instruction,
             CpuRegisters<Instruction> cpu,
@@ -198,7 +210,7 @@ public final class ExecutionEngine {
                         };
                         switch (mov.destination()) {
                             case RegisterName register -> cpu.writeRegister(register, value);
-                            case ServiceRegister ignored -> cpu.writeAh(value); // Only AH accepts numeric service MOV.
+                            case ServiceRegister ignored -> cpu.writeAh(value); // Sólo AH acepta MOV numérico entre los service registers.
                         }
                     }
                 }
@@ -246,6 +258,10 @@ public final class ExecutionEngine {
         return new Continue(currentPc + 1);
     }
 
+    /**
+     * Calcula PC + 1 + displacement con aritmética amplia y rechaza destinos fuera de
+     * 0..instructionCount-1.
+     */
     private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {
         long target = (long) currentPc + 1L + displacement.value();
         if (target < 0 || target >= instructionCount) {

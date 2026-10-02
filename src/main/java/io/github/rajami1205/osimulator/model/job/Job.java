@@ -4,6 +4,7 @@ import java.util.Objects;
 
 /** Referencia lógica al programa almacenado, sin duplicar metadata de storage. */
 public record Job(int jobId, String programName, JobState state) {
+    /** Exige identidad positiva, nombre no vacío y estado no nulo; no crea un proceso. */
     public Job {
         if (jobId <= 0) throw new IllegalArgumentException("Job ID must be positive");
         Objects.requireNonNull(programName, "programName must not be null");

@@ -19,11 +19,13 @@ public final class JobList {
         jobs = updated;
     }
 
+    /** Busca un Job por identificador positivo, sin alterar su orden de submission. */
     public Optional<Job> find(int jobId) {
         validateId(jobId);
         return Optional.ofNullable(jobs.get(jobId));
     }
 
+    /** Devuelve una copia inmutable en orden de submission, incluidos Jobs ya admitidos. */
     public List<Job> entries() { return List.copyOf(jobs.values()); }
 
     /** Publica la transición completa sin alterar el orden ni las vistas anteriores. */
@@ -35,11 +37,13 @@ public final class JobList {
         jobs = updated;
     }
 
+    /** Retira un Job por ID positivo y devuelve si existía; no elimina el programa almacenado. */
     public boolean remove(int jobId) {
         validateId(jobId);
         return jobs.remove(jobId) != null;
     }
 
+    /** Exige identidad positiva para las consultas y retiradas de Jobs. */
     private static void validateId(int jobId) {
         if (jobId <= 0) throw new IllegalArgumentException("Job ID must be positive");
     }

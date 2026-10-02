@@ -21,7 +21,10 @@ import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import static io.github.rajami1205.osimulator.presentation.DashboardTables.*;
 
-/** Commands go to Application; a single immutable observation drives each refresh. */
+/**
+ * Traduce acciones JavaFX a comandos del Orchestrator y renderiza snapshots inmutables. Timeline sólo
+ * marca el ritmo; aquí no residen reglas de scheduling, memoria o instrucciones.
+ */
 public final class SimulatorController {
     private static final Duration AUTOMATIC_STEP_INTERVAL = Duration.millis(1000);
     private final SimulatorOrchestrator orchestrator;
@@ -114,10 +117,15 @@ public final class SimulatorController {
     @FXML private TableColumn<CompletedProcess, String> completedPcColumn;
     @FXML private TableColumn<CompletedProcess, String> completedIrColumn;
 
+    /** Recibe la facade y el importador no nulos; JavaFX inyecta los controles posteriormente. */
     public SimulatorController(SimulatorOrchestrator orchestrator, ProgramImporter programImporter) {
         this.orchestrator = Objects.requireNonNull(orchestrator);
         this.programImporter = Objects.requireNonNull(programImporter);
     }
+    /**
+     * Tras la inyección FXML configura sliders, tablas y listeners; Timeline invoca como máximo un Step
+     * por callback y sólo regula el ritmo visual.
+     */
     @FXML private void initialize() {
         configureSlider(mainMemorySlider, mainMemoryValue, mainMemoryRange);
         configureSlider(kernelMemorySlider, kernelMemoryValue, kernelMemoryRange);
@@ -142,6 +150,10 @@ public final class SimulatorController {
                         : DashboardDetails.context(after.finalContext()) + DashboardDetails.accounting(after.accounting())));
         refresh();
     }
+    /**
+     * Vincula columnas y estilos regionales a los valores inmutables del snapshot, sin consultar memoria
+     * directamente.
+     */
     private void configureTables() {
         column(programAddressColumn, v -> Integer.toString(v.address())); column(programInstructionColumn, ProgramEntry::instruction);
         column(memoryAddressColumn, v -> Integer.toString(v.address())); column(memoryRegionColumn, MemoryEntry::region);
@@ -159,11 +171,13 @@ public final class SimulatorController {
         column(completedPidColumn, v -> Integer.toString(v.processId())); column(completedPcColumn, v -> Integer.toString(v.finalContext().programCounter()));
         column(completedIrColumn, v -> v.finalContext().instructionRegister().orElse("\u2014"));
     }
+    /** Recoge capacidades enteras de sliders y delega validación/inicialización al Orchestrator. */
     @FXML private void handleInitialize() {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider))));
     }
+    /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
         if (browseProgramButton.isDisabled()) return;
         var chooser = new FileChooser();
@@ -173,6 +187,10 @@ public final class SimulatorController {
         if (file != null) { selectedProgramPath = file.toPath(); programPathField.setText(selectedProgramPath.toString()); }
         refresh();
     }
+    /**
+     * Importa ASM mediante ProgramImporter y hace submission de ProgramImage con nombre lógico; no admite
+     * ni ejecuta procesos.
+     */
     @FXML private void handleLoadProgram() {
         command(() -> {
             if (selectedProgramPath == null) throw new IllegalStateException("Select an ASM program first.");
@@ -182,17 +200,22 @@ public final class SimulatorController {
             feedback = "Submitted " + name + ". Workload ready; load another program or Start.";
         });
     }
+    /** Solicita Start al Orchestrator a través de la frontera común de errores y refresh. */
     @FXML private void handleStart() { command(orchestrator::start); }
+    /** Ejecuta la misma ruta de un tick usada por Automatic. */
     @FXML private void handleStep() { executeSingleStep(); }
+    /** Activa Timeline sólo si el snapshot está RUNNABLE y no existe ejecución automática activa. */
     @FXML private void handleAutomatic() {
         if (!runnable() || automaticMode) return;
         automaticMode = true;
         refresh();
         automaticTimeline.playFromStart();
     }
+    /** Consulta si el último snapshot permite ticks: lifecycle RUNNING y runtime RUNNABLE. */
     private boolean runnable() {
         return view.simulatorState() == SimulatorState.RUNNING && view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE;
     }
+    /** Solicita un único Step cuando es ejecutable y detiene Automatic si deja de estar RUNNABLE. */
     private void executeSingleStep() {
         if (!runnable()) { stopAutomaticExecution(); refresh(); return; }
         command(() -> {
@@ -200,20 +223,27 @@ public final class SimulatorController {
             if (result.status() != RuntimeStatus.RUNNABLE) stopAutomaticExecution();
         });
     }
+    /** Pausa Timeline y delega Pause de sesión sin alterar estados de procesos desde JavaFX. */
     @FXML private void handlePause() {
         automaticTimeline.pause();
         command(orchestrator::pause);
     }
+    /** Delega Resume y reactiva Timeline sólo si Automatic seguía seleccionado y el runtime es ejecutable. */
     @FXML private void handleResume() {
         command(orchestrator::resume);
         if (automaticMode && runnable()) automaticTimeline.play();
     }
+    /** Detiene Timeline, limpia selección/input y delega Reset antes de restaurar defaults visuales. */
     @FXML private void handleReset() {
         stopAutomaticExecution();
         selectedProgramPath = null; selectedProcessId = null;
         programPathField.clear(); keyboardField.clear(); feedback = "";
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
     }
+    /**
+     * Valida texto entero de entrada y lo envía al FIFO del Orchestrator, sin seleccionar PID ni bloquear
+     * el hilo.
+     */
     @FXML private void handleKeyboardSend() {
         if (keyboardSendButton.isDisabled()) return;
         command(() -> {
@@ -226,9 +256,14 @@ public final class SimulatorController {
             keyboardField.clear(); feedback = "Keyboard value accepted: " + input;
         });
     }
+    /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
     @FunctionalInterface
-    private interface UiCommand { void run() throws ProgramImportException; }
+    private interface UiCommand { /** Ejecuta la acción de UI y permite propagar ProgramImportException a la frontera de errores del Controller. */ void run() throws ProgramImportException; }
 
+    /**
+     * Ejecuta un comando, muestra errores controlados y siempre refresca; ante fallo de ejecución detiene
+     * Automatic.
+     */
     private void command(UiCommand operation) {
         feedback = "";
         try { operation.run(); }
@@ -238,7 +273,12 @@ public final class SimulatorController {
             stopAutomaticExecution(); feedback = failure.getMessage(); showError(feedback);
         } finally { refresh(); }
     }
+    /** Detiene Timeline y desactiva el modo automático sin modificar el modelo. */
     private void stopAutomaticExecution() { automaticTimeline.stop(); automaticMode = false; }
+    /**
+     * Obtiene un único snapshot, informa la primera transición a ERROR sin diagnóstico previo y delega
+     * renderizado.
+     */
     private void refresh() {
         var snapshot = orchestrator.snapshot();
         if (snapshot.simulatorState() == SimulatorState.ERROR
@@ -248,6 +288,10 @@ public final class SimulatorController {
         }
         render(snapshot);
     }
+    /**
+     * Actualiza paneles desde el snapshot y conserva selecciones; detiene Timeline al terminar, fallar o
+     * esperar recursos/input.
+     */
     private void render(SimulatorSnapshot snapshot) {
         view = snapshot;
         if (snapshot.simulatorState() == SimulatorState.ERROR || snapshot.simulatorState() == SimulatorState.FINISHED
@@ -280,6 +324,10 @@ public final class SimulatorController {
         ioStatusLabel.setText(statusText(snapshot) + " | Pending input: " + snapshot.pendingKeyboardRequests().size());
         updateControls(snapshot);
     }
+    /**
+     * Reemplaza filas conservando selección por PID y evita que listeners intermedios borren esa
+     * selección.
+     */
     private void renderProcesses(SimulatorSnapshot snapshot) {
         renderingSelection = true;
         try {
@@ -290,10 +338,12 @@ public final class SimulatorController {
         } finally { renderingSelection = false; }
         renderSelectedProcess();
     }
+    /** Muestra el detalle del PID seleccionado exclusivamente desde el read model actual. */
     private void renderSelectedProcess() {
         pcbDetailArea.setText(view.processes().stream().filter(p -> Objects.equals(selectedProcessId, p.processId()))
                 .findFirst().map(DashboardDetails::process).orElse("Select a process"));
     }
+    /** Muestra registros del CPU activo y tooltips, sin confundirlos con el contexto guardado del PCB. */
     private void renderCpu(SimulatorSnapshot snapshot) {
         var cpu = snapshot.cpu();
         value(pcValueLabel, cpu.map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
@@ -308,6 +358,10 @@ public final class SimulatorController {
         value(equalValueLabel, cpu.map(v -> Boolean.toString(v.flags().equal())).orElse("\u2014"));
         value(overflowValueLabel, cpu.map(v -> Boolean.toString(v.flags().overflow())).orElse("\u2014"));
     }
+    /**
+     * Describe el estado observable y el modo de pacing para la GUI, sin determinar disponibilidad de
+     * negocio.
+     */
     private String statusText(SimulatorSnapshot snapshot) {
         if (snapshot.simulatorState() == SimulatorState.PAUSED) return "Paused; keyboard input is queued until Resume";
         if (snapshot.simulatorState() == SimulatorState.ERROR) return "Execution error; inspect state or Reset";
@@ -324,6 +378,7 @@ public final class SimulatorController {
             default -> "\u2014";
         };
     }
+    /** Habilita controles según lifecycle y runtime del snapshot; no realiza transiciones de dominio. */
     private void updateControls(SimulatorSnapshot snapshot) {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
@@ -337,11 +392,12 @@ public final class SimulatorController {
         mainMemorySlider.setDisable(!configuring); kernelMemorySlider.setDisable(!configuring);
         secondaryStorageSlider.setDisable(!configuring); virtualMemorySlider.setDisable(!configuring);
     }
+    /** Redondea el valor visual a la capacidad entera que se enviará a Application. */
     private static int sliderValue(Slider slider) {
         return (int) Math.round(slider.getValue());
     }
 
-    // Normaliza también el arrastre y mantiene el valor mostrado igual al enviado.
+    /** Normaliza también el arrastre y mantiene el valor mostrado igual al enviado. */
     private static void configureSlider(Slider slider, Label value, Label range) {
         slider.valueProperty().addListener((observable, oldValue, newValue) -> {
             double integer = Math.round(newValue.doubleValue());
@@ -356,11 +412,13 @@ public final class SimulatorController {
                 slider.minProperty(), slider.maxProperty()));
     }
 
+    /** Ajusta máximo a capacidad menos uno y limita el valor dependiente al nuevo rango visual. */
     private static void updateDependentRange(Slider dependent, Slider capacity) {
         dependent.setMax(sliderValue(capacity) - 1);
         dependent.setValue(Math.min(sliderValue(dependent), dependent.getMax()));
     }
 
+    /** Restituye los defaults del modelo en los cuatro sliders y recalcula límites dependientes. */
     private void restoreConfigurationDefaults() {
         var defaults = SimulatorConfiguration.defaults();
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
@@ -371,6 +429,7 @@ public final class SimulatorController {
         virtualMemorySlider.setValue(defaults.virtualMemoryPositions());
     }
 
+    /** Presenta un Alert con el diagnóstico controlado, sin mostrar stack traces al usuario. */
     private void showError(String message) {
         var alert = new Alert(Alert.AlertType.ERROR);
         if (simulatorStateLabel.getScene() != null) alert.initOwner(simulatorStateLabel.getScene().getWindow());

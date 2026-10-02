@@ -9,6 +9,10 @@ public record SimulatorConfiguration(
         int secondaryStoragePositions,
         int virtualMemoryPositions
 ) {
+    /**
+     * Exige MainMemory válida, Secondary de al menos 128 y reserva Virtual de al menos 64 e inferior al
+     * total.
+     */
     public SimulatorConfiguration {
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         if (secondaryStoragePositions < 128) {
@@ -19,6 +23,7 @@ public record SimulatorConfiguration(
         }
     }
 
+    /** Devuelve capacidades aprobadas Main/Kernel/Secondary/Virtual de 256/32/512/64. */
     public static SimulatorConfiguration defaults() {
         return new SimulatorConfiguration(new MemoryConfiguration(256, 32), 512, 64);
     }

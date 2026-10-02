@@ -6,6 +6,7 @@ import java.util.Objects;
 
 /** Programa semántico inmutable, independiente de su origen y ubicación física. */
 public record ProgramImage(String logicalName, List<Instruction> instructions) {
+    /** Copia instrucciones no nulas y exige nombre y programa no vacíos, sin asignar memoria. */
     public ProgramImage {
         Objects.requireNonNull(logicalName, "logicalName must not be null");
         if (logicalName.isBlank()) throw new IllegalArgumentException("Program name must not be blank");

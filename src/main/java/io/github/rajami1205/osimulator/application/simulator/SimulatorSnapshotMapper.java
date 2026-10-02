@@ -12,10 +12,18 @@ import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.storage.*;
 import java.util.*;
 
-/** Copies session observations; never retains mutable entities or allocation handles. */
+/**
+ * Copia observaciones de sesión a un read model inmutable; no expone entidades mutables ni handles de
+ * allocation a Presentation.
+ */
 final class SimulatorSnapshotMapper {
+    /** Impide instanciar el mapper de observaciones de sesión. */
     private SimulatorSnapshotMapper() {}
 
+    /**
+     * Copia observaciones de sesión y genera listas inmutables para JavaFX, tolerando recursos ausentes
+     * antes de Initialize.
+     */
     static SimulatorSnapshot map(SimulatorState state, Optional<RuntimeStatus> status,
             SimulatorConfiguration configuration, CpuRegisters<Instruction> cpu, Optional<ProcessControlBlock> owner,
             MainMemory memory, SecondaryStorage storage, List<Job> jobs, ProcessTable table,
@@ -28,7 +36,7 @@ final class SimulatorSnapshotMapper {
         if (table != null) {
             for (var pcb : table.entries()) {
                 var resource = resources.find(pcb.processId());
-                // A failed registry invariant must not make the ERROR inspection itself fail.
+                // Una invariant fallida del registry no debe impedir inspeccionar el estado ERROR.
                 if (resource.isEmpty() && state == SimulatorState.ERROR) continue;
                 processes.add(process(pcb, resource.orElseThrow()));
             }
@@ -49,7 +57,7 @@ final class SimulatorSnapshotMapper {
                     }
                 } catch (RuntimeException failure) {
                     if (state != SimulatorState.ERROR) throw failure;
-                    // Preserve inspectable CPU/physical cells even if the active allocation is invalid.
+                    // Conserva la inspección del CPU y las celdas físicas aunque la allocation activa sea inválida.
                 }
             }
         }
@@ -60,12 +68,14 @@ final class SimulatorSnapshotMapper {
                 storageRows(storage), screen, cpuTicks);
     }
 
+    /** Copia registros/flags y formatea IR sin retener CpuRegisters ni ejecutar instrucciones. */
     static CpuSnapshot context(CpuContext<Instruction> value) {
         return new CpuSnapshot(value.programCounter(), value.accumulator(), value.ax(), value.bx(), value.cx(),
                 value.dxValue(), value.instructionRegister().map(SemanticFormatter::semanticText),
                 value.ah(), value.alValue(), value.conditionFlags());
     }
 
+    /** Construye detalle del PCB y residencia; omite Base física al estar suspended y copia stack/archivos. */
     private static ProcessDetails process(ProcessControlBlock pcb, ProcessResources resource) {
         Optional<Integer> base = resource.residence() instanceof UserImageResidence.Resident resident
                 ? Optional.of(resident.allocation().base()) : Optional.empty();
@@ -75,6 +85,7 @@ final class SimulatorSnapshotMapper {
                 resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting());
     }
 
+    /** Describe instrucciones y PCBs de forma segura; EmptyContent se representa como ausencia de texto. */
     static Optional<String> memoryText(MemoryContent content) {
         return switch (content) {
             case EmptyContent ignored -> Optional.empty();
@@ -83,6 +94,7 @@ final class SimulatorSnapshotMapper {
         };
     }
 
+    /** Enumera celdas físicas para la vista de memoria; sin sesión devuelve lista vacía. */
     private static List<MemoryEntry> memoryRows(MainMemory memory) {
         if (memory == null) return List.of();
         var rows = new ArrayList<MemoryEntry>(memory.size());
@@ -92,6 +104,7 @@ final class SimulatorSnapshotMapper {
         return rows;
     }
 
+    /** Enumera las regiones físicas de SecondaryStorage con contenido descriptivo para Presentation. */
     private static List<StorageEntry> storageRows(SecondaryStorage storage) {
         if (storage == null) return List.of();
         var rows = new ArrayList<StorageEntry>(storage.size());
@@ -101,6 +114,7 @@ final class SimulatorSnapshotMapper {
         return rows;
     }
 
+    /** Formatea índices, instrucciones, caracteres y posiciones vacías sin exponer recursos mutables. */
     static String storageText(StorageContent content) {
         return switch (content) {
             case EmptyStorageContent ignored -> "—";
@@ -111,6 +125,7 @@ final class SimulatorSnapshotMapper {
         };
     }
 
+    /** Escapa controles, comillas y unidades Unicode no imprimibles para una celda legible y segura. */
     static String characterText(char value) {
         String escaped = switch (value) {
             case '\n' -> "\\n";

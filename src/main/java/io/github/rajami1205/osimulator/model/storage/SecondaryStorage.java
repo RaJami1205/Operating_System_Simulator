@@ -11,7 +11,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Almacenamiento simulado de sesión; no accede al filesystem anfitrión. */
+/**
+ * Storage simulado de sesión: FileIndex compartido por PROGRAM/USER_FILE, área de datos y SWAP reservado
+ * para imágenes completas. No accede al filesystem anfitrión ni implementa paging.
+ */
 public final class SecondaryStorage {
     private final int totalPositions;
     private final int virtualMemoryPositions;
@@ -23,6 +26,10 @@ public final class SecondaryStorage {
     private final FirstFitStorageAllocator allocator;
     private final Map<String, StorageAllocation> allocations = new HashMap<>();
 
+    /**
+     * Valida capacidades y separa índice, datos y SWAP; reserva para índice la mitad previa a SWAP como
+     * política local del proyecto.
+     */
     public SecondaryStorage(int totalPositions, int virtualMemoryPositions) {
         if (totalPositions < 128 || virtualMemoryPositions < 64 || virtualMemoryPositions >= totalPositions) {
             throw new IllegalArgumentException("Invalid Secondary Storage / Virtual Memory capacities");
@@ -40,13 +47,20 @@ public final class SecondaryStorage {
         Arrays.fill(swap, EmptyStorageContent.INSTANCE);
     }
 
+    /** Devuelve posiciones totales de índice, datos y SWAP de la sesión. */
     public int size() { return totalPositions; }
+    /** Devuelve la capacidad física reservada al área SWAP, no memoria paginada. */
     public int virtualMemoryPositions() { return virtualMemoryPositions; }
+    /** Devuelve slots iniciales reservados para FileIndex. */
     public int indexPositions() { return index.capacity(); }
+    /** Devuelve el primer address físico de PROGRAM_DATA después del índice. */
     public int dataStart() { return index.capacity(); }
+    /** Devuelve el límite exclusivo del área de datos, que coincide con el inicio de SWAP. */
     public int dataEndExclusive() { return swapStart; }
+    /** Devuelve totalPositions menos virtualMemoryPositions, inicio físico del área SWAP. */
     public int swapStart() { return swapStart; }
 
+    /** Valida el address físico y resuelve FILE_INDEX, PROGRAM_DATA o SWAP. */
     public StorageRegion regionOf(int address) {
         if (address < 0 || address >= totalPositions) {
             throw new IndexOutOfBoundsException("Invalid storage address: " + address);
@@ -64,11 +78,14 @@ public final class SecondaryStorage {
         };
     }
 
+    /** Crea una vista inmutable con address, región y contenido de una posición válida. */
     public StorageCell cell(int address) {
         return new StorageCell(address, regionOf(address), read(address));
     }
 
+    /** Busca por nombre exclusivamente entradas PROGRAM; USER_FILE no se presenta como programa. */
     public Optional<FileIndexEntry> findProgram(String name) { return index.find(name).filter(entry -> entry.kind() == FileEntryKind.PROGRAM); }
+    /** Devuelve la vista inmutable del índice compartido, en orden físico de slot. */
     public List<FileIndexEntry> entries() { return index.entries(); }
 
     /** Publica sólo después de escribir; cualquier fallo posterior a reservar revierte la operación. */
@@ -97,6 +114,10 @@ public final class SecondaryStorage {
         }
     }
 
+    /**
+     * Recupera una lista inmutable de instrucciones según el índice; rechaza programa ausente o contenido
+     * heterogéneo inválido.
+     */
     public List<Instruction> readProgram(String name) {
         var entry = findProgram(name).orElseThrow(() -> new StorageException("Unknown program: " + name));
         var result = new ArrayList<Instruction>(entry.length());
@@ -121,12 +142,17 @@ public final class SecondaryStorage {
         return true;
     }
 
+    /** Exige que el nombre exista en el índice como USER_FILE, sin aceptar un PROGRAM homónimo. */
     public FileIndexEntry userFile(String name) {
         var entry = index.find(name).orElseThrow(() -> new StorageException("Unknown user file: " + name));
         if (entry.kind() != FileEntryKind.USER_FILE) throw new StorageException("Entry is not a user file: " + name);
         return entry;
     }
 
+    /**
+     * Reserva una posición mínima y publica archivo de longitud cero; revierte índice, handle y contenido
+     * si falla la publicación.
+     */
     public FileIndexEntry createUserFile(String name) {
         index.validatePublication(name);
         var allocation = allocator.allocate(1);
@@ -147,6 +173,7 @@ public final class SecondaryStorage {
         }
     }
 
+    /** Reconstruye texto de la longitud lógica indexada y rechaza contenido distinto de UserFileContent. */
     public String readUserFile(String name) {
         var entry = userFile(name);
         var result = new StringBuilder(entry.length());
@@ -159,7 +186,10 @@ public final class SecondaryStorage {
         return result.toString();
     }
 
-    /** Complete replacement; shrinking deliberately retains the original allocation capacity. */
+    /**
+     * Reemplaza todo el texto con rollback de publicación; al reducirlo conserva capacidad previa y al
+     * crecer reserva primero otro bloque.
+     */
     public void writeUserFile(String name, String content) {
         var previous = userFile(name);
         Objects.requireNonNull(content, "content must not be null");
@@ -197,11 +227,12 @@ public final class SecondaryStorage {
                 allocator.release(allocation);
             }
         }
-        // The retained, prevalidated handle remains active until replacement publication succeeds.
+        // El handle original ya validado permanece activo hasta publicar correctamente el reemplazo.
         allocator.release(oldAllocation);
         clear(oldAllocation);
     }
 
+    /** Valida USER_FILE y su handle activo antes de liberar datos y retirar metadata del índice. */
     public void deleteUserFile(String name) {
         userFile(name);
         var allocation = requireAllocation(name);
@@ -211,14 +242,17 @@ public final class SecondaryStorage {
         index.remove(name);
     }
 
+    /** Exige el handle activo asociado al nombre; no reconstruye identidad usando su dirección. */
     private StorageAllocation requireAllocation(String name) {
         var allocation = allocations.get(name);
         if (!allocator.isActive(allocation)) throw new StorageException("Missing active allocation: " + name);
         return allocation;
     }
 
+    /** Reserva un bloque contiguo dentro del allocator SWAP separado del área de programas y archivos. */
     public StorageAllocation allocateSwap(int size) { return swapAllocator.allocate(size); }
 
+    /** Exige handle original activo dentro de SWAP; rechaza stale/foreign antes de acceder al contenido. */
     private void validateSwap(StorageAllocation allocation) {
         if (!swapAllocator.isActive(allocation) || allocation.base() < swapStart
                 || allocation.endExclusive() > size()) {
@@ -227,7 +261,7 @@ public final class SecondaryStorage {
         }
     }
 
-    /** Full-image replacement: validates and prepares every cell before publication. */
+    /** Valida handle y tamaño exacto de la imagen completa antes de publicar instrucciones en SWAP. */
     public void writeSwapBlock(StorageAllocation allocation, List<Instruction> image) {
         validateSwap(allocation);
         var instructions = List.copyOf(Objects.requireNonNull(image, "image must not be null"));
@@ -236,6 +270,7 @@ public final class SecondaryStorage {
         System.arraycopy(contents, 0, swap, allocation.base() - swapStart, contents.length);
     }
 
+    /** Devuelve copia inmutable de una imagen completa tras validar identidad y contenido de cada posición. */
     public List<Instruction> readSwapBlock(StorageAllocation allocation) {
         validateSwap(allocation);
         var image = new ArrayList<Instruction>(allocation.size());
@@ -248,6 +283,7 @@ public final class SecondaryStorage {
         return List.copyOf(image);
     }
 
+    /** Valida la reserva original, la libera y vacía su contenido sin afectar PROGRAM_DATA. */
     public void releaseSwap(StorageAllocation allocation) {
         validateSwap(allocation);
         swapAllocator.release(allocation);
@@ -255,6 +291,7 @@ public final class SecondaryStorage {
                 EmptyStorageContent.INSTANCE);
     }
 
+    /** Vacía datos, SWAP e índice y reinicia ambos allocators, invalidando todos los handles de sesión. */
     public void reset() {
         Arrays.fill(data, EmptyStorageContent.INSTANCE);
         Arrays.fill(swap, EmptyStorageContent.INSTANCE);
@@ -264,6 +301,7 @@ public final class SecondaryStorage {
         allocator.reset();
     }
 
+    /** Vacía contenido del rango PROGRAM_DATA indicado; la liberación del handle se realiza por separado. */
     private void clear(StorageAllocation allocation) {
         Arrays.fill(data, allocation.base() - dataStart(), allocation.endExclusive() - dataStart(),
                 EmptyStorageContent.INSTANCE);

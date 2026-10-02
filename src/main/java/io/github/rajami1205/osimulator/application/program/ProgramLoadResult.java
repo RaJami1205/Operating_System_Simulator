@@ -7,6 +7,10 @@ import java.util.Objects;
 
 /** PCB canónico y reserva USER original; el receptor asume ownership de la reserva. */
 public record ProgramLoadResult(ProcessControlBlock pcb, MemoryAllocation userAllocation) {
+    /**
+     * Exige PCB y allocation USER no nulos con Base y tamaño coincidentes; conserva el handle que
+     * transfiere el Loader.
+     */
     public ProgramLoadResult {
         Objects.requireNonNull(pcb, "pcb must not be null");
         Objects.requireNonNull(userAllocation, "userAllocation must not be null");

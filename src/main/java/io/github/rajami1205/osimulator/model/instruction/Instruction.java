@@ -17,12 +17,15 @@ public sealed interface Instruction
                 SwapInstruction, CmpInstruction, JmpInstruction, JeInstruction, JneInstruction,
                 ParamInstruction, PushInstruction, PopInstruction, InterruptInstruction {
 
-    // Identifica la operación semántica representada.
+    /** Identifica el tipo semántico de instrucción para dispatch y formatting. */
     Opcode opcode();
 
     /** Vista derivada, ordenada e inmutable de los operandos semánticos. */
     List<InstructionOperand> operands();
 
-    /** Peso oficial del tipo de instrucción; metadata sin efecto runtime en F05. */
+    /**
+     * Expone el peso oficial en CPU ticks; ExecutionEngine conserva el progreso y aplica la semántica al
+     * completarlo.
+     */
     ExecutionWeight executionWeight();
 }

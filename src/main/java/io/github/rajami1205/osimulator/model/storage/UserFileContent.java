@@ -1,4 +1,7 @@
 package io.github.rajami1205.osimulator.model.storage;
 
-/** One Java UTF-16 code unit per simulated storage position. */
+/**
+ * Una unidad UTF-16 de Java por posición simulada de archivo; no equivale necesariamente a un carácter
+ * Unicode completo.
+ */
 public record UserFileContent(char value) implements StorageContent { }

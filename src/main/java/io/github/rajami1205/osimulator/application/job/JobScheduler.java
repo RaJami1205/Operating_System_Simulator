@@ -7,11 +7,12 @@ import io.github.rajami1205.osimulator.model.job.JobState;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Selección de admisión por submission order, independiente del futuro CPU scheduler. */
+/** Selecciona admisiones por orden de submission; no elige al owner del CPU ni adelanta Jobs por su tamaño. */
 public final class JobScheduler {
     private final JobList jobs;
     private final ProcessAdmissionService admission;
 
+    /** Recibe JobList y servicio de admission no nulos para coordinar un intento en orden de llegada. */
     public JobScheduler(JobList jobs, ProcessAdmissionService admission) {
         this.jobs = Objects.requireNonNull(jobs, "jobs must not be null");
         this.admission = Objects.requireNonNull(admission, "admission must not be null");

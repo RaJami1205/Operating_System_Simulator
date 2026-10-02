@@ -9,7 +9,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 
-/** FIFO external completion changes saved contexts, never the active CPU. */
+/**
+ * Completa solicitudes INT09 en FIFO sobre el contexto guardado del PCB, nunca sobre el CPU activo de otro
+ * proceso. La completion no consume ticks.
+ */
 public final class KeyboardCompletionService {
     private final KeyboardDevice keyboard;
     private final ProcessTable table;
@@ -18,6 +21,7 @@ public final class KeyboardCompletionService {
     private final SuspendedReadyQueue suspended;
     private final LinkedHashMap<Integer, PendingKeyboardRequest> pending = new LinkedHashMap<>();
 
+    /** Asocia dispositivo FIFO, PCBs y colas de la sesión; comienza sin solicitudes pendientes. */
     public KeyboardCompletionService(KeyboardDevice keyboard, ProcessTable table, ProcessResourceRegistry resources,
             ReadyQueue ready, SuspendedReadyQueue suspended) {
         this.keyboard = Objects.requireNonNull(keyboard);
@@ -27,9 +31,12 @@ public final class KeyboardCompletionService {
         this.suspended = Objects.requireNonNull(suspended);
     }
 
+    /** Devuelve copia inmutable de solicitudes en orden FIFO para inspección. */
     public List<PendingKeyboardRequest> pending() { return List.copyOf(pending.values()); }
+    /** Retira la solicitud del PID durante cleanup, sin consumir valores del dispositivo. */
     public void remove(int pid) { pending.remove(pid); }
 
+    /** Registra el INT09 de un PCB canónico BLOCKED con PC ejecutable, rechazando duplicados. */
     public void register(ProcessControlBlock pcb) {
         Objects.requireNonNull(pcb, "pcb must not be null");
         if (table.find(pcb.processId()).orElse(null) != pcb || pcb.state() != ProcessState.BLOCKED
@@ -40,7 +47,10 @@ public final class KeyboardCompletionService {
         if (pending.putIfAbsent(pcb.processId(), request) != null) throw new IllegalStateException("Duplicate keyboard request");
     }
 
-    /** Returns only terminal completions; the runtime performs resource cleanup. */
+    /**
+     * Entrega input FIFO al DX guardado y avanza el PC sin ticks; reencola READY/READY_SUSPENDED o
+     * devuelve PID terminales para cleanup.
+     */
     public List<Integer> drain() {
         var terminated = new ArrayList<Integer>();
         while (!pending.isEmpty() && keyboard.hasInput()) {

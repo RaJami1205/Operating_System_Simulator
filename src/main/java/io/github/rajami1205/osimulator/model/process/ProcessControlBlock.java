@@ -8,7 +8,8 @@ import io.github.rajami1205.osimulator.model.cpu.CpuContext;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 
 /**
- * Representa la identidad, ubicación del programa y estado inicial del proceso.
+ * Estado persistente del proceso: contexto guardado, bounds, stack, archivos, accounting y enlace Kernel.
+ * El CPU activo permanece separado y priority sólo es metadata para FCFS.
  */
 public final class ProcessControlBlock {
 
@@ -21,7 +22,7 @@ public final class ProcessControlBlock {
     private CpuContext<Instruction> cpuContext = CpuContext.initial();
     private int priority;
     private Optional<PcbAddress> nextPcbAddress = Optional.empty();
-    // Valida y fija los metadatos del proceso con su PC inicial y estado NEW.
+    /** Valida y fija los metadatos del proceso con su PC inicial y estado NEW. */
     public ProcessControlBlock(
             int processId,
             int programStartAddress,
@@ -32,6 +33,7 @@ public final class ProcessControlBlock {
         this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
     }
 
+    /** Devuelve bounds físicos vigentes; rechaza la consulta mientras el proceso está suspended. */
     public ProcessMemoryBounds memoryBounds() {
         if (state == ProcessState.READY_SUSPENDED || state == ProcessState.BLOCKED_SUSPENDED) {
             throw new IllegalStateException("Suspended process has no current MainMemory bounds");
@@ -39,7 +41,7 @@ public final class ProcessControlBlock {
         return memoryBounds;
     }
 
-    /** Publishes relocation while suspended; logical extent and context remain unchanged. */
+    /** Publica nueva Base durante swap-in; exige estado suspended y el mismo Limit lógico. */
     public void relocateSuspended(ProcessMemoryBounds bounds) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
@@ -48,54 +50,67 @@ public final class ProcessControlBlock {
         }
         memoryBounds = bounds;
     }
+    /** Expone el contexto inmutable guardado, que puede diferir del CPU mientras el proceso ejecuta. */
     public CpuContext<Instruction> cpuContext() { return cpuContext; }
+    /** Entrega el stack propio y mutable del proceso para operaciones del dominio. */
     public ProcessStack stack() { return stack; }
+    /** Entrega la tabla de nombres abiertos propia del proceso, no el índice global de storage. */
     public OpenFileTable openFiles() { return openFiles; }
+    /** Consulta el record inmutable de timestamps reales y ticks consumidos. */
     public ProcessAccounting accounting() { return accounting; }
+    /** Consulta metadata de prioridad que FCFS no usa como criterio de selección. */
     public int priority() { return priority; }
+    /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */
     public Optional<PcbAddress> nextPcbAddress() { return nextPcbAddress; }
 
+    /** Reemplaza el contexto guardado sólo después de validar su PC lógico contra Limit. */
     public void replaceCpuContext(CpuContext<Instruction> context) {
         Objects.requireNonNull(context, "context must not be null");
         validateOperationalProgramCounter(context.programCounter());
         cpuContext = context;
     }
 
+    /** Publica un record de accounting no nulo sin mutar la instancia histórica anterior. */
     public void replaceAccounting(ProcessAccounting accounting) {
         this.accounting = Objects.requireNonNull(accounting, "accounting must not be null");
     }
 
+    /** Actualiza la metadata de prioridad sin reordenar ReadyQueue. */
     public void setPriority(int priority) { this.priority = priority; }
 
+    /** Reemplaza el enlace opcional no nulo; la coordinación valida después su destino canónico. */
     public void setNextPcbAddress(Optional<PcbAddress> address) {
         nextPcbAddress = Objects.requireNonNull(address, "address must not be null");
     }
-    // Expone el identificador del proceso.
+    /** Expone el identificador del proceso. */
     public int processId() {
         return processId;
     }
 
-    // Expone la dirección inicial del programa cargado.
+    /** Expone la dirección inicial del programa cargado. */
     public int programStartAddress() {
         return memoryBounds().base();
     }
 
-    // Expone la cantidad de instrucciones del proceso.
+    /** Expone la cantidad de instrucciones del proceso. */
     public int instructionCount() {
         return memoryBounds.limit();
     }
 
-    // Expone el límite exclusivo del programa en memoria.
+    /** Expone el límite exclusivo del programa en memoria. */
     public int programEndAddressExclusive() {
         return memoryBounds().endExclusive();
     }
 
-    // Expone el estado actual del proceso.
+    /** Expone el estado actual del proceso. */
     public ProcessState state() {
         return state;
     }
 
-    // Actualiza el estado del proceso rechazando valores nulos.
+    /**
+     * Asigna un estado no nulo; la validación de la transición contextual corresponde a los servicios de
+     * Application.
+     */
     public void changeState(ProcessState newState) {
         ProcessState nonNullState = Objects.requireNonNull(
                 newState,
@@ -104,18 +119,18 @@ public final class ProcessControlBlock {
         state = nonNullState;
     }
 
-    // Expone el PC guardado para el proceso.
+    /** Expone el PC guardado para el proceso. */
     public int programCounter() {
         return cpuContext.programCounter();
     }
 
-    // Mantiene el PC guardado dentro del programa o en su límite final exclusivo.
+    /** Mantiene el PC guardado dentro del programa o en su límite final exclusivo. */
     public void setProgramCounter(int programCounter) {
         validateOperationalProgramCounter(programCounter);
         cpuContext = cpuContext.withProgramCounter(programCounter);
     }
 
-    // El PC lógico admite Limit únicamente como marcador terminal.
+    /** El PC lógico admite Limit únicamente como marcador terminal. */
     private void validateOperationalProgramCounter(int programCounter) {
         if (programCounter < 0 || programCounter > memoryBounds.limit()) {
             throw new InvalidProcessProgramCounterException(
@@ -123,7 +138,7 @@ public final class ProcessControlBlock {
                             + " and " + memoryBounds.limit() + ": " + programCounter);
         }
     }
-    // Exige un identificador positivo para el proceso.
+    /** Exige un identificador positivo para el proceso. */
     private static void validateProcessId(int processId) {
         if (processId <= 0) {
             throw new InvalidProcessConfigurationException(

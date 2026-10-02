@@ -18,10 +18,11 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+/** Punto de entrada JavaFX: compone dependencias mediante constructor injection y carga el dashboard FXML. */
 public class SimulatorApplication extends Application {
 
+    /** Compone las dependencias, carga el FXML y muestra la ventana principal. */
     @Override
-    // Compone las dependencias, carga el FXML y muestra la ventana principal.
     public void start(Stage primaryStage) throws IOException {
         URL viewResource = Objects.requireNonNull(
                 SimulatorApplication.class.getResource(
@@ -44,7 +45,7 @@ public class SimulatorApplication extends Application {
         primaryStage.show();
     }
 
-    // Inicia la aplicación de escritorio mediante JavaFX.
+    /** Inicia la aplicación de escritorio mediante JavaFX. */
     public static void main(String[] args) {
         launch(args);
     }

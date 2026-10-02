@@ -29,6 +29,7 @@ public final class ProcessAdmissionService {
     private final ProcessResourceRegistry resources;
     private long nextProcessId = 1;
 
+    /** Recibe los recursos canónicos de sesión y el loader; inicia PID sin apropiarse del CPU. */
     public ProcessAdmissionService(JobList jobs, SecondaryStorage storage, MainMemory memory,
             ProcessTable processes, ProgramLoader loader, ReadyQueue readyQueue, ProcessResourceRegistry resources) {
         this.resources = Objects.requireNonNull(resources, "resources must not be null");
@@ -40,6 +41,10 @@ public final class ProcessAdmissionService {
         this.readyQueue = Objects.requireNonNull(readyQueue, "readyQueue must not be null");
     }
 
+    /**
+     * Intenta admitir el Job PENDING con PCB Kernel, programa USER y READY; devuelve Waiting sólo por
+     * capacidad ordinaria y revierte publicaciones ante fallo.
+     */
     public AdmissionResult admit(int jobId) {
         Job job = jobs.find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
         if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
@@ -52,7 +57,7 @@ public final class ProcessAdmissionService {
         var program = storage.readProgram(job.programName());
         MemoryAllocation kernel;
         try {
-            // Positive fixed size: an allocation failure here means insufficient capacity.
+            // El tamaño fijo es positivo: un fallo de allocation aquí indica capacidad insuficiente.
             kernel = memory.allocateKernel(1);
         } catch (MemoryAllocationException shortage) {
             return new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY);
@@ -85,7 +90,7 @@ public final class ProcessAdmissionService {
             }
             readyQueue.enqueue(pid);
             enqueued = true;
-            // Copy-before-publication; no potentially failing work follows this commit.
+            // Copia antes de publicar; tras este commit no quedan operaciones de preparación que puedan fallar.
             jobs.markAdmitted(jobId);
             nextProcessId++;
             return result;
@@ -103,8 +108,8 @@ public final class ProcessAdmissionService {
                 cleanup(failure, () -> memory.release(user));
             }
             cleanup(failure, () -> memory.release(kernel));
-            // Loader wraps only allocateUser failures with this cause, after validating size.
-            // Never hide a failed rollback behind an ordinary Waiting result.
+            // El Loader envuelve con esta causa sólo fallos de allocateUser, tras validar el tamaño.
+            // Un rollback fallido no debe ocultarse como un resultado Waiting ordinario.
             if (loaded == null && failure instanceof ProgramLoadException
                     && failure.getCause() instanceof MemoryAllocationException
                     && failure.getSuppressed().length == 0
@@ -115,6 +120,10 @@ public final class ProcessAdmissionService {
         }
     }
 
+    /**
+     * Ejecuta una acción de rollback y conserva cualquier fallo secundario como suppressed del diagnóstico
+     * original.
+     */
     private static void cleanup(Throwable original, Runnable action) {
         try {
             action.run();

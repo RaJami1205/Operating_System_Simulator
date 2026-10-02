@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.cpu.exception;
  */
 public class InvalidProgramCounterException extends IllegalArgumentException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidProgramCounterException(String message) {
         super(message);
     }

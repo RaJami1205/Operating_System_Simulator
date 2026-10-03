@@ -161,7 +161,7 @@ public final class SimulatorController {
         regions(memoryTable, v -> v.region().equals("KERNEL") ? "kernel-row" : "user-row");
         column(storageAddressColumn, v -> Integer.toString(v.address())); column(storageRegionColumn, v -> v.region().name());
         column(storageContentColumn, StorageEntry::content);
-        regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case SWAP -> "swap-row"; });
+        regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case VIRTUAL_MEMORY -> "virtual-memory-row"; });
         column(jobIdColumn, v -> Integer.toString(v.jobId())); column(jobNameColumn, Job::programName); column(jobStateColumn, v -> v.state().name());
         column(pidColumn, v -> Integer.toString(v.processId())); column(processStateColumn, v -> v.state().name());
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());

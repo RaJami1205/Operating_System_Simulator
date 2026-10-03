@@ -16,17 +16,17 @@ class SecondaryStorageTest {
 
     @ParameterizedTest
     @CsvSource({"512,64,224,448", "128,64,32,64", "129,64,32,65", "1024,128,448,896", "128,127,1,1", "8192,8191,1,1"})
-    void layoutIsExactAndEveryAddressHasOneRegion(int total, int virtual, int indexSize, int swapStart) {
+    void layoutIsExactAndEveryAddressHasOneRegion(int total, int virtual, int indexSize, int virtualMemoryStart) {
         var storage = new SecondaryStorage(total, virtual);
         assertEquals(total, storage.size());
         assertEquals(virtual, storage.virtualMemoryPositions());
         assertEquals(indexSize, storage.indexPositions());
         assertEquals(indexSize, storage.dataStart());
-        assertEquals(swapStart, storage.dataEndExclusive());
-        assertEquals(swapStart, storage.swapStart());
+        assertEquals(virtualMemoryStart, storage.dataEndExclusive());
+        assertEquals(virtualMemoryStart, storage.swapStart());
         for (int address = 0; address < total; address++) {
             var region = address < indexSize ? StorageRegion.FILE_INDEX
-                    : address < swapStart ? StorageRegion.PROGRAM_DATA : StorageRegion.SWAP;
+                    : address < virtualMemoryStart ? StorageRegion.PROGRAM_DATA : StorageRegion.VIRTUAL_MEMORY;
             assertEquals(region, storage.regionOf(address));
             assertSame(EmptyStorageContent.INSTANCE, storage.read(address));
             assertEquals(new StorageCell(address, region, EmptyStorageContent.INSTANCE), storage.cell(address));
@@ -119,7 +119,7 @@ class SecondaryStorageTest {
 
     @Test
     void fullIndexFailsWithoutReservationLeakAndReusesItsFirstSlot() {
-        // Odd nonSwap leaves one more data cell than index slots.
+        // An odd number of positions before VIRTUAL_MEMORY leaves one more data cell than index slots.
         var storage = new SecondaryStorage(129, 64);
         for (int i = 0; i < 32; i++) storage.storeProgram("p" + i, List.of(load));
         var before = cells(storage);
@@ -159,7 +159,7 @@ class SecondaryStorageTest {
             assertTrue(storage.entries().isEmpty());
             assertFalse(storage.removeProgram("p"));
             assertSame(EmptyStorageContent.INSTANCE, storage.read(0));
-            assertEquals(StorageRegion.SWAP, storage.regionOf(1));
+            assertEquals(StorageRegion.VIRTUAL_MEMORY, storage.regionOf(1));
             storage.reset();
         }
     }

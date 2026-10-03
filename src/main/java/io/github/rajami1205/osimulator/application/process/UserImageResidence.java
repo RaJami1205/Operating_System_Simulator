@@ -6,7 +6,7 @@ import io.github.rajami1205.osimulator.model.storage.StorageAllocation;
 import java.util.Objects;
 
 /**
- * Residencia exclusiva de la imagen en USER o SWAP mediante su handle original; nunca reconstruye
+ * Residencia exclusiva de la imagen en USER o VIRTUAL_MEMORY mediante su handle original; nunca reconstruye
  * identidad a partir de Base/Limit.
  */
 public sealed interface UserImageResidence {
@@ -18,9 +18,9 @@ public sealed interface UserImageResidence {
             if (allocation.region() != MemoryRegion.USER) throw new IllegalArgumentException("USER allocation required");
         }
     }
-    /** Imagen respaldada en SWAP; no mantiene una allocation física USER. */
+    /** Imagen respaldada en VIRTUAL_MEMORY; no mantiene una allocation física USER. */
     record Suspended(StorageAllocation allocation) implements UserImageResidence {
-        /** Exige el handle no nulo que identifica la imagen en SWAP. */
+        /** Exige el handle no nulo que identifica la imagen en VIRTUAL_MEMORY. */
         public Suspended { Objects.requireNonNull(allocation); }
     }
 }

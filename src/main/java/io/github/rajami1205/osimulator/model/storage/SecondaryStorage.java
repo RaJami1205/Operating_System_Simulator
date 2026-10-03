@@ -12,22 +12,22 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Storage simulado de sesión: FileIndex compartido por PROGRAM/USER_FILE, área de datos y SWAP reservado
+ * Storage simulado de sesión: FileIndex compartido por PROGRAM/USER_FILE, área de datos y VIRTUAL_MEMORY reservado
  * para imágenes completas. No accede al filesystem anfitrión ni implementa paging.
  */
 public final class SecondaryStorage {
     private final int totalPositions;
     private final int virtualMemoryPositions;
-    private final int swapStart;
+    private final int virtualMemoryStart;
     private final FileIndex index;
     private final StorageContent[] data;
-    private final StorageContent[] swap;
-    private final FirstFitStorageAllocator swapAllocator;
+    private final StorageContent[] virtualMemory;
+    private final FirstFitStorageAllocator virtualMemoryAllocator;
     private final FirstFitStorageAllocator allocator;
     private final Map<String, StorageAllocation> allocations = new HashMap<>();
 
     /**
-     * Valida capacidades y separa índice, datos y SWAP; reserva para índice la mitad previa a SWAP como
+     * Valida capacidades y separa índice, datos y VIRTUAL_MEMORY; reserva para índice la mitad previa a VIRTUAL_MEMORY como
      * política local del proyecto.
      */
     public SecondaryStorage(int totalPositions, int virtualMemoryPositions) {
@@ -36,37 +36,37 @@ public final class SecondaryStorage {
         }
         this.totalPositions = totalPositions;
         this.virtualMemoryPositions = virtualMemoryPositions;
-        swapStart = totalPositions - virtualMemoryPositions;
+        virtualMemoryStart = totalPositions - virtualMemoryPositions;
         // Política del proyecto, no una capacidad de índice fijada por el enunciado.
-        index = new FileIndex(Math.max(1, swapStart / 2));
-        data = new StorageContent[swapStart - index.capacity()];
-        allocator = new FirstFitStorageAllocator(index.capacity(), swapStart);
+        index = new FileIndex(Math.max(1, virtualMemoryStart / 2));
+        data = new StorageContent[virtualMemoryStart - index.capacity()];
+        allocator = new FirstFitStorageAllocator(index.capacity(), virtualMemoryStart);
         Arrays.fill(data, EmptyStorageContent.INSTANCE);
-        swap = new StorageContent[virtualMemoryPositions];
-        swapAllocator = new FirstFitStorageAllocator(swapStart, totalPositions);
-        Arrays.fill(swap, EmptyStorageContent.INSTANCE);
+        virtualMemory = new StorageContent[virtualMemoryPositions];
+        virtualMemoryAllocator = new FirstFitStorageAllocator(virtualMemoryStart, totalPositions);
+        Arrays.fill(virtualMemory, EmptyStorageContent.INSTANCE);
     }
 
-    /** Devuelve posiciones totales de índice, datos y SWAP de la sesión. */
+    /** Devuelve posiciones totales de índice, datos y VIRTUAL_MEMORY de la sesión. */
     public int size() { return totalPositions; }
-    /** Devuelve la capacidad física reservada al área SWAP, no memoria paginada. */
+    /** Devuelve la capacidad física reservada al área VIRTUAL_MEMORY, no memoria paginada. */
     public int virtualMemoryPositions() { return virtualMemoryPositions; }
     /** Devuelve slots iniciales reservados para FileIndex. */
     public int indexPositions() { return index.capacity(); }
     /** Devuelve el primer address físico de PROGRAM_DATA después del índice. */
     public int dataStart() { return index.capacity(); }
-    /** Devuelve el límite exclusivo del área de datos, que coincide con el inicio de SWAP. */
-    public int dataEndExclusive() { return swapStart; }
-    /** Devuelve totalPositions menos virtualMemoryPositions, inicio físico del área SWAP. */
-    public int swapStart() { return swapStart; }
+    /** Devuelve el límite exclusivo del área de datos, que coincide con el inicio de VIRTUAL_MEMORY. */
+    public int dataEndExclusive() { return virtualMemoryStart; }
+    /** Devuelve totalPositions menos virtualMemoryPositions, inicio físico del área VIRTUAL_MEMORY. */
+    public int swapStart() { return virtualMemoryStart; }
 
-    /** Valida el address físico y resuelve FILE_INDEX, PROGRAM_DATA o SWAP. */
+    /** Valida el address físico y resuelve FILE_INDEX, PROGRAM_DATA o VIRTUAL_MEMORY. */
     public StorageRegion regionOf(int address) {
         if (address < 0 || address >= totalPositions) {
             throw new IndexOutOfBoundsException("Invalid storage address: " + address);
         }
         if (address < dataStart()) return StorageRegion.FILE_INDEX;
-        return address < swapStart ? StorageRegion.PROGRAM_DATA : StorageRegion.SWAP;
+        return address < virtualMemoryStart ? StorageRegion.PROGRAM_DATA : StorageRegion.VIRTUAL_MEMORY;
     }
 
     /** El índice y cada región tienen una única representación física. */
@@ -74,7 +74,7 @@ public final class SecondaryStorage {
         return switch (regionOf(address)) {
             case FILE_INDEX -> index.read(address);
             case PROGRAM_DATA -> data[address - dataStart()];
-            case SWAP -> swap[address - swapStart];
+            case VIRTUAL_MEMORY -> virtualMemory[address - virtualMemoryStart];
         };
     }
 
@@ -249,25 +249,25 @@ public final class SecondaryStorage {
         return allocation;
     }
 
-    /** Reserva un bloque contiguo dentro del allocator SWAP separado del área de programas y archivos. */
-    public StorageAllocation allocateSwap(int size) { return swapAllocator.allocate(size); }
+    /** Reserva un bloque contiguo dentro del allocator VIRTUAL_MEMORY separado del área de programas y archivos. */
+    public StorageAllocation allocateSwap(int size) { return virtualMemoryAllocator.allocate(size); }
 
-    /** Exige handle original activo dentro de SWAP; rechaza stale/foreign antes de acceder al contenido. */
+    /** Exige handle original activo dentro de VIRTUAL_MEMORY; rechaza stale/foreign antes de acceder al contenido. */
     private void validateSwap(StorageAllocation allocation) {
-        if (!swapAllocator.isActive(allocation) || allocation.base() < swapStart
+        if (!virtualMemoryAllocator.isActive(allocation) || allocation.base() < virtualMemoryStart
                 || allocation.endExclusive() > size()) {
             throw new InvalidStorageReleaseException(
-                    "SWAP requires an active original allocation in its bounded region");
+                    "VIRTUAL_MEMORY requires an active original allocation in its bounded region");
         }
     }
 
-    /** Valida handle y tamaño exacto de la imagen completa antes de publicar instrucciones en SWAP. */
+    /** Valida handle y tamaño exacto de la imagen completa antes de publicar instrucciones en VIRTUAL_MEMORY. */
     public void writeSwapBlock(StorageAllocation allocation, List<Instruction> image) {
         validateSwap(allocation);
         var instructions = List.copyOf(Objects.requireNonNull(image, "image must not be null"));
-        if (instructions.size() != allocation.size()) throw new StorageException("SWAP image size mismatch");
+        if (instructions.size() != allocation.size()) throw new StorageException("VIRTUAL_MEMORY image size mismatch");
         var contents = instructions.stream().map(StoredInstructionContent::new).toArray(StoredInstructionContent[]::new);
-        System.arraycopy(contents, 0, swap, allocation.base() - swapStart, contents.length);
+        System.arraycopy(contents, 0, virtualMemory, allocation.base() - virtualMemoryStart, contents.length);
     }
 
     /** Devuelve copia inmutable de una imagen completa tras validar identidad y contenido de cada posición. */
@@ -275,8 +275,8 @@ public final class SecondaryStorage {
         validateSwap(allocation);
         var image = new ArrayList<Instruction>(allocation.size());
         for (int offset = 0; offset < allocation.size(); offset++) {
-            if (!(swap[allocation.base() - swapStart + offset] instanceof StoredInstructionContent content)) {
-                throw new StorageException("Incomplete or invalid SWAP image");
+            if (!(virtualMemory[allocation.base() - virtualMemoryStart + offset] instanceof StoredInstructionContent content)) {
+                throw new StorageException("Incomplete or invalid VIRTUAL_MEMORY image");
             }
             image.add(content.instruction());
         }
@@ -286,16 +286,16 @@ public final class SecondaryStorage {
     /** Valida la reserva original, la libera y vacía su contenido sin afectar PROGRAM_DATA. */
     public void releaseSwap(StorageAllocation allocation) {
         validateSwap(allocation);
-        swapAllocator.release(allocation);
-        Arrays.fill(swap, allocation.base() - swapStart, allocation.endExclusive() - swapStart,
+        virtualMemoryAllocator.release(allocation);
+        Arrays.fill(virtualMemory, allocation.base() - virtualMemoryStart, allocation.endExclusive() - virtualMemoryStart,
                 EmptyStorageContent.INSTANCE);
     }
 
-    /** Vacía datos, SWAP e índice y reinicia ambos allocators, invalidando todos los handles de sesión. */
+    /** Vacía datos, VIRTUAL_MEMORY e índice y reinicia ambos allocators, invalidando todos los handles de sesión. */
     public void reset() {
         Arrays.fill(data, EmptyStorageContent.INSTANCE);
-        Arrays.fill(swap, EmptyStorageContent.INSTANCE);
-        swapAllocator.reset();
+        Arrays.fill(virtualMemory, EmptyStorageContent.INSTANCE);
+        virtualMemoryAllocator.reset();
         index.reset();
         allocations.clear();
         allocator.reset();

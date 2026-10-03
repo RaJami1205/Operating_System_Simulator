@@ -104,7 +104,7 @@ class DashboardSnapshotTest {
         assertEquals(Optional.of("MOV AX, 7"), snapshot.memory().get(32).content());
         assertEquals("KERNEL", snapshot.memory().get(31).region()); assertEquals("USER", snapshot.memory().get(32).region());
         assertEquals(StorageRegion.FILE_INDEX, snapshot.storage().getFirst().region());
-        assertEquals(StorageRegion.SWAP, snapshot.storage().get(448).region());
+        assertEquals(StorageRegion.VIRTUAL_MEMORY, snapshot.storage().get(448).region());
         assertTrue(snapshot.storage().getFirst().content().startsWith("PROGRAM name=\"test.asm\" start="));
         assertTrue(snapshot.storage().stream().anyMatch(v -> v.region() == StorageRegion.PROGRAM_DATA && v.content().equals("MOV AX, 7")));
         assertEquals("PROGRAM name=\"a\" start=32 length=2", SimulatorSnapshotMapper.storageText(new FileIndexEntry("a", 32, 2)));

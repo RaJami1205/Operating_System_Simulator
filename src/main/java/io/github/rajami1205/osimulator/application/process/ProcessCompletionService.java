@@ -46,7 +46,7 @@ public final class ProcessCompletionService {
 
     /**
      * Prevalida handles y cadena PCB, captura finish con Clock y crea historial antes del cleanup. Libera
-     * USER o SWAP y Kernel sin consumir ticks.
+     * USER o VIRTUAL_MEMORY y Kernel sin consumir ticks.
      */
     public void complete(int pid) {
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Missing terminated PCB"));

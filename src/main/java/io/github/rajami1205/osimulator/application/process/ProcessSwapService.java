@@ -9,7 +9,7 @@ import io.github.rajami1205.osimulator.model.storage.exception.StorageAllocation
 import java.util.Objects;
 
 /**
- * Transfiere imágenes completas entre USER y SWAP sin paging ni selección automática de víctimas. Conserva
+ * Transfiere imágenes completas entre USER y VIRTUAL_MEMORY sin paging ni selección automática de víctimas. Conserva
  * el PCB Kernel y su contexto; el caller excluye al owner activo.
  */
 public final class ProcessSwapService {
@@ -30,7 +30,7 @@ public final class ProcessSwapService {
     }
 
     /**
-     * Copia una imagen READY/BLOCKED a SWAP antes de liberar USER; devuelve Waiting por capacidad y
+     * Copia una imagen READY/BLOCKED a VIRTUAL_MEMORY antes de liberar USER; devuelve Waiting por capacidad y
      * revierte la reserva destino ante fallo.
      */
     public SwapResult swapOut(int processId) {
@@ -71,7 +71,7 @@ public final class ProcessSwapService {
     }
 
     /**
-     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera SWAP; conserva PC
+     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY; conserva PC
      * lógico y devuelve Waiting por capacidad.
      */
     public SwapResult swapIn(int processId) {
@@ -84,7 +84,7 @@ public final class ProcessSwapService {
         validateQueue(processId, false);
         var swap = suspended.allocation();
         var image = storage.readSwapBlock(swap);
-        if (image.size() != pcb.instructionCount()) throw new IllegalStateException("SWAP image length mismatch");
+        if (image.size() != pcb.instructionCount()) throw new IllegalStateException("VIRTUAL_MEMORY image length mismatch");
         MemoryAllocation user;
         try {
             user = memory.allocateUser(image.size());

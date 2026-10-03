@@ -49,6 +49,8 @@ class ProcessSwapServiceTest {
         assertThrows(IllegalStateException.class,pcb::programEndAddressExclusive);
         assertEquals(3,pcb.instructionCount());assertEquals(List.of(2,3),queue.entries());
         assertEquals(image,storage.readSwapBlock(disk(1)));
+        assertEquals(448,disk(1).base());
+        assertEquals(StorageRegion.VIRTUAL_MEMORY,storage.regionOf(disk(1).base()));
         assertSame(pcb,((PcbContent)memory.read(resources.address().address())).pcb());
         assertEquals(resources.kernel(),resource(1).kernel());assertEquals(link,pcb.nextPcbAddress());
         assertSame(pcb,table.find(1).orElseThrow());assertEquals(3,table.size());

@@ -140,7 +140,7 @@ public record SimulatorSnapshot(
             Objects.requireNonNull(content, "content must not be null");
         }
     }
-    /** Ubicación observable de la imagen: USER residente o SWAP suspended. */
+    /** Ubicación observable de la imagen: USER residente o VIRTUAL_MEMORY suspended. */
     public enum Residency { RESIDENT, SUSPENDED }
     /**
      * Detalle inmutable del PCB; Base está ausente al estar suspended y las colecciones son copias, no

@@ -19,7 +19,7 @@ class SwapStorageTest {
         assertThrows(StorageException.class, () -> storage.readSwapBlock(allocation));
         storage.writeSwapBlock(allocation,image(2));
         assertEquals(new StoredInstructionContent(new IncInstruction()), storage.read(64));
-        assertEquals(StorageRegion.SWAP,storage.cell(64).region());
+        assertEquals(StorageRegion.VIRTUAL_MEMORY,storage.cell(64).region());
         var read = storage.readSwapBlock(allocation);
         assertThrows(UnsupportedOperationException.class,read::clear);
         assertThrows(StorageException.class,()->storage.writeSwapBlock(allocation,image(1)));

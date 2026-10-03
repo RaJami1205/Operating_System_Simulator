@@ -80,7 +80,7 @@ class FileIndexTest {
         assertThrows(NullPointerException.class, () -> new StoredInstructionContent(null));
         var instruction = new LoadInstruction(RegisterName.AX);
         assertSame(instruction, new StoredInstructionContent(instruction).instruction());
-        assertThrows(IllegalArgumentException.class, () -> new StorageCell(-1, StorageRegion.SWAP, EmptyStorageContent.INSTANCE));
+        assertThrows(IllegalArgumentException.class, () -> new StorageCell(-1, StorageRegion.VIRTUAL_MEMORY, EmptyStorageContent.INSTANCE));
         assertThrows(NullPointerException.class, () -> new StorageCell(0, null, EmptyStorageContent.INSTANCE));
         assertThrows(NullPointerException.class, () -> new StorageCell(0, StorageRegion.FILE_INDEX, null));
     }

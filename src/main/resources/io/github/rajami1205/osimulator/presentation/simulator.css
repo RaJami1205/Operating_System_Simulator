@@ -483,7 +483,7 @@
 .app-root .state-badge { -fx-effect: null; -fx-padding: 5px 8px; }
 .app-root .table-row-cell.file-index-row { -fx-border-color: transparent transparent transparent -app-violet; -fx-border-width: 0 0 0 3px; }
 .app-root .table-row-cell.program-data-row { -fx-border-color: transparent transparent transparent -app-cyan; -fx-border-width: 0 0 0 3px; }
-.app-root .table-row-cell.swap-row { -fx-border-color: transparent transparent transparent -app-warning; -fx-border-width: 0 0 0 3px; }
+.app-root .table-row-cell.virtual-memory-row { -fx-border-color: transparent transparent transparent -app-warning; -fx-border-width: 0 0 0 3px; }
 .app-root .dashboard-tabs .scroll-bar, .app-root .dashboard-scroll .scroll-bar {
     -fx-background-color: -app-background-deep;
 }

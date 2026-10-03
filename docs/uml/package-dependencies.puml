@@ -1,59 +1,145 @@
 @startuml
 left to right direction
 skinparam packageStyle rectangle
-skinparam monochrome true
-skinparam shadowing false
 skinparam linetype ortho
 skinparam nodesep 65
 skinparam ranksep 100
 skinparam padding 12
 
+<style>
+root {
+  BackgroundColor #050B2D
+  FontName Arial
+  FontColor #F8FAFC
+  FontSize 14
+  Shadowing 0
+}
+title {
+  FontColor #F8FAFC
+  FontSize 20
+  FontStyle bold
+}
+package {
+  BackgroundColor #0B153A
+  LineColor #526AA0
+  LineThickness 1.2
+  FontColor #E2E8F0
+  FontSize 14
+  FontStyle plain
+  RoundCorner 6
+}
+arrow {
+  LineColor #AAB7D4
+  FontColor #AAB7D4
+  FontSize 12
+  LineThickness 1.2
+}
+.presentation {
+  BackgroundColor #103348
+  LineColor #22D3EE
+  FontSize 16
+  FontStyle bold
+}
+.application {
+  BackgroundColor #101E4B
+  LineColor #2F6BFF
+  FontSize 16
+  FontStyle bold
+}
+.model {
+  BackgroundColor #0B153A
+  LineColor #587FC4
+  FontSize 16
+  FontStyle bold
+}
+.infrastructure {
+  BackgroundColor #221C40
+  LineColor #8B5CF6
+  FontSize 16
+  FontStyle bold
+}
+.applicationChild {
+  BackgroundColor #15254D
+  LineColor #4D70AF
+}
+.modelChild {
+  BackgroundColor #122043
+  LineColor #526AA0
+}
+.infrastructureChild {
+  BackgroundColor #2B2546
+  LineColor #8170AE
+}
+</style>
+hide stereotype
+
 title Operating System Simulator - Dependencias internas
 ' Raíz común: io.github.rajami1205.osimulator
 ' Dependencias derivadas de imports internos; tipos anidados se atribuyen a su paquete.
 
-package "Presentation" as pkg_presentation {}
-package "Application" as pkg_application {
-  package "job" as pkg_application_job {}
-  package "lifecycle" as pkg_application_lifecycle {
-    package "exception" as pkg_application_lifecycle_exception {}
-  }
-  package "process" as pkg_application_process {}
-  package "program" as pkg_application_program {
-    package "exception" as pkg_application_program_exception {}
-  }
-  package "simulator" as pkg_application_simulator {}
+package "Presentation" as pkg_presentation <<presentation>> {
+
 }
-package "Infrastructure" as pkg_infrastructure {
-  package "asm" as pkg_infrastructure_asm {
-    package "exception" as pkg_infrastructure_asm_exception {}
+package "Application" as pkg_application <<application>> {
+  package "job" as pkg_application_job <<applicationChild>> {
+  }
+  package "lifecycle" as pkg_application_lifecycle <<applicationChild>> {
+    package "exception" as pkg_application_lifecycle_exception <<applicationChild>> {
+    }
+  }
+  package "process" as pkg_application_process <<applicationChild>> {
+  }
+  package "program" as pkg_application_program <<applicationChild>> {
+    package "exception" as pkg_application_program_exception <<applicationChild>> {
+    }
+  }
+  package "simulator" as pkg_application_simulator <<applicationChild>> {
   }
 }
-package "Model" as pkg_model {
-  package "configuration" as pkg_model_configuration {}
-  package "cpu" as pkg_model_cpu {
-    package "exception" as pkg_model_cpu_exception {}
+package "Infrastructure" as pkg_infrastructure <<infrastructure>> {
+  package "asm" as pkg_infrastructure_asm <<infrastructureChild>> {
+    package "exception" as pkg_infrastructure_asm_exception <<infrastructureChild>> {
+    }
   }
-  package "execution" as pkg_model_execution {
-    package "exception" as pkg_model_execution_exception {}
+}
+package "Model" as pkg_model <<model>> {
+  package "configuration" as pkg_model_configuration <<modelChild>> {
   }
-  package "filesystem" as pkg_model_filesystem {}
-  package "instruction" as pkg_model_instruction {
-    package "exception" as pkg_model_instruction_exception {}
-    package "operand" as pkg_model_instruction_operand {}
+  package "cpu" as pkg_model_cpu <<modelChild>> {
+    package "exception" as pkg_model_cpu_exception <<modelChild>> {
+    }
   }
-  package "io" as pkg_model_io {}
-  package "job" as pkg_model_job {}
-  package "memory" as pkg_model_memory {
-    package "exception" as pkg_model_memory_exception {}
+  package "execution" as pkg_model_execution <<modelChild>> {
+    package "exception" as pkg_model_execution_exception <<modelChild>> {
+    }
   }
-  package "process" as pkg_model_process {
-    package "exception" as pkg_model_process_exception {}
+  package "filesystem" as pkg_model_filesystem <<modelChild>> {
   }
-  package "program" as pkg_model_program {}
-  package "scheduling" as pkg_model_scheduling {}
-  package "storage" as pkg_model_storage {
-    package "exception" as pkg_model_storage_exception {}
+  package "instruction" as pkg_model_instruction <<modelChild>> {
+    package "exception" as pkg_model_instruction_exception <<modelChild>> {
+    }
+    package "operand" as pkg_model_instruction_operand <<modelChild>> {
+    }
+  }
+  package "io" as pkg_model_io <<modelChild>> {
+  }
+  package "job" as pkg_model_job <<modelChild>> {
+  }
+  package "memory" as pkg_model_memory <<modelChild>> {
+    package "exception" as pkg_model_memory_exception <<modelChild>> {
+    }
+  }
+  package "process" as pkg_model_process <<modelChild>> {
+    package "exception" as pkg_model_process_exception <<modelChild>> {
+    }
+  }
+  package "program" as pkg_model_program <<modelChild>> {
+  }
+  package "scheduling" as pkg_model_scheduling <<modelChild>> {
+  }
+  package "storage" as pkg_model_storage <<modelChild>> {
+    package "exception" as pkg_model_storage_exception <<modelChild>> {
+    }
   }
 }
 

@@ -14,6 +14,6 @@ public sealed interface SwapResult {
         /** Exige una causa no nula para distinguir espera ordinaria de fallo de integridad. */
         public Waiting { Objects.requireNonNull(reason); }
     }
-    /** Distingue falta de SWAP al salir y falta de USER al volver. */
+    /** Distingue falta de VIRTUAL_MEMORY al salir y falta de USER al volver. */
     enum Reason { INSUFFICIENT_SWAP, INSUFFICIENT_USER_MEMORY }
 }

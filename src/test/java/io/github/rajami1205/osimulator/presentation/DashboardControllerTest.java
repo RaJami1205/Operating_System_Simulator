@@ -152,7 +152,11 @@ class DashboardControllerTest {
         updateRow(row, null, true); assertFalse(row.getStyleClass().contains("user-row"));
         @SuppressWarnings("unchecked") TableView<StorageEntry> storage = (TableView<StorageEntry>) get(f.controller, "storageTable");
         var storageRow = storage.getRowFactory().call(storage);
-        String[] styles = {"file-index-row", "program-data-row", "swap-row"}; int i = 0;
+        @SuppressWarnings("unchecked") var regionColumn = (TableColumn<StorageEntry, String>) get(f.controller, "storageRegionColumn");
+        for (var entry : storage.getItems()) if (entry.address() >= 448) {
+            assertEquals("VIRTUAL_MEMORY", regionColumn.getCellObservableValue(entry).getValue());
+        }
+        String[] styles = {"file-index-row", "program-data-row", "virtual-memory-row"}; int i = 0;
         for (StorageRegion region : StorageRegion.values()) { updateRow(storageRow, new StorageEntry(0, region, "—"), false); assertTrue(storageRow.getStyleClass().contains(styles[i++])); }
         updateRow(storageRow, null, true); for (String style : styles) assertFalse(storageRow.getStyleClass().contains(style));
     }); }

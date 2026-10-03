@@ -36,7 +36,7 @@ final class DashboardTables {
              */
             @Override protected void updateItem(T item, boolean empty) {
                 super.updateItem(item, empty);
-                getStyleClass().removeAll(List.of("kernel-row", "user-row", "file-index-row", "program-data-row", "swap-row"));
+                getStyleClass().removeAll(List.of("kernel-row", "user-row", "file-index-row", "program-data-row", "virtual-memory-row"));
                 if (!empty && item != null) getStyleClass().add(style.apply(item));
             }
         });

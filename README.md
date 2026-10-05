@@ -57,7 +57,7 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 
 | Información | Detalle |
 |---|---|
-| **Curso** | IC-6600 Principios de Sistemas Operativos |
+| **Curso** | Principios de Sistemas Operativos |
 | **Asignación** | Proyecto #1 — Gestor de Multiprocesos |
 | **Estudiante** | Raúl Alfaro Rodríguez |
 | **Carnet** | 2023060456 |

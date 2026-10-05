@@ -1,354 +1,569 @@
+<div align="center">
+
 # 🖥️ Operating System Simulator
 
-> Simulador educativo de conceptos fundamentales de Sistemas Operativos desarrollado como aplicación de escritorio en Java.
+### Simulador educativo multiproceso de conceptos fundamentales de Sistemas Operativos
+
+Aplicación de escritorio desarrollada en **Java + JavaFX** para representar de forma visual
+la administración de procesos, CPU, memoria, almacenamiento, interrupciones, I/O,
+filesystem, scheduling y context switching de una minicomputadora simulada.
+
+<br>
+
+![Java](https://img.shields.io/badge/JAVA-25-2F80ED?style=for-the-badge&logo=openjdk&logoColor=white)
+![JavaFX](https://img.shields.io/badge/JAVAFX-25-00B4D8?style=for-the-badge)
+![JUnit 5](https://img.shields.io/badge/JUnit%205-Testing-25A162?style=for-the-badge&logo=junit5&logoColor=white)
+![Maven](https://img.shields.io/badge/MAVEN-WRAPPER-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)
+
+<br>
+
+</div>
 
 ---
 
-## 👤 Información académica
+<div align="center">
+
+![Operating System Simulator Dashboard](docs/assets/Dashboard.png)
+
+</div>
+
+---
+
+## 📋 Contenido
+
+- [🎓 Información académica](#-información-académica)
+- [🚀 Descripción del proyecto](#-descripción-del-proyecto)
+- [✨ Características principales](#-características-principales)
+- [📐 Diagrama de Paquetes](#-diagrama-de-paquetes)
+- [🏗️ Arquitectura](#️-arquitectura)
+- [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
+- [⚙️ Instruction Set](#️-instruction-set)
+- [🛠️ Tecnologías](#️-tecnologías)
+- [📦 Requisitos](#-requisitos)
+- [💻 Instalación y ejecución](#-instalación-y-ejecución)
+- [🖥️ Uso general](#️-uso-general)
+- [🧪 Testing y validación](#-testing-y-validación)
+- [🌿 GitFlow y DevOps](#-gitflow-y-devops)
+- [✅ Objetivos alcanzados](#-objetivos-alcanzados)
+- [ℹ️ Decisiones y consideraciones](#️-decisiones-y-consideraciones)
+- [🎥 Video demostrativo](#-video-demostrativo)
+
+---
+
+# 🎓 Información académica
 
 | Información | Detalle |
 |---|---|
+| **Curso** | Principios de Sistemas Operativos |
+| **Asignación** | Proyecto #1 — Gestor de Multiprocesos |
 | **Estudiante** | Raúl Alfaro Rodríguez |
 | **Carnet** | 2023060456 |
-| **Curso** | Sistemas Operativos |
-| **Asignación** | Tarea Programada 1 |
-| **Video Demostrativo** | https://youtu.be/XBlNZpDldgQ |
+| **Estado** | ✅ Desarrollo completado |
+| **Video demostrativo** | https://youtu.be/doSFTdcYQJQ |
+
+> [!NOTE]
+> Este proyecto corresponde a una **simulación académica** de mecanismos de un Sistema Operativo.
+> No implementa un Kernel real ni interactúa directamente con hardware físico.
 
 ---
 
-## 📌 Objetivo
+# 🚀 Descripción del proyecto
 
-El objetivo de esta Tarea Programada es desarrollar un **simulador educativo de los mecanismos básicos involucrados en la ejecución de un proceso dentro de un Sistema Operativo**.
+**Operating System Simulator** recrea una minicomputadora capaz de cargar y ejecutar
+múltiples programas escritos en un mini lenguaje ensamblador `.asm`.
 
-La aplicación permite representar de forma gráfica la interacción entre:
+Cada programa pasa por un flujo similar al utilizado por un Sistema Operativo:
 
-- CPU simulada.
-- Memory simulada.
-- Registros `AC`, `IR`, `PC`, `AX`, `BX`, `CX` y `DX`.
-- Process Control Block (`PCB`).
-- Programas escritos en formato `.asm`.
-- Carga de instrucciones en User Memory.
-- Ejecución manual mediante `Step`.
-- Ejecución automática.
-- Estados del simulador y del proceso.
-- Representación binaria de las instrucciones.
+```text
+Archivo .asm
+    ↓
+ASM Parser
+    ↓
+Program Image
+    ↓
+Secondary Storage
+    ↓
+Job List
+    ↓
+Admission
+    ↓
+Process + PCB
+    ↓
+Ready Queue
+    ↓
+FCFS Scheduler
+    ↓
+Dispatcher
+    ↓
+CPU
+    ↓
+Execution Engine
+```
 
-> El proyecto es una **simulación académica** y no corresponde a la implementación de un Kernel o Sistema Operativo real.
+Durante la ejecución, la aplicación permite observar en tiempo real:
+
+- procesos y sus estados;
+- CPU y registers;
+- Current Instruction;
+- PCB/BCP;
+- Ready Queue;
+- Jobs;
+- Main Memory;
+- Secondary Storage;
+- Virtual Memory;
+- simulated keyboard;
+- simulated screen;
+- filesystem;
+- statistics;
+- procesos completados.
 
 ---
 
-## 🎯 Alcance de la Tarea 1
+# ✨ Características principales
 
-La primera etapa del proyecto implementa la ejecución de **un único proceso** dentro de una máquina simulada.
+### 🧩 Multiprocess Runtime
 
-El flujo principal es:
+- Un único CPU simulado.
+- Hasta **5 procesos admitidos simultáneamente**.
+- Job List.
+- Process Table.
+- Ready Queue FIFO.
+- Scheduler **FCFS non-preemptive**.
+- Dispatcher.
+- Context switching.
+- Save/restore de `CpuContext`.
+- Estados suspendidos y bloqueados.
 
-```text
-Configurar Memory
-        ↓
-Inicializar simulador
-        ↓
-Seleccionar archivo .asm
-        ↓
-Importar y parsear instrucciones
-        ↓
-Cargar programa en User Memory
-        ↓
-Crear PCB
-        ↓
-Start
-        ↓
-RUNNING
-        ↓
-Step / Automatic
-        ↓
-Ejecutar instrucciones
-        ↓
-FINISHED
-```
+### 🧠 PCB / BCP
 
-### Instrucciones soportadas
-
-| Instruction | Operación |
-|---|---|
-| `MOV R, N` | `R = N` |
-| `LOAD R` | `AC = R` |
-| `STORE R` | `R = AC` |
-| `ADD R` | `AC = AC + R` |
-| `SUB R` | `AC = AC - R` |
-
-Los valores lógicos manejados por los registros se encuentran en el rango:
-
-```text
--127 .. 127
-```
-
----
-
-## 🧠 Componentes simulados
-
-### CPU
-
-La CPU simulada utiliza los siguientes registros:
-
-```text
-AC  → Accumulator
-IR  → Instruction Register
-PC  → Program Counter
-
-AX
-BX
-CX
-DX  → General Purpose Registers
-```
-
-### Memory
-
-La memoria es configurable antes de iniciar la simulación y posee un mínimo de:
-
-```text
-128 posiciones
-```
-
-Se divide conceptualmente en:
-
-```text
-┌─────────────────────────┐
-│      Kernel Memory      │
-├─────────────────────────┤
-│       User Memory       │
-└─────────────────────────┘
-```
-
-Cada instrucción semántica ocupa:
-
-```text
-1 Instruction = 1 Memory position
-```
-
-### PCB
-
-El `Process Control Block` mantiene la información necesaria para controlar el proceso:
+Cada proceso mantiene información como:
 
 ```text
 PID
 Process State
-Program Start Address
-Instruction Count
-Program End
-Saved PC
+PC / IR / AC
+AX / BX / CX / DX
+AH / AL
+Condition Flags
+Stack
+Open Files
+Priority
+Base / Limit
+Accounting
+Kernel PCB Address
+Next PCB Address
 ```
 
----
+Los PCB se representan dentro de **Kernel Memory** y mantienen enlaces entre procesos.
 
-## 🛠️ Tecnologías utilizadas
+### 💾 Main Memory
 
-| Tecnología | Uso |
-|---|---|
-| **Java 25** | Lenguaje principal y lógica del simulador |
-| **JavaFX 25** | Interfaz gráfica de escritorio |
-| **FXML** | Definición estructural de la GUI |
-| **JavaFX CSS** | Estilos visuales de la aplicación |
-| **Maven** | Build, dependencias y ejecución |
-| **Maven Wrapper** | Ejecución reproducible sin instalación global de Maven |
-| **JUnit 5** | Automated testing |
-| **Git** | Control de versiones |
-| **GitHub** | Repositorio remoto y Pull Requests |
-| **GitHub Actions** | Continuous Integration |
-
----
-
-## 🏗️ Arquitectura del software
-
-El proyecto utiliza una **Layered Architecture**, complementada con principios de `MVC` en la capa de Presentation.
+La memoria principal se divide conceptualmente en:
 
 ```text
-┌──────────────────────────────┐
-│         Presentation         │
-│   JavaFX · FXML · CSS · MVC  │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│          Application         │
-│ Use Cases · Orchestration    │
-│ Lifecycle · Snapshots        │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│            Model             │
-│ CPU · Memory · PCB           │
-│ Instructions · Execution     │
-└──────────────────────────────┘
+┌────────────────────────────┐
+│       KERNEL MEMORY        │
+├────────────────────────────┤
+│        USER MEMORY         │
+└────────────────────────────┘
+```
 
-┌──────────────────────────────┐
-│        Infrastructure        │
-│ ASM Parser · File Import     │
-└──────────────────────────────┘
+Características:
+
+- tamaño configurable;
+- default de `256` posiciones;
+- Kernel default de `32`;
+- allocation mediante **First-Fit**;
+- fragmentation;
+- adjacent coalescing;
+- protección Kernel/User;
+- canonical `MemoryAllocation` handles;
+- liberación y reutilización de memoria.
+
+### 💿 Secondary Storage
+
+El almacenamiento secundario se divide en:
+
+```text
+┌────────────────────────────┐
+│         FILE_INDEX         │
+├────────────────────────────┤
+│        PROGRAM_DATA        │
+├────────────────────────────┤
+│       VIRTUAL_MEMORY       │
+└────────────────────────────┘
+```
+
+Defaults:
+
+```text
+Secondary Storage : 512
+Virtual Memory    : 64
+```
+
+### 🔄 Virtual Memory
+
+La Virtual Memory utiliza un modelo educativo de:
+
+```text
+Whole-Process Swapping
+```
+
+Operaciones principales:
+
+```text
+swapOut()
+swapIn()
+```
+
+Estados relacionados:
+
+```text
+READY
+    ↓
+READY_SUSPENDED
+
+BLOCKED
+    ↓
+BLOCKED_SUSPENDED
+```
+
+El PCB permanece en Kernel Memory mientras la imagen USER del proceso puede
+almacenarse en la región `VIRTUAL_MEMORY` de Secondary Storage.
+
+### ⌨️ Simulated Keyboard
+
+`INT 09H`:
+
+- acepta valores numéricos `0..255`;
+- utiliza FIFO;
+- soporta prequeued input;
+- bloquea el proceso si no hay entrada disponible;
+- almacena el resultado en `DX`;
+- permite que otro proceso utilice el CPU mientras se espera I/O.
+
+### 🖥️ Simulated Screen
+
+`INT 10H` imprime el valor numérico contenido en `DX`.
+
+La salida puede observarse desde:
+
+```text
+I/O → Simulated Screen
+```
+
+### 📁 Simulated Filesystem
+
+`INT 21H` implementa:
+
+| Service | Operación |
+|---|---|
+| `3CH` | Create |
+| `3DH` | Open |
+| `4DH` | Read |
+| `40H` | Write |
+| `41H` | Delete |
+
+Los archivos viven dentro del **Secondary Storage simulado**.
+
+> [!IMPORTANT]
+> Las system calls simuladas no escriben archivos reales en el filesystem del equipo anfitrión.
+
+---
+
+# 📐 Diagrama de Paquetes
+
+El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
+
+La arquitectura se estructura principalmente en:
+
+- **Presentation** → interfaz JavaFX, Controllers y rendering.
+- **Application** → orchestration, runtime, lifecycle y casos de uso.
+- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
+- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
+
+Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
+
+<div align="center">
+
+![Package Diagram](docs/assets/package_Diagram.png)
+
+</div>
+
+---
+
+# 🏗️ Arquitectura
+
+El proyecto utiliza una **Layered Architecture**, complementada con principios de
+`MVC` en Presentation.
+
+```text
+┌─────────────────────────────────────────┐
+│              PRESENTATION               │
+│        JavaFX · FXML · CSS · MVC        │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│              APPLICATION                │
+│ Use Cases · Runtime · Orchestration     │
+│ Lifecycle · Admission · Dispatcher      │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│                 MODEL                   │
+│ CPU · Process · Memory · Instructions   │
+│ Scheduling · Storage · Filesystem       │
+└─────────────────────────────────────────┘
+                    ▲
+                    │
+┌─────────────────────────────────────────┐
+│            INFRASTRUCTURE               │
+│         ASM Import / Adapters           │
+└─────────────────────────────────────────┘
 ```
 
 ### Presentation
 
-Responsable de la interacción gráfica con el usuario.
+Responsable de:
 
-Incluye:
-
-- JavaFX.
-- FXML.
-- CSS.
-- `SimulatorController`.
-- Visualización del estado de CPU, Memory, PCB e instrucciones.
+- JavaFX;
+- FXML;
+- CSS;
+- Controllers;
+- rendering de snapshots;
+- interacción del usuario.
 
 ### Application
 
-Coordina los casos de uso del simulador.
+Coordina:
 
-Entre sus responsabilidades se encuentran:
-
-- inicialización;
-- carga del programa;
-- control del lifecycle;
-- ejecución;
-- generación de snapshots;
-- coordinación general de la simulación.
+- simulator lifecycle;
+- program submission;
+- admission;
+- multiprocess runtime;
+- Dispatcher;
+- process completion;
+- swapping;
+- statistics;
+- orchestration.
 
 ### Model
 
-Contiene la lógica principal e independiente de la interfaz gráfica:
+Contiene la lógica independiente de la GUI:
 
-- Memory.
-- CPU Registers.
-- Instructions.
-- PCB.
-- Execution Engine.
-- Binary Codec.
+- CPU;
+- registers;
+- instructions;
+- processes;
+- PCB;
+- scheduling;
+- memory;
+- storage;
+- filesystem;
+- I/O;
+- execution.
 
 ### Infrastructure
 
-Gestiona mecanismos externos, principalmente:
+Contiene adapters relacionados principalmente con:
 
-- lectura de archivos `.asm`;
-- conversión del contenido ASM hacia objetos `Instruction`.
-
----
-
-## 🎨 Principios de diseño
-
-El proyecto fue desarrollado procurando mantener:
-
-- Object-Oriented Programming.
-- Separation of Concerns.
-- High Cohesion.
-- Low Coupling.
-- Encapsulation.
-- Defensive Programming.
-- SOLID de manera pragmática.
-- Dependency Injection manual.
-- Componentes independientes de la GUI.
-- Testing de la lógica principal.
-
-Una de las principales decisiones de diseño consiste en mantener la lógica del simulador separada de JavaFX.
-
-Por ejemplo:
-
-```text
-JavaFX GUI
-    ↓
-Application
-    ↓
-Model
-```
-
-De esta manera, CPU, Memory, PCB y Execution Engine pueden funcionar y ser probados independientemente de la interfaz gráfica.
+- lectura de `.asm`;
+- importación;
+- parsing e integración con programas externos al dominio.
 
 ---
 
-## ⚙️ Modelo de ejecución
+# 🧠 Modelo del sistema operativo
 
-La ejecución es coordinada principalmente mediante:
-
-```text
-SimulatorController
-        ↓
-SimulatorOrchestrator
-        ↓
-ExecutionEngine
-        ↓
-CPU / Memory / PCB
-        ↓
-SimulatorSnapshot
-        ↓
-GUI
-```
-
-### Manual Step
-
-Cada `Step` ejecuta exactamente:
+## Process States
 
 ```text
-1 semantic Instruction
+NEW
+READY
+RUNNING
+BLOCKED
+READY_SUSPENDED
+BLOCKED_SUSPENDED
+TERMINATED
 ```
 
-### Automatic Execution
-
-La ejecución automática utiliza un JavaFX `Timeline`.
+## Scheduling
 
 ```text
-Timeline
-   ↓
-Step
-   ↓
-SimulatorOrchestrator
-   ↓
-ExecutionEngine
+FCFS
+First Come, First Served
+Non-Preemptive
 ```
 
-Esto permite reutilizar el mismo flujo de ejecución manual sin crear un segundo motor de ejecución.
+La prioridad se conserva como metadata dentro del PCB, pero no altera el orden
+del scheduler en este Proyecto I.
+
+## Context Switching
+
+Cuando un proceso abandona el CPU:
+
+```text
+Physical CPU
+     ↓ save
+PCB CpuContext
+```
+
+Cuando otro proceso es seleccionado:
+
+```text
+PCB CpuContext
+     ↓ restore
+Physical CPU
+```
+
+Esto permite preservar correctamente registers, flags y ejecución entre procesos.
+
+## CPU Tick Model
+
+La unidad de ejecución es:
+
+```text
+1 Step = máximo 1 CPU Tick
+```
+
+Una instruction puede requerir varios ticks según su `ExecutionWeight`.
+
+Ejemplo:
+
+```text
+MOV     → 1 tick
+LOAD    → 2 ticks
+ADD     → 3 ticks
+INT 21H → 5 ticks
+```
+
+Los efectos semánticos se aplican cuando finaliza el último tick de la instruction.
 
 ---
 
-## 🔢 Representación binaria
+# ⚙️ Instruction Set
 
-Las instrucciones poseen además una representación binaria educativa utilizando palabras de:
-
-```text
-8 bits
-```
-
-Formato principal:
-
-```text
-OOORR000
-```
-
-donde:
-
-```text
-OOO → Opcode
-RR  → Register
-000 → Reserved bits
-```
-
-Las instrucciones `LOAD`, `STORE`, `ADD` y `SUB` utilizan un `BinaryWord`.
-
-`MOV` utiliza dos `BinaryWords`, aunque continúa ocupando únicamente:
-
-```text
-1 posición de Memory
-```
+| Instruction | Descripción | Ticks |
+|---|---|---:|
+| `MOV R1, R2` | Transferencia entre registers | 1 |
+| `MOV R, N` | Carga de immediate | 1 |
+| `LOAD R` | `AC ← R` | 2 |
+| `STORE R` | `R ← AC` | 2 |
+| `ADD R` | `AC ← AC + R` | 3 |
+| `SUB R` | `AC ← AC - R` | 3 |
+| `INC` / `INC R` | Incremento | 1 |
+| `DEC` / `DEC R` | Decremento | 1 |
+| `SWAP R1, R2` | Intercambio de registers | 1 |
+| `CMP R1, R2` | Comparación | 2 |
+| `JMP displacement` | Salto relativo | 2 |
+| `JE displacement` | Salto si Equal | 2 |
+| `JNE displacement` | Salto si Not Equal | 2 |
+| `PARAM v1, ...` | Parámetros hacia stack | 3 |
+| `PUSH R` | Push al stack | 1 |
+| `POP R` | Pop desde stack | 1 |
+| `INT 09H` | Keyboard input | 2 |
+| `INT 10H` | Screen output | 2 |
+| `INT 20H` | Process termination | 2 |
+| `INT 21H` | Filesystem services | 5 |
 
 ---
 
-# 🚀 Instalación y ejecución
+# 📊 Statistics
 
-## Requisitos
+Para cada proceso se registra:
 
-Antes de ejecutar el proyecto se requiere:
+```text
+CPU ID
+Start Time
+CPU Ticks
+Finish Time
+Elapsed Time
+Duration (s)
+```
 
-- **Git**
-- **Eclipse Temurin OpenJDK 25** o una distribución compatible con Java 25.
-- Sistema capaz de ejecutar aplicaciones JavaFX.
+Se distingue entre:
 
-Maven no necesita instalarse globalmente, ya que el repositorio incluye **Maven Wrapper**.
+```text
+CPU Ticks
+≠
+Wall-Clock Time
+```
+
+Por ello, períodos como:
+
+- waiting for I/O;
+- Pause;
+- suspension;
+- demoras manuales;
+
+forman parte del tiempo real transcurrido, pero no incrementan los CPU ticks.
+
+---
+
+# 🛡️ Protection & Security
+
+La estrategia de protección se enfoca en los recursos simulados del Sistema Operativo:
+
+- aislamiento Kernel/User;
+- canonical allocation handles;
+- memory bounds;
+- stale allocation detection;
+- PCB Kernel validation;
+- process isolation;
+- separación de regiones en Secondary Storage;
+- lifecycle guards;
+- simulated filesystem isolation.
+
+---
+
+# 🎨 Principios de diseño
+
+El desarrollo priorizó:
+
+- Object-Oriented Programming;
+- Separation of Concerns;
+- High Cohesion;
+- Low Coupling;
+- Encapsulation;
+- Defensive Programming;
+- SOLID de forma pragmática;
+- Dependency Injection manual;
+- immutable read models;
+- GUI independiente del dominio;
+- deterministic testing;
+- type safety.
+
+---
+
+# 🛠️ Tecnologías
+
+| Tecnología | Uso |
+|---|---|
+| **Java 25** | Lenguaje principal |
+| **JavaFX 25** | Desktop GUI |
+| **FXML** | Estructura visual |
+| **JavaFX CSS** | Styling |
+| **Maven** | Build y dependency management |
+| **Maven Wrapper** | Build reproducible |
+| **JUnit 5** | Automated testing |
+| **PlantUML** | Diagramas UML |
+| **Git** | Version control |
+| **GitHub** | Remote repository y Pull Requests |
+| **GitHub Actions** | Continuous Integration |
+
+---
+
+# 📦 Requisitos
+
+Para ejecutar el proyecto se requiere:
+
+- Git.
+- Eclipse Temurin OpenJDK **25** o distribución compatible.
+- Sistema operativo con soporte gráfico para JavaFX.
+
+Maven no necesita instalación global porque se incluye **Maven Wrapper**.
 
 Verificar Java:
 
@@ -360,200 +575,98 @@ Debe utilizar Java 25.
 
 ---
 
+# 💻 Instalación y ejecución
+
 ## 1. Clonar el repositorio
 
 ```powershell
-git clone https://github.com/rajami1205/Operating_System_Simulator.git
-```
-
-Ingresar al proyecto:
-
-```powershell
+git clone https://github.com/RaJami1205/Operating_System_Simulator.git
 cd Operating_System_Simulator
 ```
 
----
+## 2. Ejecutar tests
 
-## 2. Ejecutar los tests
-
-En Windows:
+Windows:
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-Baseline validado para la Tarea 1:
+Linux / macOS:
 
-```text
-Tests:    539
-Failures: 0
-Errors:   0
-Skipped:  0
+```bash
+./mvnw test
 ```
 
----
+## 3. Validación completa
 
-## 3. Validar el proyecto
+Windows:
 
 ```powershell
 .\mvnw.cmd verify
 ```
 
----
+Linux / macOS:
+
+```bash
+./mvnw verify
+```
 
 ## 4. Ejecutar la aplicación
+
+Windows:
 
 ```powershell
 .\mvnw.cmd javafx:run
 ```
 
-Esto inicia la interfaz gráfica:
+Linux / macOS:
 
-```text
-Operating System Simulator
+```bash
+./mvnw javafx:run
 ```
 
 ---
 
-## 🖥️ Uso general
+# 🖥️ Uso general
 
-El flujo normal dentro de la aplicación es:
+Flujo típico:
 
 ```text
-1. Configurar Memory
+1. Configurar Main Memory / Kernel / Secondary Storage / Virtual Memory
 2. Initialize
 3. Browse
-4. Seleccionar archivo .asm
+4. Seleccionar programa .asm
 5. Load Program
-6. Start
-7. Ejecutar mediante Step o Automatic
-8. Observar CPU, Registers, PCB y Memory
-9. Llegar a FINISHED
-10. Reset
+6. Repetir Browse/Load si se desean más programas
+7. Start
+8. Ejecutar mediante Step o Automatic
+9. Observar CPU, processes, memory, storage e I/O
+10. Atender keyboard input cuando INT 09H lo requiera
+11. Revisar Completed y Statistics
+12. Reset para iniciar una nueva sesión
 ```
 
-Ejemplo de programa:
+Ejemplo básico:
 
 ```asm
-MOV AX, 5
+MOV AX, 10
+MOV BX, 5
 LOAD AX
-MOV BX, 3
 ADD BX
-STORE CX
-SUB AX
+MOV DX, 25
+INT 10H
+INT 20H
 ```
 
 ---
 
-# 🌿 Estrategia Git
+# 🧪 Testing y validación
 
-El repositorio utiliza un flujo basado en tres niveles de branches:
-
-```text
-main
- ↑
-dev
- ↑
-feature/*
-```
-
-### `main`
-
-Contiene las versiones estables y aprobadas del proyecto.
-
-No se desarrolla directamente sobre esta branch.
-
-### `dev`
-
-Branch principal de integración.
-
-Recibe las features previamente desarrolladas y verificadas.
-
-### `feature/*`
-
-Cada funcionalidad o cambio importante se desarrolla de manera aislada.
-
-Ejemplos:
+Baseline final:
 
 ```text
-feature/memory-model
-feature/cpu-registers
-feature/asm-parser
-feature/execution-engine
-feature/automatic-execution
-```
-
----
-
-## 🔀 Pull Requests
-
-La integración sigue el flujo:
-
-```text
-feature/*
-    │
-    │ Pull Request
-    ▼
-   dev
-    │
-    │ Pull Request
-    ▼
-  main
-```
-
-De esta forma se evita modificar directamente las branches principales y cada cambio puede revisarse antes de ser integrado.
-
----
-
-## 🤖 Continuous Integration
-
-El repositorio utiliza **GitHub Actions**.
-
-Los Pull Requests dirigidos hacia:
-
-```text
-dev
-main
-```
-
-ejecutan automáticamente el workflow:
-
-```text
-Maven Build & Test
-```
-
-El proceso utiliza:
-
-```text
-Ubuntu
-Eclipse Temurin Java 25
-Maven Wrapper
-```
-
-y ejecuta:
-
-```text
-mvn verify
-```
-
-La integración solo debe realizarse cuando la validación finaliza correctamente.
-
----
-
-## ✅ Estado de la Tarea 1
-
-La implementación actual fue validada mediante:
-
-```text
-539 automated tests
-+
-manual end-to-end acceptance
-```
-
-Resultado:
-
-```text
-Tests     : 539
+Tests     : 792
 Failures  : 0
 Errors    : 0
 Skipped   : 0
@@ -561,39 +674,231 @@ Skipped   : 0
 BUILD SUCCESS
 ```
 
-Se validaron, entre otros:
+La cobertura incluye:
 
-- ejecución manual;
-- ejecución automática;
+- CPU/registers;
+- Process/PCB;
+- ASM parser;
+- instruction semantics;
+- execution weights;
+- Main Memory;
+- First-Fit;
+- Secondary Storage;
+- Virtual Memory;
+- swapping;
+- Job admission;
+- FCFS;
+- Dispatcher;
+- context switching;
+- interrupts;
+- simulated keyboard;
+- simulated screen;
+- filesystem;
+- accounting;
+- protection/security;
+- snapshots;
+- Controllers;
+- FXML;
+- GUI layout.
+
+Además se realizaron pruebas manuales end-to-end sobre:
+
+- Step;
+- Automatic;
 - Pause / Resume;
-- finalización natural;
-- errores recuperables;
-- errores de ejecución;
-- Reset;
-- representación de CPU, Memory y PCB;
-- carga de programas ASM.
+- multiple processes;
+- context switch;
+- keyboard FIFO;
+- I/O;
+- statistics;
+- memory/storage visualization;
+- GUI responsiveness.
 
 ---
 
-## 📚 Evolución del proyecto
+# 🌿 GitFlow y DevOps
 
-Este proyecto fue diseñado de forma incremental.
+El desarrollo utiliza tres niveles principales:
 
 ```text
-Tarea Programada 1 ✅
-        ↓
-Proyecto 1
-        ↓
-Proyecto 2
-        ↓
-Proyecto 3
+main
+  ↑
+dev
+  ↑
+feature/*
 ```
 
-La arquitectura actual funciona como base para incorporar posteriormente mecanismos más avanzados de Sistemas Operativos sin reconstruir los componentes ya desarrollados.
+### `main`
+
+Contiene únicamente versiones estables y aprobadas.
+
+No se desarrolla directamente sobre esta branch.
+
+### `dev`
+
+Branch de integración.
+
+Recibe features previamente implementadas, validadas y revisadas.
+
+### `feature/*`
+
+Cada funcionalidad importante se desarrolla aisladamente.
+
+Ejemplos utilizados durante el proyecto:
+
+```text
+feature/memory-model
+feature/cpu-registers
+feature/asm-parser
+feature/process-pcb
+feature/program-loader
+feature/fcfs-scheduling
+feature/process-swapping
+feature/multiprocess-runtime
+feature/statistics-security
+```
+
+## 🔀 Pull Requests
+
+```text
+feature/*
+    │
+    │ Pull Request + CI
+    ▼
+   dev
+    │
+    │ Final validation
+    ▼
+  main
+```
+
+## 🤖 Continuous Integration
+
+Los Pull Requests hacia `dev` y `main` ejecutan:
+
+```text
+Maven Build & Test
+```
+
+mediante:
+
+```text
+GitHub Actions
+Ubuntu
+Eclipse Temurin Java 25
+Maven Wrapper
+```
+
+Comando principal:
+
+```text
+mvn verify
+```
+
+La integración sólo se realiza cuando los required checks finalizan correctamente.
 
 ---
 
-### 🎓 Sistemas Operativos — Tarea Programada 1
+# ✅ Objetivos alcanzados
 
-**Raúl Alfaro Rodríguez**  
-**Carnet: 2023060456**
+- ✅ Multiprocess execution.
+- ✅ Job List y admission.
+- ✅ PCB/BCP completo.
+- ✅ CPU context.
+- ✅ FCFS Scheduler.
+- ✅ Dispatcher.
+- ✅ Context switching.
+- ✅ Main Memory configurable.
+- ✅ Kernel/User protection.
+- ✅ First-Fit allocation.
+- ✅ Secondary Storage.
+- ✅ File Index.
+- ✅ Virtual Memory.
+- ✅ Whole-process swapping.
+- ✅ ASM Parser.
+- ✅ Instruction weights.
+- ✅ Control flow.
+- ✅ Stack y PARAM.
+- ✅ Interrupts `09H`, `10H`, `20H` y `21H`.
+- ✅ Simulated Keyboard.
+- ✅ Simulated Screen.
+- ✅ Simulated Filesystem.
+- ✅ Process accounting.
+- ✅ Real-time statistics.
+- ✅ Protection & Security strategy.
+- ✅ JavaFX multiprocess dashboard.
+- ✅ Package UML documentation.
+- ✅ Continuous Integration.
+- ✅ Automated + manual testing.
+
+### Objetivos no alcanzados
+
+No se identifican funcionalidades pendientes dentro del **alcance aprobado del Proyecto I**.
+
+> [!NOTE]
+> Algunas capacidades, como el whole-process swapping, se implementan como mecanismos internos
+> del Operating System Simulator y no como controles manuales del usuario dentro de la GUI.
+
+---
+
+# ℹ️ Decisiones y consideraciones
+
+### Virtual Memory
+
+Se implementa mediante:
+
+```text
+Whole-Process Swapping
+```
+
+No mediante paging.
+
+### Scheduling
+
+El Proyecto I utiliza:
+
+```text
+FCFS non-preemptive
+```
+
+No Round Robin ni prioridades dinámicas.
+
+### Swap
+
+`VIRTUAL_MEMORY` representa la región de almacenamiento.
+
+`swapOut()` y `swapIn()` representan el mecanismo de intercambio.
+
+### Step
+
+```text
+1 Step = máximo 1 CPU Tick
+```
+
+No una instruction completa.
+
+### Statistics
+
+`CPU Ticks` y `Elapsed Time` representan conceptos diferentes.
+
+### Host filesystem
+
+Las system calls simuladas no escriben archivos reales en el equipo anfitrión.
+
+---
+
+<div align="center">
+
+## 🎓 Proyecto #1 — Gestor de Multiprocesos
+
+**Principios de Sistemas Operativos**
+
+**Tecnológico de Costa Rica**
+
+**Raúl Alfaro Rodríguez · 2023060456**
+
+<br>
+
+Desarrollado con ☕ Java · JavaFX · Maven · JUnit · PlantUML · GitHub Actions
+
+</div>

@@ -73,7 +73,7 @@ arrow {
 </style>
 hide stereotype
 
-title Operating System Simulator - Arquitectura de paquetes
+title Operating System Simulator - Diagrama de paquetes
 ' Raíz común: io.github.rajami1205.osimulator
 ' Dependencias derivadas de imports internos; tipos anidados se atribuyen a su paquete.
 ' Vista resumida: omite exception y agrega las relaciones entre capas.

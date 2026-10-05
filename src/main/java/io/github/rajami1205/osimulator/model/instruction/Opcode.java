@@ -8,5 +8,16 @@ public enum Opcode {
     LOAD,
     STORE,
     ADD,
-    SUB
+    SUB,
+    INC,
+    DEC,
+    SWAP,
+    CMP,
+    JMP,
+    JE,
+    JNE,
+    PARAM,
+    PUSH,
+    POP,
+    INT
 }

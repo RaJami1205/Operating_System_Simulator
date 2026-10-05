@@ -1,0 +1,148 @@
+@startuml
+top to bottom direction
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 35
+skinparam ranksep 60
+skinparam padding 6
+
+<style>
+root {
+  BackgroundColor #050B2D
+  FontName Arial
+  FontColor #F8FAFC
+  FontSize 14
+  Shadowing 0
+}
+title {
+  FontColor #F8FAFC
+  FontSize 20
+  FontStyle bold
+}
+package {
+  BackgroundColor #0B153A
+  LineColor #526AA0
+  LineThickness 1.2
+  FontColor #E2E8F0
+  FontSize 14
+  FontStyle plain
+  RoundCorner 6
+}
+arrow {
+  LineColor #AAB7D4
+  FontColor #AAB7D4
+  FontSize 12
+  LineThickness 1.2
+}
+.presentation {
+  BackgroundColor #103348
+  LineColor #22D3EE
+  FontSize 16
+  FontStyle bold
+}
+.application {
+  BackgroundColor #101E4B
+  LineColor #2F6BFF
+  FontSize 16
+  FontStyle bold
+}
+.model {
+  BackgroundColor #0B153A
+  LineColor #587FC4
+  FontSize 16
+  FontStyle bold
+}
+.infrastructure {
+  BackgroundColor #221C40
+  LineColor #8B5CF6
+  FontSize 16
+  FontStyle bold
+}
+.applicationChild {
+  BackgroundColor #15254D
+  LineColor #4D70AF
+}
+.modelChild {
+  BackgroundColor #122043
+  LineColor #526AA0
+}
+.infrastructureChild {
+  BackgroundColor #2B2546
+  LineColor #8170AE
+}
+</style>
+hide stereotype
+
+title Operating System Simulator - Diagrama de paquetes
+' Raíz común: io.github.rajami1205.osimulator
+' Dependencias derivadas de imports internos; tipos anidados se atribuyen a su paquete.
+' Vista resumida: omite exception y agrega las relaciones entre capas.
+
+package "Presentation" as pkg_presentation <<presentation>> {
+
+}
+package "Application" as pkg_application <<application>> {
+  package "job" as pkg_application_job <<applicationChild>> {
+  }
+  package "lifecycle" as pkg_application_lifecycle <<applicationChild>> {
+  }
+  package "process" as pkg_application_process <<applicationChild>> {
+  }
+  package "program" as pkg_application_program <<applicationChild>> {
+  }
+  package "simulator" as pkg_application_simulator <<applicationChild>> {
+  }
+}
+package "Infrastructure" as pkg_infrastructure <<infrastructure>> {
+  package "asm" as pkg_infrastructure_asm <<infrastructureChild>> {
+  }
+}
+package "Model" as pkg_model <<model>> {
+  together {
+    package "configuration" as pkg_model_configuration <<modelChild>> {
+    }
+    package "cpu" as pkg_model_cpu <<modelChild>> {
+    }
+    package "execution" as pkg_model_execution <<modelChild>> {
+    }
+    package "filesystem" as pkg_model_filesystem <<modelChild>> {
+    }
+  }
+  together {
+    package "instruction" as pkg_model_instruction <<modelChild>> {
+      package "operand" as pkg_model_instruction_operand <<modelChild>> {
+      }
+    }
+    package "io" as pkg_model_io <<modelChild>> {
+    }
+    package "job" as pkg_model_job <<modelChild>> {
+    }
+    package "memory" as pkg_model_memory <<modelChild>> {
+    }
+  }
+  together {
+    package "process" as pkg_model_process <<modelChild>> {
+    }
+    package "program" as pkg_model_program <<modelChild>> {
+    }
+    package "scheduling" as pkg_model_scheduling <<modelChild>> {
+    }
+    package "storage" as pkg_model_storage <<modelChild>> {
+    }
+  }
+}
+
+pkg_application ..> pkg_model
+pkg_infrastructure ..> pkg_application
+pkg_infrastructure ..> pkg_model
+pkg_presentation ..> pkg_application
+pkg_presentation ..> pkg_infrastructure
+pkg_presentation ..> pkg_model
+
+' Sólo layout: estos enlaces ocultos no representan dependencias reales.
+pkg_model_configuration -[hidden]down-> pkg_model_instruction
+pkg_model_instruction -[hidden]down-> pkg_model_process
+
+pkg_application -[hidden]down-> pkg_model
+
+@enduml

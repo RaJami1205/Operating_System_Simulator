@@ -25,7 +25,10 @@ class InstructionTest {
                     Opcode.LOAD,
                     Opcode.STORE,
                     Opcode.ADD,
-                    Opcode.SUB
+                    Opcode.SUB,
+                    Opcode.INC,
+                    Opcode.DEC,
+                    Opcode.SWAP, Opcode.CMP, Opcode.JMP, Opcode.JE, Opcode.JNE, Opcode.PARAM, Opcode.PUSH, Opcode.POP, Opcode.INT
                 },
                 Opcode.values()
         );
@@ -97,21 +100,21 @@ class InstructionTest {
 
         assertAll(
                 () -> assertEquals(RegisterName.AX, instruction.destination()),
-                () -> assertEquals(25, instruction.immediate()),
+                () -> assertEquals(new io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand(25), instruction.source()),
                 () -> assertEquals(Opcode.MOV, instruction.opcode())
         );
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-127, 127})
+    @ValueSource(ints = {-32768, 32767})
     void shouldAcceptMovImmediateBoundaryValues(int immediate) {
         MovInstruction instruction = new MovInstruction(RegisterName.AX, immediate);
 
-        assertEquals(immediate, instruction.immediate());
+        assertEquals(new io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand(immediate), instruction.source());
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-128, 128})
+    @ValueSource(ints = {-32769, 32768})
     void shouldRejectMovImmediateValuesOutsideRange(int immediate) {
         InvalidImmediateValueException exception = assertThrows(
                 InvalidImmediateValueException.class,
@@ -133,7 +136,7 @@ class InstructionTest {
                 ),
                 () -> assertThrows(
                         NullPointerException.class,
-                        () -> new MovInstruction(null, 128)
+                        () -> new MovInstruction(null, 32768)
                 )
         );
     }

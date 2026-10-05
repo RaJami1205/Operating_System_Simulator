@@ -9,7 +9,6 @@ import io.github.rajami1205.osimulator.application.simulator.SimulatorOrchestrat
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmFileProgramImporter;
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
-import io.github.rajami1205.osimulator.model.instruction.binary.InstructionBinaryCodec;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Objects;
@@ -19,17 +18,18 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+/** Punto de entrada JavaFX: compone dependencias mediante constructor injection y carga el dashboard FXML. */
 public class SimulatorApplication extends Application {
 
+    /** Compone las dependencias, carga el FXML y muestra la ventana principal. */
     @Override
-    // Compone las dependencias, carga el FXML y muestra la ventana principal.
     public void start(Stage primaryStage) throws IOException {
         URL viewResource = Objects.requireNonNull(
                 SimulatorApplication.class.getResource(
                         "/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"),
                 "SimulatorView.fxml resource is required");
         SimulatorOrchestrator orchestrator = new SimulatorOrchestrator(
-                new ProgramLoader(), new ExecutionEngine(), new InstructionBinaryCodec());
+                new ProgramLoader(), new ExecutionEngine());
         ProgramImporter programImporter = new AsmFileProgramImporter(new AsmParser());
         SimulatorController controller = new SimulatorController(orchestrator, programImporter);
         FXMLLoader loader = new FXMLLoader(viewResource);
@@ -45,7 +45,7 @@ public class SimulatorApplication extends Application {
         primaryStage.show();
     }
 
-    // Inicia la aplicación de escritorio mediante JavaFX.
+    /** Inicia la aplicación de escritorio mediante JavaFX. */
     public static void main(String[] args) {
         launch(args);
     }

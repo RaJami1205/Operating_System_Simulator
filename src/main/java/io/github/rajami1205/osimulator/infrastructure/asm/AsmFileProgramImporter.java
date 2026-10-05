@@ -16,13 +16,13 @@ public final class AsmFileProgramImporter implements ProgramImporter {
 
     private final AsmParser asmParser;
 
-    // Recibe el parser al que se delegará toda la sintaxis ASM.
+    /** Recibe el parser al que se delegará toda la sintaxis ASM. */
     public AsmFileProgramImporter(AsmParser asmParser) {
         this.asmParser = Objects.requireNonNull(asmParser, "asmParser must not be null");
     }
 
+    /** Lee el archivo en UTF-8 y delega su análisis, traduciendo errores de lectura o sintaxis. */
     @Override
-    // Lee el archivo en UTF-8 y delega su análisis, traduciendo errores de lectura o sintaxis.
     public List<Instruction> importProgram(Path path) throws ProgramImportException {
         Objects.requireNonNull(path, "path must not be null");
         try {

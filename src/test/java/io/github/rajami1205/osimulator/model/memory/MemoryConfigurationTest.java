@@ -30,10 +30,10 @@ class MemoryConfigurationTest {
     }
 
     @Test
-    void shouldAllowOneKernelPosition() {
-        MemoryConfiguration configuration = new MemoryConfiguration(128, 1);
+    void shouldAllowMinimumKernelPositions() {
+        MemoryConfiguration configuration = new MemoryConfiguration(128, 32);
 
-        assertEquals(1, configuration.kernelReservedPositions());
+        assertEquals(32, configuration.kernelReservedPositions());
     }
 
     @Test
@@ -58,12 +58,12 @@ class MemoryConfigurationTest {
     @ParameterizedTest
     @ValueSource(ints = {127, 0, -1})
     void shouldRejectTotalPositionsBelowMinimum(int totalPositions) {
-        assertInvalidConfiguration(totalPositions, 1);
+        assertInvalidConfiguration(totalPositions, 32);
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, -1})
-    void shouldRejectNonPositiveKernelPositions(int kernelReservedPositions) {
+    @ValueSource(ints = {31, 1, 0, -1})
+    void shouldRejectKernelPositionsBelowMinimum(int kernelReservedPositions) {
         assertInvalidConfiguration(128, kernelReservedPositions);
     }
 

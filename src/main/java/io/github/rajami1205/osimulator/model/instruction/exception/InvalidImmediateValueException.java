@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.model.instruction.exception;
  */
 public class InvalidImmediateValueException extends IllegalArgumentException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidImmediateValueException(String message) {
         super(message);
     }

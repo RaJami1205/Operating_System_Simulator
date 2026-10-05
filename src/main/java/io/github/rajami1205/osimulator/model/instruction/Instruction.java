@@ -1,5 +1,8 @@
 package io.github.rajami1205.osimulator.model.instruction;
 
+import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOperand;
+import java.util.List;
+
 /**
  * Define la representación semántica de una instrucción admitida por el simulador.
  */
@@ -8,8 +11,21 @@ public sealed interface Instruction
                 LoadInstruction,
                 StoreInstruction,
                 AddInstruction,
-                SubInstruction {
+                SubInstruction,
+                IncInstruction,
+                DecInstruction,
+                SwapInstruction, CmpInstruction, JmpInstruction, JeInstruction, JneInstruction,
+                ParamInstruction, PushInstruction, PopInstruction, InterruptInstruction {
 
-    // Identifica la operación semántica representada.
+    /** Identifica el tipo semántico de instrucción para dispatch y formatting. */
     Opcode opcode();
+
+    /** Vista derivada, ordenada e inmutable de los operandos semánticos. */
+    List<InstructionOperand> operands();
+
+    /**
+     * Expone el peso oficial en CPU ticks; ExecutionEngine conserva el progreso y aplica la semántica al
+     * completarlo.
+     */
+    ExecutionWeight executionWeight();
 }

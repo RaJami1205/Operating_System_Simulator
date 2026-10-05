@@ -217,8 +217,7 @@
 
 /* CPU and instruction values */
 .metric-card,
-.instruction-detail,
-.binary-word {
+.instruction-detail {
     -fx-padding: 5px 7px 5px 7px;
     -fx-background-color: -app-background-deep;
     -fx-background-radius: 6px;
@@ -235,7 +234,6 @@
 
 .technical-value,
 .instruction-value,
-.binary-value,
 .pcb-value {
     -fx-font-family: "Monospaced";
     -fx-text-fill: -app-text-primary;
@@ -254,16 +252,6 @@
 
 .instruction-detail {
     -fx-min-width: 0;
-}
-
-.binary-word {
-    -fx-border-color: derive(-app-violet, -28%);
-}
-
-.binary-value {
-    -fx-font-size: 13px;
-    -fx-font-weight: 700;
-    -fx-text-fill: derive(-app-violet, 28%);
 }
 
 .pcb-value {
@@ -368,3 +356,142 @@
 .table-view .scroll-bar .thumb:hover {
     -fx-background-color: derive(-app-cyan, -28%);
 }
+
+/* Machine configuration controls */
+.configuration-scroll,
+.configuration-scroll > .viewport {
+    -fx-background-color: -app-surface;
+}
+.configuration-scroll {
+    -fx-background-radius: 8px;
+    -fx-padding: 0;
+}
+.configuration-scroll > .scroll-bar:vertical,
+.configuration-scroll > .scroll-bar:vertical > .track,
+.configuration-scroll > .scroll-bar:vertical > .track-background {
+    -fx-background-color: -app-background-deep;
+}
+.configuration-scroll > .scroll-bar:vertical > .thumb {
+    -fx-background-color: -app-text-secondary;
+}
+.configuration-scroll > .scroll-bar:vertical > .thumb:hover {
+    -fx-background-color: derive(-app-text-secondary, 15%);
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button {
+    -fx-background-color: -app-surface;
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button:hover,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button:hover {
+    -fx-background-color: -app-surface-elevated;
+}
+.configuration-scroll > .scroll-bar:vertical > .increment-button > .increment-arrow,
+.configuration-scroll > .scroll-bar:vertical > .decrement-button > .decrement-arrow {
+    -fx-background-color: -app-cyan;
+}
+.configuration-setting {
+    -fx-padding: 6px 2px;
+}
+.configuration-label {
+    -fx-font-size: 12px;
+}
+.configuration-value {
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -app-cyan;
+}
+.configuration-range {
+    -fx-font-size: 11px;
+    -fx-text-fill: -app-text-secondary;
+}
+.configuration-slider .track {
+    -fx-background-color: -app-border;
+    -fx-pref-height: 5px;
+}
+.configuration-slider .thumb {
+    -fx-background-color: -app-electric-blue;
+    -fx-padding: 7px;
+}
+.configuration-slider:focused .thumb {
+    -fx-background-color: -app-cyan;
+    -fx-effect: dropshadow(gaussian, -app-electric-blue, 8, 0.15, 0, 0);
+}
+.configuration-slider:disabled {
+    -fx-opacity: 0.5;
+}
+
+/* F18 dashboard containers: keep the configuration scrollbar independently scoped. */
+.app-root .dashboard-split {
+    -fx-background-color: transparent;
+    -fx-padding: 4px;
+    -fx-box-border: transparent;
+}
+.app-root .dashboard-split > .split-pane-divider {
+    -fx-background-color: -app-border;
+    -fx-padding: 0 3px;
+}
+.app-root .dashboard-tabs { -fx-background-color: -app-surface; }
+.app-root .dashboard-tabs > .tab-header-area > .tab-header-background {
+    -fx-background-color: -app-background-deep;
+}
+.app-root .dashboard-tabs .tab {
+    -fx-background-color: -app-surface;
+    -fx-padding: 6px 10px;
+}
+.app-root .dashboard-tabs .tab:selected { -fx-background-color: -app-surface-elevated; }
+.app-root .dashboard-tabs .tab-label { -fx-text-fill: -app-text-secondary; -fx-font-size: 12px; }
+.app-root .dashboard-tabs .tab:selected .tab-label { -fx-text-fill: -app-cyan; }
+.app-root .dashboard-scroll, .app-root .dashboard-scroll > .viewport {
+    -fx-background-color: -app-surface;
+}
+.app-root .list-view, .app-root .list-cell {
+    -fx-background-color: -app-background-deep;
+    -fx-text-fill: -app-text-primary;
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 13px;
+}
+.app-root .list-cell:filled:selected { -fx-background-color: derive(-app-electric-blue, -38%); }
+.app-root .detail-area, .app-root .detail-area .content {
+    -fx-background-color: -app-background-deep;
+    -fx-text-fill: -app-text-primary;
+    -fx-font-family: "Monospaced";
+    -fx-font-size: 13px;
+}
+.app-root .status-feedback {
+    -fx-background-color: -app-surface-elevated;
+    -fx-text-fill: -app-text-secondary;
+    -fx-padding: 6px 10px;
+    -fx-font-size: 12px;
+}
+.app-root .table-view { -fx-fixed-cell-size: 29px; }
+.app-root .table-cell { -fx-font-size: 13px; -fx-padding: 5px 7px; }
+.app-root .table-view .column-header { -fx-size: 30px; }
+.app-root .table-view .column-header .label { -fx-font-size: 13px; }
+/* F19 readability: scoped type sizes, without scaling the root or sliders. */
+.app-root .panel-header, .app-root .section-title { -fx-font-size: 13px; }
+.app-root .section-label, .app-root .pcb-label, .app-root .metric-label { -fx-font-size: 12px; }
+.app-root .helper-text, .app-root .configuration-range, .app-root .header-subtitle { -fx-font-size: 12px; }
+.app-root .configuration-label, .app-root .pcb-value { -fx-font-size: 13px; }
+.app-root .instruction-value { -fx-font-size: 15px; }
+.app-root .state-caption { -fx-font-size: 11px; }
+.app-root .empty-state, .app-root .table-view .placeholder .label { -fx-font-size: 12px; }
+.app-root #screenList .list-cell { -fx-font-size: 14px; }
+.app-root .button { -fx-font-size: 13px; -fx-min-height: 31px; -fx-pref-height: 31px; }
+.app-root .input-field { -fx-font-size: 13px; -fx-min-height: 31px; -fx-pref-height: 31px; }
+.app-root .state-value { -fx-font-size: 13px; }
+.app-root .state-badge { -fx-effect: null; -fx-padding: 5px 8px; }
+.app-root .table-row-cell.file-index-row { -fx-border-color: transparent transparent transparent -app-violet; -fx-border-width: 0 0 0 3px; }
+.app-root .table-row-cell.program-data-row { -fx-border-color: transparent transparent transparent -app-cyan; -fx-border-width: 0 0 0 3px; }
+.app-root .table-row-cell.virtual-memory-row { -fx-border-color: transparent transparent transparent -app-warning; -fx-border-width: 0 0 0 3px; }
+.app-root .dashboard-tabs .scroll-bar, .app-root .dashboard-scroll .scroll-bar {
+    -fx-background-color: -app-background-deep;
+}
+.app-root .dashboard-tabs .scroll-bar .thumb, .app-root .dashboard-scroll .scroll-bar .thumb {
+    -fx-background-color: -app-text-secondary; -fx-background-radius: 5px;
+}
+.app-root .dashboard-tabs .scroll-bar .thumb:hover, .app-root .dashboard-scroll .scroll-bar .thumb:hover {
+    -fx-background-color: derive(-app-text-secondary, 15%);
+}
+
+.app-root .cpu-metric { -fx-padding: 5px 7px; }

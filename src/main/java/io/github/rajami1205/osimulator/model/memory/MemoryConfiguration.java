@@ -12,7 +12,7 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfi
 // Valida el mínimo de memoria y una reserva Kernel que deje espacio User.
 public record MemoryConfiguration(int totalPositions, int kernelReservedPositions) {
 
-    // Valida el mínimo de memoria y una reserva Kernel que deje espacio User.
+    /** Valida el mínimo de memoria y una reserva Kernel que deje espacio User. */
     public MemoryConfiguration {
         if (totalPositions < 128) {
             throw new InvalidMemoryConfigurationException(
@@ -20,9 +20,9 @@ public record MemoryConfiguration(int totalPositions, int kernelReservedPosition
             );
         }
 
-        if (kernelReservedPositions <= 0) {
+        if (kernelReservedPositions < 32) {
             throw new InvalidMemoryConfigurationException(
-                    "Kernel reserved positions must be greater than zero: " + kernelReservedPositions
+                    "Kernel reserved positions must be at least 32: " + kernelReservedPositions
             );
         }
 
@@ -33,23 +33,23 @@ public record MemoryConfiguration(int totalPositions, int kernelReservedPosition
         }
     }
 
-    // Obtiene la primera posición posterior a la reserva Kernel.
+    /** Obtiene la primera posición posterior a la reserva Kernel. */
     public int userStartAddress() {
         return kernelReservedPositions;
     }
 
-    // Calcula la capacidad disponible para programas de usuario.
+    /** Calcula la capacidad disponible para programas de usuario. */
     public int userPositions() {
         return totalPositions - kernelReservedPositions;
     }
 
-    // Determina la región Kernel o User de una dirección válida.
+    /** Determina la región Kernel o User de una dirección válida. */
     public MemoryRegion regionOf(int address) {
         validateAddress(address);
         return address < kernelReservedPositions ? MemoryRegion.KERNEL : MemoryRegion.USER;
     }
 
-    // Rechaza direcciones fuera del espacio de memoria configurado.
+    /** Rechaza direcciones fuera del espacio de memoria configurado. */
     private void validateAddress(int address) {
         if (address < 0 || address >= totalPositions) {
             throw new InvalidMemoryAddressException(

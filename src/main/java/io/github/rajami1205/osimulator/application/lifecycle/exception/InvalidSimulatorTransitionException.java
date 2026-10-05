@@ -5,7 +5,7 @@ package io.github.rajami1205.osimulator.application.lifecycle.exception;
  */
 public final class InvalidSimulatorTransitionException extends IllegalStateException {
 
-    // Conserva el diagnóstico de la condición inválida.
+    /** Conserva el diagnóstico de la condición inválida. */
     public InvalidSimulatorTransitionException(String message) {
         super(message);
     }

@@ -2,20 +2,36 @@ package io.github.rajami1205.osimulator.model.instruction;
 
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import java.util.Objects;
+import java.util.List;
+import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOperand;
+import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 
 /**
  * Representa la instrucción que toma un registro como origen para el acumulador.
  */
 public record LoadInstruction(RegisterName source) implements Instruction {
 
-    // Valida el registro que proporcionará el valor para AC.
+    private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(2);
+
+    /** Exige registro fuente no nulo para copiar al AC. */
     public LoadInstruction {
         Objects.requireNonNull(source, "source must not be null");
     }
 
+    /** Identifica LOAD para dispatch y representación semántica. */
     @Override
-    // Identifica la operación semántica representada.
     public Opcode opcode() {
         return Opcode.LOAD;
+    }
+    /** Devuelve la vista inmutable y ordenada de operandos, derivada del estado del record. */
+    @Override
+    public List<InstructionOperand> operands() {
+        return List.of(new RegisterOperand(source));
+    }
+
+    /** Devuelve el peso estático en CPU ticks de LOAD, sin almacenar progreso. */
+    @Override
+    public ExecutionWeight executionWeight() {
+        return EXECUTION_WEIGHT;
     }
 }

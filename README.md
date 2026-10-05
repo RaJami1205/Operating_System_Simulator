@@ -800,8 +800,6 @@ Esta separación permite mantener responsabilidades claras, reducir coupling y f
 
 </div>
 
-El archivo fuente del diagrama se mantiene versionado con PlantUML en:
-
 ---
 
 # ✅ Objetivos alcanzados

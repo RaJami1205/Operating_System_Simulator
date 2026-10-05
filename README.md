@@ -10,13 +10,10 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 
 <br>
 
-![Estado](https://img.shields.io/badge/ESTADO-COMPLETADO-19C7C8?style=for-the-badge)
 ![Java](https://img.shields.io/badge/JAVA-25-2F80ED?style=for-the-badge&logo=openjdk&logoColor=white)
 ![JavaFX](https://img.shields.io/badge/JAVAFX-25-00B4D8?style=for-the-badge)
+![JUnit 5](https://img.shields.io/badge/JUnit%205-Testing-25A162?style=for-the-badge&logo=junit5&logoColor=white)
 ![Maven](https://img.shields.io/badge/MAVEN-WRAPPER-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)
-![Tests](https://img.shields.io/badge/TESTS-792%20PASSING-22C55E?style=for-the-badge)
-![CI](https://img.shields.io/badge/CI-GITHUB%20ACTIONS-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
-![UML](https://img.shields.io/badge/UML-PLANTUML-6C5CE7?style=for-the-badge)
 
 <br>
 
@@ -37,16 +34,16 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🎓 Información académica](#-información-académica)
 - [🚀 Descripción del proyecto](#-descripción-del-proyecto)
 - [✨ Características principales](#-características-principales)
+- [📐 Diagrama de Paquetes](#-diagrama-de-paquetes)
+- [🏗️ Arquitectura](#️-arquitectura)
 - [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
 - [⚙️ Instruction Set](#️-instruction-set)
-- [🏗️ Arquitectura](#️-arquitectura)
 - [🛠️ Tecnologías](#️-tecnologías)
 - [📦 Requisitos](#-requisitos)
 - [💻 Instalación y ejecución](#-instalación-y-ejecución)
 - [🖥️ Uso general](#️-uso-general)
 - [🧪 Testing y validación](#-testing-y-validación)
 - [🌿 GitFlow y DevOps](#-gitflow-y-devops)
-- [📐 Diagramas UML](#-diagramas-uml)
 - [✅ Objetivos alcanzados](#-objetivos-alcanzados)
 - [ℹ️ Decisiones y consideraciones](#️-decisiones-y-consideraciones)
 - [🎥 Video demostrativo](#-video-demostrativo)
@@ -274,6 +271,110 @@ Los archivos viven dentro del **Secondary Storage simulado**.
 
 ---
 
+# 📐 Diagrama de Paquetes
+
+El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
+
+La arquitectura se estructura principalmente en:
+
+- **Presentation** → interfaz JavaFX, Controllers y rendering.
+- **Application** → orchestration, runtime, lifecycle y casos de uso.
+- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
+- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
+
+Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
+
+<div align="center">
+
+![Package Diagram](docs/uml/package_Diagram.png)
+
+</div>
+
+---
+
+# 🏗️ Arquitectura
+
+El proyecto utiliza una **Layered Architecture**, complementada con principios de
+`MVC` en Presentation.
+
+```text
+┌─────────────────────────────────────────┐
+│              PRESENTATION               │
+│        JavaFX · FXML · CSS · MVC        │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│              APPLICATION                │
+│ Use Cases · Runtime · Orchestration     │
+│ Lifecycle · Admission · Dispatcher      │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│                 MODEL                   │
+│ CPU · Process · Memory · Instructions   │
+│ Scheduling · Storage · Filesystem       │
+└─────────────────────────────────────────┘
+                    ▲
+                    │
+┌─────────────────────────────────────────┐
+│            INFRASTRUCTURE               │
+│         ASM Import / Adapters           │
+└─────────────────────────────────────────┘
+```
+
+### Presentation
+
+Responsable de:
+
+- JavaFX;
+- FXML;
+- CSS;
+- Controllers;
+- rendering de snapshots;
+- interacción del usuario.
+
+### Application
+
+Coordina:
+
+- simulator lifecycle;
+- program submission;
+- admission;
+- multiprocess runtime;
+- Dispatcher;
+- process completion;
+- swapping;
+- statistics;
+- orchestration.
+
+### Model
+
+Contiene la lógica independiente de la GUI:
+
+- CPU;
+- registers;
+- instructions;
+- processes;
+- PCB;
+- scheduling;
+- memory;
+- storage;
+- filesystem;
+- I/O;
+- execution.
+
+### Infrastructure
+
+Contiene adapters relacionados principalmente con:
+
+- lectura de `.asm`;
+- importación;
+- parsing e integración con programas externos al dominio.
+
+---
+
 # 🧠 Modelo del sistema operativo
 
 ## Process States
@@ -414,89 +515,6 @@ La estrategia de protección se enfoca en los recursos simulados del Sistema Ope
 - separación de regiones en Secondary Storage;
 - lifecycle guards;
 - simulated filesystem isolation.
-
----
-
-# 🏗️ Arquitectura
-
-El proyecto utiliza una **Layered Architecture**, complementada con principios de
-`MVC` en Presentation.
-
-```text
-┌─────────────────────────────────────────┐
-│              PRESENTATION               │
-│        JavaFX · FXML · CSS · MVC        │
-└───────────────────┬─────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────┐
-│              APPLICATION                │
-│ Use Cases · Runtime · Orchestration     │
-│ Lifecycle · Admission · Dispatcher      │
-└───────────────────┬─────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────┐
-│                 MODEL                   │
-│ CPU · Process · Memory · Instructions   │
-│ Scheduling · Storage · Filesystem       │
-└─────────────────────────────────────────┘
-                    ▲
-                    │
-┌─────────────────────────────────────────┐
-│            INFRASTRUCTURE               │
-│         ASM Import / Adapters           │
-└─────────────────────────────────────────┘
-```
-
-### Presentation
-
-Responsable de:
-
-- JavaFX;
-- FXML;
-- CSS;
-- Controllers;
-- rendering de snapshots;
-- interacción del usuario.
-
-### Application
-
-Coordina:
-
-- simulator lifecycle;
-- program submission;
-- admission;
-- multiprocess runtime;
-- Dispatcher;
-- process completion;
-- swapping;
-- statistics;
-- orchestration.
-
-### Model
-
-Contiene la lógica independiente de la GUI:
-
-- CPU;
-- registers;
-- instructions;
-- processes;
-- PCB;
-- scheduling;
-- memory;
-- storage;
-- filesystem;
-- I/O;
-- execution.
-
-### Infrastructure
-
-Contiene adapters relacionados principalmente con:
-
-- lectura de `.asm`;
-- importación;
-- parsing e integración con programas externos al dominio.
 
 ---
 
@@ -778,36 +796,6 @@ mvn verify
 ```
 
 La integración sólo se realiza cuando los required checks finalizan correctamente.
-
----
-
-# 📐 Diagramas UML
-
-La arquitectura se documenta mediante **PlantUML**.
-
-Archivos:
-
-```text
-docs/uml/package-architecture.puml
-docs/uml/package-dependencies.puml
-```
-
-### Package Architecture
-
-Vista simplificada orientada a documentación:
-
-```text
-Presentation
-Application
-Model
-Infrastructure
-```
-
-### Package Dependencies
-
-Vista técnica detallada de las dependencias internas entre packages.
-
-Ambos diagramas utilizan una identidad visual coherente con el dashboard del simulator.
 
 ---
 

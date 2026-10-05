@@ -781,33 +781,29 @@ La integración sólo se realiza cuando los required checks finalizan correctame
 
 ---
 
-# 📐 Diagramas UML
+# 📐 Diagrama de Paquetes
 
-La arquitectura se documenta mediante **PlantUML**.
+El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
 
-Archivos:
+La arquitectura se estructura principalmente en:
+
+- **Presentation** → interfaz JavaFX, Controllers y rendering.
+- **Application** → orchestration, runtime, lifecycle y casos de uso.
+- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
+- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
+
+Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
+
+<div align="center">
+
+![Package Diagram](docs/uml/package_Diagram.png)
+
+</div>
+
+El archivo fuente del diagrama se mantiene versionado con PlantUML en:
 
 ```text
 docs/uml/package-architecture.puml
-docs/uml/package-dependencies.puml
-```
-
-### Package Architecture
-
-Vista simplificada orientada a documentación:
-
-```text
-Presentation
-Application
-Model
-Infrastructure
-```
-
-### Package Dependencies
-
-Vista técnica detallada de las dependencias internas entre packages.
-
-Ambos diagramas utilizan una identidad visual coherente con el dashboard del simulator.
 
 ---
 

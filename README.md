@@ -33,6 +33,7 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🎓 Información académica](#-información-académica)
 - [🚀 Descripción del proyecto](#-descripción-del-proyecto)
 - [✨ Características principales](#-características-principales)
+- [📐 Diagrama de PaquetesL](#-diagrama-de-paquetes)
 - [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
 - [⚙️ Instruction Set](#️-instruction-set)
 - [🏗️ Arquitectura](#️-arquitectura)
@@ -42,7 +43,6 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🖥️ Uso general](#️-uso-general)
 - [🧪 Testing y validación](#-testing-y-validación)
 - [🌿 GitFlow y DevOps](#-gitflow-y-devops)
-- [📐 Diagrama de PaquetesL](#-diagrama-de-paquetes)
 - [✅ Objetivos alcanzados](#-objetivos-alcanzados)
 - [ℹ️ Decisiones y consideraciones](#️-decisiones-y-consideraciones)
 - [🎥 Video demostrativo](#-video-demostrativo)
@@ -267,6 +267,27 @@ Los archivos viven dentro del **Secondary Storage simulado**.
 
 > [!IMPORTANT]
 > Las system calls simuladas no escriben archivos reales en el filesystem del equipo anfitrión.
+
+---
+
+# 📐 Diagrama de Paquetes
+
+El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
+
+La arquitectura se estructura principalmente en:
+
+- **Presentation** → interfaz JavaFX, Controllers y rendering.
+- **Application** → orchestration, runtime, lifecycle y casos de uso.
+- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
+- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
+
+Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
+
+<div align="center">
+
+![Package Diagram](docs/uml/package_Diagram.png)
+
+</div>
 
 ---
 
@@ -774,27 +795,6 @@ mvn verify
 ```
 
 La integración sólo se realiza cuando los required checks finalizan correctamente.
-
----
-
-# 📐 Diagrama de Paquetes
-
-El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
-
-La arquitectura se estructura principalmente en:
-
-- **Presentation** → interfaz JavaFX, Controllers y rendering.
-- **Application** → orchestration, runtime, lifecycle y casos de uso.
-- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
-- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
-
-Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
-
-<div align="center">
-
-![Package Diagram](docs/uml/package_Diagram.png)
-
-</div>
 
 ---
 

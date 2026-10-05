@@ -12,6 +12,7 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 
 ![Java](https://img.shields.io/badge/JAVA-25-2F80ED?style=for-the-badge&logo=openjdk&logoColor=white)
 ![JavaFX](https://img.shields.io/badge/JAVAFX-25-00B4D8?style=for-the-badge)
+![JUnit 5](https://img.shields.io/badge/JUnit%205-Testing-25A162?style=for-the-badge&logo=junit5&logoColor=white)
 ![Maven](https://img.shields.io/badge/MAVEN-WRAPPER-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)
 
 <br>

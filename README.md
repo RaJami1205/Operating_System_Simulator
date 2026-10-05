@@ -286,7 +286,7 @@ Esta separación permite mantener responsabilidades claras, reducir coupling y f
 
 <div align="center">
 
-![Package Diagram](docs/uml/package_Diagram.png)
+![Package Diagram](docs/assets/package_Diagram.png)
 
 </div>
 

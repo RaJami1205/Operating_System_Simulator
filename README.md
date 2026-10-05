@@ -34,9 +34,9 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🚀 Descripción del proyecto](#-descripción-del-proyecto)
 - [✨ Características principales](#-características-principales)
 - [📐 Diagrama de Paquetes](#-diagrama-de-paquetes)
+- [🏗️ Arquitectura](#️-arquitectura)
 - [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
 - [⚙️ Instruction Set](#️-instruction-set)
-- [🏗️ Arquitectura](#️-arquitectura)
 - [🛠️ Tecnologías](#️-tecnologías)
 - [📦 Requisitos](#-requisitos)
 - [💻 Instalación y ejecución](#-instalación-y-ejecución)
@@ -291,6 +291,89 @@ Esta separación permite mantener responsabilidades claras, reducir coupling y f
 
 ---
 
+# 🏗️ Arquitectura
+
+El proyecto utiliza una **Layered Architecture**, complementada con principios de
+`MVC` en Presentation.
+
+```text
+┌─────────────────────────────────────────┐
+│              PRESENTATION               │
+│        JavaFX · FXML · CSS · MVC        │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│              APPLICATION                │
+│ Use Cases · Runtime · Orchestration     │
+│ Lifecycle · Admission · Dispatcher      │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│                 MODEL                   │
+│ CPU · Process · Memory · Instructions   │
+│ Scheduling · Storage · Filesystem       │
+└─────────────────────────────────────────┘
+                    ▲
+                    │
+┌─────────────────────────────────────────┐
+│            INFRASTRUCTURE               │
+│         ASM Import / Adapters           │
+└─────────────────────────────────────────┘
+```
+
+### Presentation
+
+Responsable de:
+
+- JavaFX;
+- FXML;
+- CSS;
+- Controllers;
+- rendering de snapshots;
+- interacción del usuario.
+
+### Application
+
+Coordina:
+
+- simulator lifecycle;
+- program submission;
+- admission;
+- multiprocess runtime;
+- Dispatcher;
+- process completion;
+- swapping;
+- statistics;
+- orchestration.
+
+### Model
+
+Contiene la lógica independiente de la GUI:
+
+- CPU;
+- registers;
+- instructions;
+- processes;
+- PCB;
+- scheduling;
+- memory;
+- storage;
+- filesystem;
+- I/O;
+- execution.
+
+### Infrastructure
+
+Contiene adapters relacionados principalmente con:
+
+- lectura de `.asm`;
+- importación;
+- parsing e integración con programas externos al dominio.
+
+---
+
 # 🧠 Modelo del sistema operativo
 
 ## Process States
@@ -431,89 +514,6 @@ La estrategia de protección se enfoca en los recursos simulados del Sistema Ope
 - separación de regiones en Secondary Storage;
 - lifecycle guards;
 - simulated filesystem isolation.
-
----
-
-# 🏗️ Arquitectura
-
-El proyecto utiliza una **Layered Architecture**, complementada con principios de
-`MVC` en Presentation.
-
-```text
-┌─────────────────────────────────────────┐
-│              PRESENTATION               │
-│        JavaFX · FXML · CSS · MVC        │
-└───────────────────┬─────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────┐
-│              APPLICATION                │
-│ Use Cases · Runtime · Orchestration     │
-│ Lifecycle · Admission · Dispatcher      │
-└───────────────────┬─────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────┐
-│                 MODEL                   │
-│ CPU · Process · Memory · Instructions   │
-│ Scheduling · Storage · Filesystem       │
-└─────────────────────────────────────────┘
-                    ▲
-                    │
-┌─────────────────────────────────────────┐
-│            INFRASTRUCTURE               │
-│         ASM Import / Adapters           │
-└─────────────────────────────────────────┘
-```
-
-### Presentation
-
-Responsable de:
-
-- JavaFX;
-- FXML;
-- CSS;
-- Controllers;
-- rendering de snapshots;
-- interacción del usuario.
-
-### Application
-
-Coordina:
-
-- simulator lifecycle;
-- program submission;
-- admission;
-- multiprocess runtime;
-- Dispatcher;
-- process completion;
-- swapping;
-- statistics;
-- orchestration.
-
-### Model
-
-Contiene la lógica independiente de la GUI:
-
-- CPU;
-- registers;
-- instructions;
-- processes;
-- PCB;
-- scheduling;
-- memory;
-- storage;
-- filesystem;
-- I/O;
-- execution.
-
-### Infrastructure
-
-Contiene adapters relacionados principalmente con:
-
-- lectura de `.asm`;
-- importación;
-- parsing e integración con programas externos al dominio.
 
 ---
 

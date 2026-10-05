@@ -42,7 +42,7 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🖥️ Uso general](#️-uso-general)
 - [🧪 Testing y validación](#-testing-y-validación)
 - [🌿 GitFlow y DevOps](#-gitflow-y-devops)
-- [📐 Diagramas UML](#-diagramas-uml)
+- [📐 Diagrama de PaquetesL](#-diagrama-de-paquetes)
 - [✅ Objetivos alcanzados](#-objetivos-alcanzados)
 - [ℹ️ Decisiones y consideraciones](#️-decisiones-y-consideraciones)
 - [🎥 Video demostrativo](#-video-demostrativo)

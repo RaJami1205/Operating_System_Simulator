@@ -33,7 +33,7 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🎓 Información académica](#-información-académica)
 - [🚀 Descripción del proyecto](#-descripción-del-proyecto)
 - [✨ Características principales](#-características-principales)
-- [📐 Diagrama de PaquetesL](#-diagrama-de-paquetes)
+- [📐 Diagrama de Paquetes](#-diagrama-de-paquetes)
 - [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
 - [⚙️ Instruction Set](#️-instruction-set)
 - [🏗️ Arquitectura](#️-arquitectura)

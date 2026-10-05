@@ -20,8 +20,6 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 
 <br>
 
-**Proyecto académico · IC-6600 Principios de Sistemas Operativos**
-
 </div>
 
 ---

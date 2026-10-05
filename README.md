@@ -802,9 +802,6 @@ Esta separación permite mantener responsabilidades claras, reducir coupling y f
 
 El archivo fuente del diagrama se mantiene versionado con PlantUML en:
 
-```text
-docs/uml/package-architecture.puml
-
 ---
 
 # ✅ Objetivos alcanzados

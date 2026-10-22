@@ -13,6 +13,7 @@ import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.List;
 import javafx.animation.*;
 import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
@@ -155,6 +156,9 @@ public final class SimulatorController {
      * directamente.
      */
     private void configureTables() {
+        for (TableView<?> table : List.of(memoryTable, storageTable, programTable, jobsTable, processTable, completedTable)) {
+            table.getSortOrder().clear();
+        }
         column(programAddressColumn, v -> Integer.toString(v.address())); column(programInstructionColumn, ProgramEntry::instruction);
         column(memoryAddressColumn, v -> Integer.toString(v.address())); column(memoryRegionColumn, MemoryEntry::region);
         column(memoryContentColumn, v -> v.content().orElse("\u2014"));

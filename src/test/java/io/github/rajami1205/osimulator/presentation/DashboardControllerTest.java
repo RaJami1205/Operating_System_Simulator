@@ -70,6 +70,68 @@ class DashboardControllerTest {
         void enabled(String name, boolean expected) throws Exception { assertEquals(expected, !widget(name, Control.class).isDisabled(), name); }
         void closeAlerts() { for (var window : List.copyOf(Window.getWindows())) window.hide(); }
     }
+    private static void assertOperationalOrdering(Fixture f, SimulatorSnapshot snapshot) throws Exception {
+        var rows = new LinkedHashMap<String, List<?>>();
+        rows.put("memoryTable", snapshot.memory()); rows.put("storageTable", snapshot.storage());
+        rows.put("programTable", snapshot.program()); rows.put("jobsTable", snapshot.jobs());
+        rows.put("processTable", snapshot.processes()); rows.put("completedTable", snapshot.completedProcesses());
+        int columns = 0;
+        assertEquals(6, Arrays.stream(SimulatorController.class.getDeclaredFields())
+                .filter(field -> field.getType() == TableView.class).count());
+        for (var entry : rows.entrySet()) {
+            TableView<?> table = f.widget(entry.getKey(), TableView.class);
+            assertEquals(entry.getValue(), table.getItems(), entry.getKey());
+            assertTrue(table.getSortOrder().isEmpty(), entry.getKey());
+            for (var column : table.getColumns()) {
+                assertFalse(column.isSortable(), column.getId());
+                columns++;
+            }
+        }
+        assertEquals(22, columns);
+    }
+    @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
+        var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleInitialize");
+        f.load("z-first.asm", "MOV AX, 2", "INC", "ADD AX"); f.load("a-second.asm", "INC");
+        f.action("handleStart"); f.action("handleStep");
+        var snapshot = f.simulator.snapshot();
+        assertEquals(List.of("z-first.asm", "a-second.asm"), snapshot.jobs().stream().map(j -> j.programName()).toList());
+        for (int i = 0; i < snapshot.memory().size(); i++) assertEquals(i, snapshot.memory().get(i).address());
+        for (int i = 0; i < snapshot.storage().size(); i++) assertEquals(i, snapshot.storage().get(i).address());
+        assertTrue(snapshot.memory().size() > 100); assertTrue(snapshot.storage().size() > 100);
+        int base = snapshot.process().orElseThrow().startAddress();
+        assertEquals(List.of(new ProgramEntry(base, "MOV AX, 2"), new ProgramEntry(base + 1, "INC"),
+                new ProgramEntry(base + 2, "ADD AX")), snapshot.program());
+        for (int refresh = 0; refresh < 3; refresh++) {
+            f.action("refresh"); assertOperationalOrdering(f, snapshot);
+        }
+        f.action("handleReset"); assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleInitialize"); assertOperationalOrdering(f, f.simulator.snapshot());
+    }); }
+    @Test void renderPreservesNonPidAdmissionAndCompletionOrderAndSelection() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        var initial = f.simulator.snapshot();
+        var cpu = initial.cpu().orElseThrow();
+        var accounting = io.github.rajami1205.osimulator.model.process.ProcessAccounting.initial();
+        // Read-model fixture: admission order is 9 then 2; completion history is 8 then 1.
+        var processes = List.of(9, 2).stream().map(pid -> new ProcessDetails(pid,
+                io.github.rajami1205.osimulator.model.process.ProcessState.READY, 0, Residency.RESIDENT,
+                Optional.of(32), 1, 0, cpu, List.of(), List.of(), 0, Optional.empty(), accounting)).toList();
+        var completed = List.of(new CompletedProcess(8, cpu, accounting), new CompletedProcess(1, cpu, accounting));
+        var snapshot = new SimulatorSnapshot(initial.simulatorState(), initial.cpu(), initial.currentInstruction(),
+                initial.process(), initial.program(), initial.memory(), initial.runtimeStatus(), initial.ownerPid(),
+                initial.configuration(), initial.jobs(), processes, initial.readyQueue(), initial.suspendedReadyQueue(),
+                initial.pendingKeyboardRequests(), completed, initial.storage(), initial.screenOutput(), initial.cpuTicks());
+        var render = SimulatorController.class.getDeclaredMethod("render", SimulatorSnapshot.class); render.setAccessible(true);
+        render.invoke(f.controller, snapshot);
+        f.widget("processTable", TableView.class).getSelectionModel().select(1);
+        f.widget("completedTable", TableView.class).getSelectionModel().select(0);
+        for (int refresh = 0; refresh < 3; refresh++) {
+            render.invoke(f.controller, snapshot); assertOperationalOrdering(f, snapshot);
+            assertEquals(2, get(f.controller, "selectedProcessId"));
+            assertEquals(completed.getFirst(), f.widget("completedTable", TableView.class).getSelectionModel().getSelectedItem());
+        }
+    }); }
     @Test void fxmlInjectionHandlersAndRepeatedBasenameLoading() throws Exception { onFx(() -> {
         var f = new Fixture();
         for (var field : SimulatorController.class.getDeclaredFields()) if (field.isAnnotationPresent(FXML.class)) {

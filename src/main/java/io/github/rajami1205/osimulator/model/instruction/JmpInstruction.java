@@ -5,7 +5,7 @@ import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOper
 import java.util.List;
 import java.util.Objects;
 
-/** Salto relativo incondicional a PC + 1 + displacement, limitado al programa del proceso. */
+/** Salto relativo incondicional a PC + displacement, limitado al programa del proceso. */
 public record JmpInstruction(BranchDisplacement displacement) implements Instruction {
     private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(2);
 

@@ -5,7 +5,7 @@ import io.github.rajami1205.osimulator.model.instruction.operand.InstructionOper
 import java.util.List;
 import java.util.Objects;
 
-/** Salto relativo si equal es true; el engine calcula PC + 1 + displacement y valida el destino tomado. */
+/** Salto relativo si equal es true; el engine calcula PC + displacement y valida el destino tomado. */
 public record JeInstruction(BranchDisplacement displacement) implements Instruction {
     private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(2);
 

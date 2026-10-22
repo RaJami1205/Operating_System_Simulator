@@ -259,11 +259,11 @@ public final class ExecutionEngine {
     }
 
     /**
-     * Calcula PC + 1 + displacement con aritmética amplia y rechaza destinos fuera de
+     * Calcula PC + displacement con aritmética amplia y rechaza destinos fuera de
      * 0..instructionCount-1.
      */
     private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {
-        long target = (long) currentPc + 1L + displacement.value();
+        long target = (long) currentPc + displacement.value();
         if (target < 0 || target >= instructionCount) {
             throw new ExecutionEngineException("Branch target outside process instructions: " + target);
         }

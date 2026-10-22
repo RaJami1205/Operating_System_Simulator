@@ -68,16 +68,18 @@ class ControlFlowStackExecutionTest {
     }
 
     @Test void jumpsCoverForwardBackwardZeroBoundariesAndSelfLoop() {
-        for (int[] sample : new int[][]{{0,1,2},{2,-3,0},{0,0,1},{1,-1,1}}) {
+        for (int[] sample : new int[][]{{0,1,1},{0,3,3},{1,-1,0},{4,-4,0},{0,0,0},{4,0,4},{0,4,4},{48,-4,44},{20,3,23}}) {
             var jump = new JmpInstruction(new BranchDisplacement(sample[1]));
-            Instruction[] program = {jump, jump, jump};
+            Instruction[] program = Collections.nCopies(Math.max(5, sample[0] + 4), jump).toArray(Instruction[]::new);
             var s = new Session(program);
             s.pc(sample[0]);
-            for (int repeat = 0; repeat < (sample[1] == -1 ? 3 : 1); repeat++) {
+            for (int repeat = 0; repeat < (sample[1] == 0 ? 3 : 1); repeat++) {
                 assertEquals(TickResult.IN_PROGRESS, s.tick());
                 s.assertPc(sample[0]);
+                assertSame(jump, s.cpu.instructionRegister().orElseThrow());
                 assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
                 s.assertPc(sample[2]);
+                assertSame(jump, s.cpu.instructionRegister().orElseThrow());
                 assertTrue(s.progress.isIdle());
             }
         }
@@ -94,10 +96,10 @@ class ControlFlowStackExecutionTest {
                     s.cpu.writeConditionFlags(flags);
                     assertEquals(TickResult.IN_PROGRESS, s.tick());
                     s.assertPc(0);
-                    if (taken && displacement != 1) s.failure(jump, null);
+                    if (taken && displacement != 1 && displacement != 2) s.failure(jump, null);
                     else {
                         assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
-                        s.assertPc(taken ? 2 : 1);
+                        s.assertPc(taken ? displacement : 1);
                     }
                     assertEquals(flags, s.cpu.conditionFlags());
                 }
@@ -110,12 +112,58 @@ class ControlFlowStackExecutionTest {
     }
 
     @Test void invalidUnconditionalTargetsFailWithoutWrappingOrPublishingPc() {
-        for (int displacement : new int[]{2, -2, 3, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+        for (int displacement : new int[]{-1, -2, 3, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
             var jump = new JmpInstruction(new BranchDisplacement(displacement));
             var s = new Session(jump, new IncInstruction(), new IncInstruction());
             s.tick();
             s.failure(jump, null);
         }
+    }
+
+    @Test void conditionalBackwardBranchesPublishOnlyOnSecondTick() {
+        for (boolean je : new boolean[]{true, false}) {
+            Instruction jump = je ? new JeInstruction(new BranchDisplacement(-2))
+                    : new JneInstruction(new BranchDisplacement(-2));
+            var s = new Session(new IncInstruction(), new IncInstruction(), jump);
+            s.pc(2);
+            s.cpu.writeConditionFlags(new ConditionFlags(je, true));
+            assertEquals(TickResult.IN_PROGRESS, s.tick());
+            s.assertPc(2); assertSame(jump, s.cpu.instructionRegister().orElseThrow());
+            assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
+            s.assertPc(0); assertSame(jump, s.cpu.instructionRegister().orElseThrow());
+            assertEquals(new ConditionFlags(je, true), s.cpu.conditionFlags());
+        }
+    }
+
+    @Test void reviewedLoopFetchesIncAtTwoAndPositiveBranchSkipsUnwantedOutput() {
+        var instructions = new io.github.rajami1205.osimulator.infrastructure.asm.AsmParser().parse(List.of(
+                "MOV CX, 0", "MOV BX, 3", "INC CX", "MOV DX, CX", "INT 10H", "CMP CX, BX", "JNE -4",
+                "JMP +3", "MOV DX, 99", "INT 10H", "MOV DX, 7", "INT 10H", "INT 20H"));
+        var s = new Session(instructions.toArray(Instruction[]::new));
+        int returns = 0;
+        for (int tick = 0; tick < 100 && s.pcb.state() != ProcessState.TERMINATED; tick++) {
+            int previousPc = s.pcb.programCounter();
+            var result = s.tick();
+            if (previousPc == 6 && result == TickResult.INSTRUCTION_COMPLETED && !s.cpu.conditionFlags().equal()) {
+                s.assertPc(2);
+                s.tick();
+                assertSame(instructions.get(2), s.cpu.instructionRegister().orElseThrow());
+                assertInstanceOf(IncInstruction.class, s.cpu.instructionRegister().orElseThrow());
+                returns++;
+            }
+        }
+        assertEquals(2, returns);
+        assertEquals(ProcessState.TERMINATED, s.pcb.state());
+        assertEquals(List.of(1, 2, 3, 7), s.screen.outputs());
+    }
+
+    @Test void reviewedJneAt48ReturnsTo44() {
+        var jump = new JneInstruction(new BranchDisplacement(-4));
+        var s = new Session(Collections.nCopies(49, jump).toArray(Instruction[]::new));
+        s.pc(48);
+        assertEquals(TickResult.IN_PROGRESS, s.tick()); s.assertPc(48);
+        assertSame(jump, s.cpu.instructionRegister().orElseThrow());
+        assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick()); s.assertPc(44);
     }
 
     @Test void pushPopEveryRegisterAndStackIsolation() {

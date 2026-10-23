@@ -71,8 +71,8 @@ public final class ProcessSwapService {
     }
 
     /**
-     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY; conserva PC
-     * lógico y devuelve Waiting por capacidad.
+     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY; rebasa el PC
+     * físico y devuelve Waiting por capacidad.
      */
     public SwapResult swapIn(int processId) {
         var pcb = process(processId);
@@ -100,12 +100,12 @@ public final class ProcessSwapService {
             replacement = original.withResidence(new UserImageResidence.Resident(user));
             validateCommit(pcb, original, false);
             storage.readSwapBlock(swap); // Valida identidad y contenido de origen antes del commit irreversible.
+            pcb.relocateSuspended(bounds); // Publica ambos valores sólo tras preparar el contexto; fallo libera USER.
         } catch (RuntimeException | Error failure) {
             cleanup(failure, () -> memory.release(user));
             throw failure;
         }
         // Las precondiciones controladas ya se validaron; estos objetos de sesión no se usan concurrentemente.
-        pcb.relocateSuspended(bounds);
         resources.replace(processId, original, replacement);
         storage.releaseSwap(swap);
         pcb.changeState(ready ? ProcessState.READY : ProcessState.BLOCKED);

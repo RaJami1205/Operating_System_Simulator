@@ -22,14 +22,14 @@ class ProcessResourceRegistryTest {
         assertThrows(IllegalStateException.class,()->registry.replace(1,other,resources));
         assertSame(resources,registry.find(1).orElseThrow());
     }
-    @Test void relocationRequiresSuspensionAndPreservesExtentAndLogicalPc() {
-        var pcb=new ProcessControlBlock(1,32,3);pcb.setProgramCounter(3);
+    @Test void relocationRequiresSuspensionAndPreservesExtentAndRebasesTerminalPc() {
+        var pcb=new ProcessControlBlock(1,32,3);pcb.setProgramCounter(35);
         assertThrows(IllegalStateException.class,()->pcb.relocateSuspended(new ProcessMemoryBounds(40,3)));
         pcb.changeState(ProcessState.BLOCKED_SUSPENDED);
         assertThrows(IllegalStateException.class,()->pcb.relocateSuspended(new ProcessMemoryBounds(40,2)));
         pcb.relocateSuspended(new ProcessMemoryBounds(40,3));
         assertThrows(IllegalStateException.class,pcb::memoryBounds);assertEquals(3,pcb.instructionCount());
         pcb.changeState(ProcessState.BLOCKED);assertEquals(new ProcessMemoryBounds(40,3),pcb.memoryBounds());
-        assertEquals(3,pcb.programCounter());
+        assertEquals(43,pcb.programCounter());
     }
 }

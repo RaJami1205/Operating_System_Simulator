@@ -61,7 +61,7 @@ class MultiprocessRuntimeTest {
         assertThrows(IllegalStateException.class,simulator::step);simulator.resume();assertEquals(before,simulator.snapshot());
         tick(1,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);
         tick(1,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
-        assertEquals(0,pcb(2).programCounter());assertTrue(dispatcher().owner().isEmpty());
+        assertEquals(37,pcb(2).programCounter());assertTrue(dispatcher().owner().isEmpty());
         var first=simulator.completedProcesses().getFirst().finalContext();
         assertEquals("first",first.dxValue().textValue());assertEquals("data",first.alValue().textValue());
         assertEquals(0x40,first.ah());assertTrue(first.conditionFlags().equal());
@@ -83,7 +83,7 @@ class MultiprocessRuntimeTest {
         block(1,RuntimeStatus.RUNNABLE);tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);
         var before=simulator.snapshot();simulator.submitKeyboardInput(42);
         assertEquals(before.cpu(),simulator.snapshot().cpu());assertEquals(before.currentInstruction(),simulator.snapshot().currentInstruction());assertEquals(before.program(),simulator.snapshot().program());assertEquals(1,progress().consumedTicks());
-        assertEquals(List.of(3,1),ready().entries());assertEquals(42,pcb(1).cpuContext().dx());assertEquals(1,pcb(1).programCounter());
+        assertEquals(List.of(3,1),ready().entries());assertEquals(42,pcb(1).cpuContext().dx());assertEquals(33,pcb(1).programCounter());
         assertEquals(ProcessState.READY,pcb(1).state());assertTrue(simulator.pendingKeyboardRequests().isEmpty());
         tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(2,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
         tick(3,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);tick(1,TickResult.PROGRAM_FINISHED,RuntimeStatus.FINISHED);
@@ -92,9 +92,9 @@ class MultiprocessRuntimeTest {
     @Test void fifoPausedValuesDrainBeforeNewInt09AndKeepRequestsUnique() {
         initialize();submit("p1","INT 09H","INC");submit("p2","INT 09H","INC");submit("p3","INT 09H");simulator.start();
         block(1,RuntimeStatus.RUNNABLE);block(2,RuntimeStatus.RUNNABLE);
-        assertEquals(List.of(new PendingKeyboardRequest(1,0),new PendingKeyboardRequest(2,0)),simulator.pendingKeyboardRequests());
+        assertEquals(List.of(new PendingKeyboardRequest(1,32),new PendingKeyboardRequest(2,34)),simulator.pendingKeyboardRequests());
         simulator.pause();simulator.submitKeyboardInput(11);simulator.submitKeyboardInput(22);simulator.submitKeyboardInput(33);
-        assertEquals(2,simulator.pendingKeyboardRequests().size());assertEquals(0,pcb(1).programCounter());
+        assertEquals(2,simulator.pendingKeyboardRequests().size());assertEquals(32,pcb(1).programCounter());
         simulator.resume();assertTrue(simulator.pendingKeyboardRequests().isEmpty());assertTrue(dispatcher().owner().isEmpty());
         assertEquals(List.of(3,1,2),ready().entries());assertEquals(11,pcb(1).cpuContext().dx());assertEquals(22,pcb(2).cpuContext().dx());
         tick(3,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(3,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);

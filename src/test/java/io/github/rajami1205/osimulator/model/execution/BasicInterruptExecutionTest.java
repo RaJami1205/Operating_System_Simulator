@@ -27,7 +27,7 @@ class BasicInterruptExecutionTest {
     private InterruptInstruction interrupt(InterruptVector vector) { return new InterruptInstruction(vector); }
     private void load(Instruction... instructions) { var loaded = new ProgramLoader().loadWithAllocation(memory,1,List.of(instructions)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
     private TickResult tick() { return engine.executeTick(filesystem, screen,keyboard,memory,cpu,pcb,progress,allocation); }
-    private void pc(int expected) { assertEquals(expected,cpu.programCounter()); assertEquals(expected,pcb.programCounter()); }
+    private void pc(int expected) { assertEquals(32 + expected,cpu.programCounter()); assertEquals(32 + expected,pcb.programCounter()); }
 
     @Test void screenAppendsOncePerFinalTickInOrderAndCanFinish() {
         load(interrupt(InterruptVector.SCREEN),interrupt(InterruptVector.SCREEN));

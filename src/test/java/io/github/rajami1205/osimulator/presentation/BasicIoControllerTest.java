@@ -79,7 +79,7 @@ class BasicIoControllerTest {
                 simulator.loadProgram(new AsmParser().parse(List.of("ADD AX")));
                 simulator.start();invoke(controller,"refresh");invoke(controller,"handleAutomatic");
                 callback.handle(new javafx.event.ActionEvent()); // INT09 1/2
-                assertEquals(0,simulator.snapshot().cpu().orElseThrow().programCounter());
+                assertEquals(32,simulator.snapshot().cpu().orElseThrow().programCounter());
                 callback.handle(new javafx.event.ActionEvent()); // P1 blocked; P2 remains READY
                 assertEquals(Animation.Status.RUNNING,timeline.getStatus());
                 assertTrue(simulator.completedProcesses().isEmpty());

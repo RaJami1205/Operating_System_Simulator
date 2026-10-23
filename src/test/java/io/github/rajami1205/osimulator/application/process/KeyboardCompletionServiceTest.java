@@ -33,26 +33,26 @@ class KeyboardCompletionServiceTest {
         assertThrows(IllegalStateException.class,()->service.register(pcb));
         var other=new ProcessControlBlock(1,32,2);other.changeState(ProcessState.BLOCKED);
         assertThrows(IllegalStateException.class,()->service.register(other));
-        assertEquals(List.of(new PendingKeyboardRequest(1,0)),history);
+        assertEquals(List.of(new PendingKeyboardRequest(1,32)),history);
         assertThrows(UnsupportedOperationException.class,history::clear);service.remove(1);
         assertTrue(service.pending().isEmpty());assertEquals(1,history.size());
     }
     @Test void mismatchingSavedPcRejectsBeforeConsumingInputOrPublishingContext() {
-        var pcb=blocked();service.register(pcb);pcb.setProgramCounter(1);device.submit(44);
+        var pcb=blocked();service.register(pcb);pcb.setProgramCounter(33);device.submit(44);
         var before=pcb.cpuContext();assertThrows(IllegalStateException.class,service::drain);
         assertSame(before,pcb.cpuContext());assertEquals(1,service.pending().size());assertTrue(device.hasInput());
-        pcb.setProgramCounter(0);service.drain();assertFalse(device.hasInput());assertEquals(44,pcb.cpuContext().dx());
-        assertEquals(1,pcb.programCounter());assertEquals(List.of(1),ready.entries());
-        assertTrue(service.drain().isEmpty());assertEquals(1,pcb.programCounter());
+        pcb.setProgramCounter(32);service.drain();assertFalse(device.hasInput());assertEquals(44,pcb.cpuContext().dx());
+        assertEquals(33,pcb.programCounter());assertEquals(List.of(1),ready.entries());
+        assertTrue(service.drain().isEmpty());assertEquals(33,pcb.programCounter());
     }
     @Test void suspendedCompletionReplacesOnlyDxAndPcAndDoesNotEnqueueResidentReady() {
         var pcb=blocked();
-        var before=new CpuContext<Instruction>(0,Optional.of(new IncInstruction()),1,2,3,4,
+        var before=new CpuContext<Instruction>(32,Optional.of(new IncInstruction()),1,2,3,4,
                 new TextRegisterValue("old DX"),64,new TextRegisterValue("preserved AL"),new ConditionFlags(true,true));
         pcb.replaceCpuContext(before);service.register(pcb);
         new ProcessSwapService(memory,storage,table,registry,ready).swapOut(1);
         device.submit(255);assertTrue(service.drain().isEmpty());
-        assertEquals(before.withDx(new NumericRegisterValue(255)).withProgramCounter(1),pcb.cpuContext());
+        assertEquals(before.withDx(new NumericRegisterValue(255)).withProgramCounter(33),pcb.cpuContext());
         assertEquals("old DX",before.dxValue().textValue());
         assertThrows(NullPointerException.class,()->before.withDx(null));
         assertEquals(ProcessState.READY_SUSPENDED,pcb.state());assertTrue(ready.entries().isEmpty());

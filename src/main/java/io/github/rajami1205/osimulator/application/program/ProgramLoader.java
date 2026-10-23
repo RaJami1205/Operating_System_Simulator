@@ -26,7 +26,7 @@ public final class ProgramLoader {
     }
 
     /**
-     * Reserva USER, escribe el bloque completo y crea un PCB READY con PC lógico cero; ante fallo
+     * Reserva USER, escribe el bloque completo y crea un PCB READY con PC físico igual a Base; ante fallo
      * posterior libera la reserva. No almacena el PCB en Kernel.
      */
     public ProgramLoadResult loadWithAllocation(

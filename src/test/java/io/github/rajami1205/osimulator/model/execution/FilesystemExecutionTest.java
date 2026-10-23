@@ -38,7 +38,7 @@ class FilesystemExecutionTest {
         for(int i=0;i<4;i++) {
             assertEquals(TickResult.IN_PROGRESS,tick());
             assertEquals(cells,cells());assertEquals(open,pcb.openFiles().files());assertEquals(al,cpu.alValue());
-            assertEquals(0,cpu.programCounter());assertEquals(0,pcb.programCounter());
+            assertEquals(pcb.programStartAddress(),cpu.programCounter());assertEquals(pcb.programStartAddress(),pcb.programCounter());
         }
     }
     @Test void eachServiceCommitsOnlyOnFifthTickAndUsesCanonicalStorageAndPcb() {
@@ -63,7 +63,7 @@ class FilesystemExecutionTest {
             intermediateTicksUnchanged();var before=cells();
             var failure=assertThrows(ExecutionEngineException.class,this::tick);
             assertInstanceOf(FileSystemException.class,failure.getCause());assertEquals(before,cells());
-            assertEquals(0,pcb.programCounter());assertEquals(0,cpu.programCounter());assertTrue(progress.isIdle());
+            assertEquals(pcb.programStartAddress(),pcb.programCounter());assertEquals(pcb.programStartAddress(),cpu.programCounter());assertTrue(progress.isIdle());
             assertEquals(InterruptVector.FILESYSTEM,((InterruptInstruction)cpu.instructionRegister().orElseThrow()).vector());
             storage.reset();
         }
@@ -83,7 +83,7 @@ class FilesystemExecutionTest {
             assertInstanceOf(RegisterTypeMismatchException.class,error.getCause());
             assertEquals(before.dxValue(),cpu.dxValue());assertEquals(7,cpu.readRegister(ax));assertEquals(9,cpu.accumulator());
             assertEquals(before.conditionFlags(),cpu.conditionFlags());assertTrue(pcb.stack().isEmpty());assertTrue(screen.outputs().isEmpty());
-            assertEquals(0,pcb.programCounter());assertTrue(progress.isIdle());
+            assertEquals(pcb.programStartAddress(),pcb.programCounter());assertTrue(progress.isIdle());
         }
     }
     @Test void numericWritesReplaceTextIncludingKeyboardStoreAndPop() {

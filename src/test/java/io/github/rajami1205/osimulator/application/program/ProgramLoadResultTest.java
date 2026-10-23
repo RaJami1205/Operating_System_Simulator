@@ -12,12 +12,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ProgramLoadResultTest {
     @Test
-    void transfersOriginalActiveHandleAndReadyLogicalContext() {
+    void transfersOriginalActiveHandleAndReadyPhysicalContext() {
         var memory = new MainMemory(new MemoryConfiguration(128, 32));
         var instruction = new LoadInstruction(RegisterName.AX);
         var loaded = new ProgramLoader().loadWithAllocation(memory, 7, List.of(instruction));
         assertEquals(ProcessState.READY, loaded.pcb().state());
-        assertEquals(0, loaded.pcb().programCounter());
+        assertEquals(32, loaded.pcb().programCounter());
         assertEquals(new ProcessMemoryBounds(loaded.userAllocation().base(), loaded.userAllocation().size()), loaded.pcb().memoryBounds());
         assertSame(instruction, memory.readInstruction(loaded.pcb().memoryBounds(), 0));
         memory.release(loaded.userAllocation());

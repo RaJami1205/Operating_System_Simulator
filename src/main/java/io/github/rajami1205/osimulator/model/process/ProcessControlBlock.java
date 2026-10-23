@@ -19,7 +19,7 @@ public final class ProcessControlBlock {
     private final OpenFileTable openFiles = new OpenFileTable();
     private ProcessAccounting accounting = ProcessAccounting.initial();
     private ProcessState state = ProcessState.NEW;
-    private CpuContext<Instruction> cpuContext = CpuContext.initial();
+    private CpuContext<Instruction> cpuContext;
     private int priority;
     private Optional<PcbAddress> nextPcbAddress = Optional.empty();
     /** Valida y fija los metadatos del proceso con su PC inicial y estado NEW. */
@@ -31,6 +31,7 @@ public final class ProcessControlBlock {
         validateProcessId(processId);
         this.processId = processId;
         this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
+        this.cpuContext = CpuContext.<Instruction>initial().withProgramCounter(programStartAddress);
     }
 
     /** Devuelve bounds físicos vigentes; rechaza la consulta mientras el proceso está suspended. */
@@ -43,13 +44,41 @@ public final class ProcessControlBlock {
 
     /** Publica nueva Base durante swap-in; exige estado suspended y el mismo Limit lógico. */
     public void relocateSuspended(ProcessMemoryBounds bounds) {
+        var context = relocatedContext(bounds);
+        memoryBounds = bounds;
+        cpuContext = context;
+    }
+    /** Prepara relocation sin mutar; conserva offset incluso para el marcador terminal. */
+    private CpuContext<Instruction> relocatedContext(ProcessMemoryBounds bounds) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
                 || bounds.limit() != memoryBounds.limit()) {
             throw new IllegalStateException("Relocation requires suspended state and unchanged limit");
         }
-        memoryBounds = bounds;
+        long offset = (long) programCounter() - memoryBounds.base();
+        long next = (long) bounds.base() + offset;
+        if (offset < 0 || offset > bounds.limit() || next > Integer.MAX_VALUE) {
+            throw new InvalidProcessProgramCounterException("Invalid relocation position");
+        }
+        return cpuContext.withProgramCounter((int) next);
     }
+
+    /** Dirección física actual o última dirección residente de una posición del programa. */
+    public int instructionAddress(int offset) {
+        if (offset < 0 || offset >= memoryBounds.limit()) {
+            throw new InvalidProcessProgramCounterException("Invalid instruction offset: " + offset);
+        }
+        return memoryBounds.base() + offset;
+    }
+
+    /** PC ejecutable según la ubicación actual o última ubicación residente. */
+    public boolean hasExecutableProgramCounter() {
+        return programCounter() >= memoryBounds.base() && programCounter() < memoryBounds.endExclusive();
+    }
+
+    /** Distingue el marcador terminal físico, también durante suspensión. */
+    public boolean hasTerminalProgramCounter() { return programCounter() == memoryBounds.endExclusive(); }
+
     /** Expone el contexto inmutable guardado, que puede diferir del CPU mientras el proceso ejecuta. */
     public CpuContext<Instruction> cpuContext() { return cpuContext; }
     /** Entrega el stack propio y mutable del proceso para operaciones del dominio. */
@@ -63,7 +92,7 @@ public final class ProcessControlBlock {
     /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */
     public Optional<PcbAddress> nextPcbAddress() { return nextPcbAddress; }
 
-    /** Reemplaza el contexto guardado sólo después de validar su PC lógico contra Limit. */
+    /** Reemplaza el contexto guardado sólo después de validar su PC físico contra Base/EndExclusive. */
     public void replaceCpuContext(CpuContext<Instruction> context) {
         Objects.requireNonNull(context, "context must not be null");
         validateOperationalProgramCounter(context.programCounter());
@@ -130,12 +159,12 @@ public final class ProcessControlBlock {
         cpuContext = cpuContext.withProgramCounter(programCounter);
     }
 
-    /** El PC lógico admite Limit únicamente como marcador terminal. */
+    /** El PC físico admite EndExclusive únicamente como marcador terminal. */
     private void validateOperationalProgramCounter(int programCounter) {
-        if (programCounter < 0 || programCounter > memoryBounds.limit()) {
+        if (programCounter < memoryBounds.base() || programCounter > memoryBounds.endExclusive()) {
             throw new InvalidProcessProgramCounterException(
-                    "Process Program Counter must be between 0"
-                            + " and " + memoryBounds.limit() + ": " + programCounter);
+                    "Process Program Counter must be between " + memoryBounds.base()
+                            + " and " + memoryBounds.endExclusive() + ": " + programCounter);
         }
     }
     /** Exige un identificador positivo para el proceso. */

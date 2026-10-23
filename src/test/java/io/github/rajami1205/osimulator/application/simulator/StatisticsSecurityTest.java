@@ -126,7 +126,7 @@ class StatisticsSecurityTest {
         field("memory",MainMemory.class).release(resources(1).kernel());
         var swapError=assertThrows(ExecutionEngineException.class,()->simulator.swapOut(1));
         assertInstanceOf(MemoryProtectionException.class,swapError.getCause()); assertEquals(SimulatorState.ERROR,simulator.snapshot().simulatorState());
-        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),128,64));
+        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 255),128,64));
         submit("large","INC","INC"); assertInstanceOf(AdmissionResult.Waiting.class,simulator.attemptNextAdmission().orElseThrow());
         assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState()); assertEquals(0,clock());
         simulator.reset(); init(); submit("one","INC"); simulator.attemptNextAdmission();

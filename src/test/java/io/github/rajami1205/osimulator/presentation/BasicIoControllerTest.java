@@ -31,7 +31,7 @@ class BasicIoControllerTest {
             var controller=new SimulatorController(simulator,path -> { throw new AssertionError("Import unused"); });
             var loader=new FXMLLoader(SimulatorApplication.class.getResource("/io/github/rajami1205/osimulator/presentation/SimulatorView.fxml"));
             loader.setController(controller); assertNotNull(loader.load());
-            simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
+            simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
             simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC"))); simulator.start();invoke(controller,"refresh");
             var timeline=(Timeline)field(controller,"automaticTimeline");
             try {
@@ -64,7 +64,7 @@ class BasicIoControllerTest {
                 invoke(controller,"handleStep");
                 assertEquals(55,simulator.snapshot().cpu().orElseThrow().dx());
                 invoke(controller,"handleReset");
-                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
+                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
                 simulator.loadProgram(new AsmParser().parse(List.of("MOV DX, \"notes.txt\"","MOV DX, 7")));
                 simulator.start();invoke(controller,"refresh");
                 invoke(controller,"handleStep");
@@ -105,7 +105,7 @@ class BasicIoControllerTest {
                 assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 invoke(controller,"handleReset");
-                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),512,64));
+                simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 255),512,64));
                 simulator.loadProgram(new AsmParser().parse(List.of("INC","INC")));simulator.start();invoke(controller,"refresh");
                 invoke(controller,"handleAutomatic");invoke(controller,"handleStep");
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());

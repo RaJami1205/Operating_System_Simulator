@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FilesystemOrchestratorTest {
     private final SimulatorOrchestrator simulator=new SimulatorOrchestrator(new ProgramLoader(),new ExecutionEngine());
     private void load(List<String> program) {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256,32),512,64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
         simulator.loadProgram(new AsmParser().parse(program));simulator.start();
     }
     @Test void completeAsmWorkflowAndCanonicalSnapshotsPreserveTextAndResetStorage() {

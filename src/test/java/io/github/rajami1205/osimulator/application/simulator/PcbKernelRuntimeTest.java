@@ -33,6 +33,19 @@ class PcbKernelRuntimeTest {
         if (simulator.snapshot().ownerPid().equals(Optional.of(pid))) assertEquals(field("cpu",CpuRegisters.class).snapshot(),pcb.cpuContext());
     }
 
+    @Test void minimumKernelAdmitsFiveCompletePcbBlocks() {
+        simulator.initialize(SimulatorConfiguration.defaults());
+        for (int pid = 1; pid <= 5; pid++) submit("p" + pid, "INC");
+        simulator.start();
+        assertEquals(5, field("processTable", ProcessTable.class).size());
+        for (int pid = 1; pid <= 5; pid++) {
+            var allocation = resource(pid).kernel();
+            assertEquals((pid - 1) * 28, allocation.base());
+            assertEquals(28, allocation.size());
+            assertPublished(pid);
+        }
+    }
+
     @Test void successfulWeightedTicksPublishContextStackFlagsAndAccountingWithoutEarlyEffects() {
         simulator.initialize(SimulatorConfiguration.defaults());
         submit("p","MOV AX, 7","ADD AX","CMP AX, AX","PARAM 1, 2, 3","PUSH AX","POP BX","INT 09H","INC");
@@ -57,16 +70,17 @@ class PcbKernelRuntimeTest {
         assertEquals(new PcbValue.Number(147),value(1,PcbField.PC));
     }
 
-    @Test void branch48Minus4Publishes44AndSmallKernelAdmitsOnlyOne() {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
+    @Test void relativeBranchPublishesPhysicalTargetAndOccupiedKernelLimitsAdmission() {
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
+        field("memory",MainMemory.class).allocateKernel(112); // Reserve four blocks to exercise actual capacity.
         var source=new ArrayList<>(Collections.nCopies(16,"INC"));source.add("JNE -4");source.add("INT 20H");
         submit("branch",source.toArray(String[]::new));submit("waiting","INC");simulator.start();
         assertEquals(1,field("processTable",ProcessTable.class).size());
         for(int i=0;i<16;i++) simulator.step();
-        assertEquals(48,pcb(1).programCounter());
-        for(int i=0;i<10 && pcb(1).programCounter()==48;i++) {simulator.step();assertPublished(1);}
-        assertEquals(new PcbValue.Number(44),value(1,PcbField.PC));
-        assertEquals(44,simulator.snapshot().cpu().orElseThrow().programCounter());
+        assertEquals(156,pcb(1).programCounter());
+        for(int i=0;i<10 && pcb(1).programCounter()==156;i++) {simulator.step();assertPublished(1);}
+        assertEquals(new PcbValue.Number(152),value(1,PcbField.PC));
+        assertEquals(152,simulator.snapshot().cpu().orElseThrow().programCounter());
     }
 
     @Test void contextSwitchKeyboardAndRelocationKeepKernelIdentityAndCapturedValues() {

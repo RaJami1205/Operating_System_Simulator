@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MultiprocessRuntimeTest {
     private final SimulatorOrchestrator simulator=new SimulatorOrchestrator(new ProgramLoader(),new ExecutionEngine());
     private final AsmParser parser=new AsmParser();
-    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(236,140),512,64)); }
+    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64)); }
     private void submit(String name,String... instructions) { simulator.submitProgram(new ProgramImage(name,parser.parse(List.of(instructions)))); }
     private <T> T field(Object object,String name,Class<T> type) {
         try { var f=object.getClass().getDeclaredField(name);f.setAccessible(true);return type.cast(f.get(object)); }
@@ -75,7 +75,7 @@ class MultiprocessRuntimeTest {
         assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
         assertEquals(0,table().size());assertTrue(resources().entries().isEmpty());assertTrue(ready().entries().isEmpty());
         assertTrue(simulator.snapshot().memory().stream().allMatch(row->row.content().isEmpty()));
-        assertEquals(2,storage().entries().size());assertEquals(140,memory().allocateUser(96).base());
+        assertEquals(2,storage().entries().size());assertEquals(140,memory().allocateUser(116).base());
         assertEquals(0,memory().allocateKernel(140).base());
     }
     @Test void inputCompletionDoesNotMutateAnotherOwnerAndJoinsReadyTail() {
@@ -143,7 +143,7 @@ class MultiprocessRuntimeTest {
         simulator.submitProgram(new ProgramImage("small",Collections.nCopies(10,new IncInstruction())));
         simulator.attemptNextAdmission();simulator.attemptNextAdmission();simulator.swapOut(1);simulator.swapOut(2);
         // A reserved region can be empty: allocator availability is the authority, not cell content.
-        memory().allocateUser(80);simulator.start();
+        memory().allocateUser(100);simulator.start();
         assertEquals(List.of(1,2),suspended().entries());assertTrue(ready().entries().isEmpty());
         for(int i=0;i<3;i++) assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_CAPACITY),simulator.step());
         assertEquals(List.of(1,2),suspended().entries());assertEquals(SimulatorState.RUNNING,simulator.snapshot().simulatorState());

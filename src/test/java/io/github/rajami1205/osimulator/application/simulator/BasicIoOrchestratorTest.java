@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class BasicIoOrchestratorTest {
     private final SimulatorOrchestrator simulator=new SimulatorOrchestrator(new ProgramLoader(),new ExecutionEngine());
     private void load(String... source) {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
         simulator.loadProgram(new AsmParser().parse(List.of(source))); simulator.start();
     }
     private void twoTicks() { simulator.step(); simulator.step(); }
@@ -23,10 +23,10 @@ class BasicIoOrchestratorTest {
         if (process.equals("TERMINATED")) {
             assertTrue(snapshot.process().isEmpty());
             var context=simulator.completedProcesses().getFirst().finalContext();
-            assertEquals(32 + pc,context.programCounter());assertEquals(dx,context.dx());
+            assertEquals(140 + pc,context.programCounter());assertEquals(dx,context.dx());
         } else if (process.equals("RUNNING")) {
             assertEquals(process,snapshot.process().orElseThrow().processState());
-            assertEquals(32 + pc,snapshot.cpu().orElseThrow().programCounter());
+            assertEquals(140 + pc,snapshot.cpu().orElseThrow().programCounter());
             assertEquals(dx,snapshot.cpu().orElseThrow().dx());
         } else {
             assertTrue(snapshot.process().isEmpty());
@@ -34,7 +34,7 @@ class BasicIoOrchestratorTest {
                 var field=SimulatorOrchestrator.class.getDeclaredField("processTable");field.setAccessible(true);
                 var table=(io.github.rajami1205.osimulator.model.process.ProcessTable)field.get(simulator);
                 var pcb=table.find(1).orElseThrow();
-                assertEquals(process,pcb.state().name());assertEquals(32 + pc,pcb.programCounter());
+                assertEquals(process,pcb.state().name());assertEquals(140 + pc,pcb.programCounter());
                 assertEquals(dx,pcb.cpuContext().dx());
             } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
         }
@@ -75,7 +75,7 @@ class BasicIoOrchestratorTest {
             assertEquals(expected,snapshot.currentInstruction().orElseThrow().semanticInstruction());
             assertEquals(Optional.of(expected),snapshot.cpu().orElseThrow().instructionRegister());
             assertEquals(expected,snapshot.program().get(instruction).instruction());
-            assertEquals(Optional.of(expected),snapshot.memory().get(32+instruction).content());
+            assertEquals(Optional.of(expected),snapshot.memory().get(140+instruction).content());
             simulator.step(); assertFalse(simulator.waitingForInput());
         }
         state(SimulatorState.FINISHED,"TERMINATED",4,255);

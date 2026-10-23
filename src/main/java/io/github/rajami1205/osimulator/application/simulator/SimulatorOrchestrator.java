@@ -141,7 +141,7 @@ public final class SimulatorOrchestrator {
         processScheduler = newProcessScheduler;
         var suspended = new SuspendedReadyQueue();
         dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources, memory);
-        keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended);
+        keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended, memory);
         processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
                 readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
         runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,

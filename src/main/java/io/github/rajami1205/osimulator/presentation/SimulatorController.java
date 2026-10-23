@@ -128,6 +128,8 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        mainMemorySlider.setMin(SimulatorConfiguration.MIN_MAIN_MEMORY);
+        kernelMemorySlider.setMin(SimulatorConfiguration.MIN_KERNEL_MEMORY);
         configureSlider(mainMemorySlider, mainMemoryValue, mainMemoryRange);
         configureSlider(kernelMemorySlider, kernelMemoryValue, kernelMemoryRange);
         configureSlider(secondaryStorageSlider, secondaryStorageValue, secondaryStorageRange);

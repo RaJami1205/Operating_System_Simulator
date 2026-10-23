@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.application.process;
 
+import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.application.program.ProgramLoadResult;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
@@ -22,6 +23,7 @@ import java.util.Optional;
 public final class ProcessAdmissionService {
     private final JobList jobs;
     private final SecondaryStorage storage;
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
     private final ProcessTable processes;
     private final ProgramLoader loader;
@@ -36,6 +38,7 @@ public final class ProcessAdmissionService {
         this.jobs = Objects.requireNonNull(jobs, "jobs must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.memory = Objects.requireNonNull(memory, "memory must not be null");
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.processes = Objects.requireNonNull(processes, "processes must not be null");
         this.loader = Objects.requireNonNull(loader, "loader must not be null");
         this.readyQueue = Objects.requireNonNull(readyQueue, "readyQueue must not be null");
@@ -58,7 +61,7 @@ public final class ProcessAdmissionService {
         MemoryAllocation kernel;
         try {
             // El tamaño fijo es positivo: un fallo de allocation aquí indica capacidad insuficiente.
-            kernel = memory.allocateKernel(1);
+            kernel = memory.allocateKernel(PcbField.PCB_SIZE);
         } catch (MemoryAllocationException shortage) {
             return new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY);
         }
@@ -72,7 +75,7 @@ public final class ProcessAdmissionService {
         boolean enqueued = false;
         try {
             loaded = loader.loadWithAllocation(memory, pid, program);
-            memory.writePcb(kernel, 0, loaded.pcb());
+            memory.materializePcb(kernel, loaded.pcb());
             var address = new PcbAddress(kernel.base());
             previous = processes.last().orElse(null);
             if (previous != null) previousLink = previous.nextPcbAddress();
@@ -84,6 +87,7 @@ public final class ProcessAdmissionService {
             if (previous != null) {
                 previous.setNextPcbAddress(Optional.of(address));
                 linkChanged = true;
+                pcbSynchronizer.sync(previous);
             }
             if (loaded.pcb().state() != ProcessState.READY) {
                 throw new IllegalStateException("Admission requires a READY PCB: " + pid);
@@ -99,7 +103,10 @@ public final class ProcessAdmissionService {
             if (linkChanged) {
                 var tail = previous;
                 var oldLink = previousLink;
-                cleanup(failure, () -> tail.setNextPcbAddress(oldLink));
+                cleanup(failure, () -> {
+                    tail.setNextPcbAddress(oldLink);
+                    pcbSynchronizer.sync(tail);
+                });
             }
             if (processPublished) cleanup(failure, () -> processes.remove(pid));
             if (resourcesPublished) cleanup(failure, () -> resources.remove(pid));

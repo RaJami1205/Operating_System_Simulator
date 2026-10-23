@@ -6,6 +6,8 @@ import io.github.rajami1205.osimulator.application.program.exception.ProgramImpo
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
+import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
@@ -132,6 +134,40 @@ class DashboardControllerTest {
             assertEquals(completed.getFirst(), f.widget("completedTable", TableView.class).getSelectionModel().getSelectedItem());
         }
     }); }
+    @Test void sessionMemoryRangesClampInitializeAndResetConsistently() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        var main = f.widget("mainMemorySlider", Slider.class);
+        var kernel = f.widget("kernelMemorySlider", Slider.class);
+        assertEquals(256, main.getMin()); assertEquals(1024, main.getMax());
+        assertEquals(140, kernel.getMin()); assertEquals(255, kernel.getMax());
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        assertEquals("256 – 1024", f.widget("mainMemoryRange", Label.class).getText());
+        assertEquals("140 – 255", f.widget("kernelMemoryRange", Label.class).getText());
+        main.setValue(128); kernel.setValue(32);
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        main.setValue(512); kernel.setValue(400);
+        assertEquals(511, kernel.getMax());
+        main.setValue(256);
+        assertEquals(255, kernel.getMax()); assertEquals(255, kernel.getValue());
+        assertEquals("255", f.widget("kernelMemoryValue", Label.class).getText());
+        main.setValue(512); kernel.setValue(300);
+        f.widget("secondaryStorageSlider", Slider.class).setValue(1024);
+        f.widget("virtualMemorySlider", Slider.class).setValue(128);
+        f.action("handleInitialize");
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(512, 300), 1024, 128),
+                f.simulator.snapshot().configuration().orElseThrow());
+        assertTrue(main.isDisabled()); assertTrue(kernel.isDisabled());
+        f.action("handleReset");
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        assertEquals(255, kernel.getMax());
+        assertEquals("256", f.widget("mainMemoryValue", Label.class).getText());
+        assertEquals("140", f.widget("kernelMemoryValue", Label.class).getText());
+        assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
+        assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
+        assertFalse(main.isDisabled()); assertFalse(kernel.isDisabled());
+        f.action("handleInitialize");
+        assertEquals(SimulatorConfiguration.defaults(), f.simulator.snapshot().configuration().orElseThrow());
+    }); }
     @Test void fxmlInjectionHandlersAndRepeatedBasenameLoading() throws Exception { onFx(() -> {
         var f = new Fixture();
         for (var field : SimulatorController.class.getDeclaredFields()) if (field.isAnnotationPresent(FXML.class)) {
@@ -153,7 +189,7 @@ class DashboardControllerTest {
         f.action("handleResume"); f.action("handleAutomatic"); f.enabled("stepButton", false); f.enabled("automaticButton", false);
         f.action("handleReset");
         assertEquals(256, f.widget("mainMemorySlider", Slider.class).getValue());
-        assertEquals(32, f.widget("kernelMemorySlider", Slider.class).getValue());
+        assertEquals(140, f.widget("kernelMemorySlider", Slider.class).getValue());
         assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
         assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
         assertTrue(f.widget("programPathField", TextField.class).getText().isEmpty());
@@ -198,7 +234,7 @@ class DashboardControllerTest {
         f.action("handleReset"); assertNull(get(f.controller, "selectedProcessId"));
     }); }
     @Test void matrixIncludesCapacityAndSafeErrorAndRowStylesAreRecycled() throws Exception { onFx(() -> {
-        var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(128); f.widget("kernelMemorySlider", Slider.class).setValue(127);
+        var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(256); f.widget("kernelMemorySlider", Slider.class).setValue(255);
         f.action("handleInitialize"); f.load("large.asm", "INC", "INC"); f.action("handleStart");
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_CAPACITY), f.simulator.snapshot().runtimeStatus());
         f.enabled("stepButton", false); f.enabled("pauseButton", true); f.enabled("keyboardSendButton", true);

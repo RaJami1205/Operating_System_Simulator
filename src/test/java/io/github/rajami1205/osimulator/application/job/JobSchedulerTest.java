@@ -18,7 +18,7 @@ class JobSchedulerTest {
     void attemptsOnlyFirstPendingInSubmissionOrderAndNeverBypassesWaitingJob() {
         var jobs = new JobList();
         var storage = new SecondaryStorage(512, 64);
-        var memory = new MainMemory(new MemoryConfiguration(128, 32));
+        var memory = new MainMemory(new MemoryConfiguration(160, 64));
         var table = new ProcessTable();
         var queue = new ReadyQueue();
         var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, new io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry());

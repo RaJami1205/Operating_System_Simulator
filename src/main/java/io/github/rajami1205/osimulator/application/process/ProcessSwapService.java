@@ -13,6 +13,7 @@ import java.util.Objects;
  * el PCB Kernel y su contexto; el caller excluye al owner activo.
  */
 public final class ProcessSwapService {
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
     private final SecondaryStorage storage;
     private final ProcessTable processes;
@@ -23,6 +24,7 @@ public final class ProcessSwapService {
     public ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
             ProcessResourceRegistry resources, ReadyQueue queue) {
         this.memory = Objects.requireNonNull(memory);
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.storage = Objects.requireNonNull(storage);
         this.processes = Objects.requireNonNull(processes);
         this.resources = Objects.requireNonNull(resources);
@@ -67,6 +69,7 @@ public final class ProcessSwapService {
         resources.replace(processId, original, replacement);
         pcb.changeState(ready ? ProcessState.READY_SUSPENDED : ProcessState.BLOCKED_SUSPENDED);
         if (ready) queue.remove(processId);
+        pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
     }
 
@@ -110,6 +113,7 @@ public final class ProcessSwapService {
         storage.releaseSwap(swap);
         pcb.changeState(ready ? ProcessState.READY : ProcessState.BLOCKED);
         if (ready) queue.enqueue(processId);
+        pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
     }
 

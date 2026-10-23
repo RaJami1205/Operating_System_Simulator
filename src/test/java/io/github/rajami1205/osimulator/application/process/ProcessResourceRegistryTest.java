@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProcessResourceRegistryTest {
     @Test void validatesTypedResourcesAndProtectsCanonicalPublication() {
         var memory=new MainMemory(new MemoryConfiguration(128,32));
-        var kernel=memory.allocateKernel(1);var user=memory.allocateUser(2);
+        var kernel=memory.allocateKernel(io.github.rajami1205.osimulator.model.memory.PcbField.PCB_SIZE);var user=memory.allocateUser(2);
         var resources=new ProcessResources(kernel,new PcbAddress(kernel.base()),new UserImageResidence.Resident(user));
         var registry=new ProcessResourceRegistry();registry.register(1,resources);
         assertSame(resources,registry.find(1).orElseThrow());

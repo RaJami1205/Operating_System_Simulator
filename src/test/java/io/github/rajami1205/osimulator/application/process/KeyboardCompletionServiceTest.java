@@ -21,7 +21,7 @@ class KeyboardCompletionServiceTest {
     private final ReadyQueue ready=new ReadyQueue();
     private final SuspendedReadyQueue suspended=new SuspendedReadyQueue();
     private final KeyboardDevice device=new KeyboardDevice();
-    private final KeyboardCompletionService service=new KeyboardCompletionService(device,table,registry,ready,suspended);
+    private final KeyboardCompletionService service=new KeyboardCompletionService(device,table,registry,ready,suspended,memory);
     private ProcessControlBlock blocked() {
         var jobs=new JobList();storage.storeProgram("p",List.of(new IncInstruction(),new IncInstruction()));
         jobs.add(new Job(1,"p",JobState.PENDING));

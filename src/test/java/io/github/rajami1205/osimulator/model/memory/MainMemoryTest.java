@@ -45,7 +45,7 @@ class MainMemoryTest {
     @Test
     void validatesContentAndCellValues() {
         assertThrows(NullPointerException.class, () -> new InstructionContent(null));
-        assertThrows(NullPointerException.class, () -> new PcbContent(null));
+        assertThrows(NullPointerException.class, () -> PcbMemoryImage.capture(null));
         assertThrows(IllegalArgumentException.class, () -> new MemoryCell(-1, MemoryRegion.USER, EmptyContent.INSTANCE));
         assertThrows(NullPointerException.class, () -> new MemoryCell(0, null, EmptyContent.INSTANCE));
         assertThrows(NullPointerException.class, () -> new MemoryCell(0, MemoryRegion.KERNEL, null));
@@ -55,25 +55,28 @@ class MainMemoryTest {
     @Test
     void storesCanonicalPcbAndInstructionsInSeparateBoundedRegions() {
         var memory = memory();
-        var kernel = memory.allocateKernel(32);
+        var kernel = memory.allocateKernel(28);
+        memory.allocateKernel(4);
         var user = memory.allocateUser(96);
         var pcb = new ProcessControlBlock(1, user.base(), user.size());
-        memory.writePcb(kernel, 31, pcb);
+        memory.materializePcb(kernel, pcb);
         memory.writeInstruction(user, 95, instruction);
         assertEquals(0, kernel.base());
-        assertEquals(32, kernel.endExclusive());
+        assertEquals(28, kernel.endExclusive());
         assertEquals(32, user.base());
         assertEquals(128, user.endExclusive());
-        assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(31)).pcb());
+        assertTrue(assertInstanceOf(PcbContent.class, memory.read(0)).belongsTo(pcb));
         pcb.changeState(ProcessState.READY);
-        assertEquals(ProcessState.READY, assertInstanceOf(PcbContent.class, memory.read(31)).pcb().state());
+        assertEquals(new PcbValue.State(ProcessState.NEW), ((PcbContent)memory.read(PcbField.STATE.offset())).value());
+        memory.writePcbImage(kernel, pcb, PcbMemoryImage.capture(pcb));
+        assertEquals(new PcbValue.State(ProcessState.READY), ((PcbContent)memory.read(PcbField.STATE.offset())).value());
         assertSame(instruction, assertInstanceOf(InstructionContent.class, memory.read(127)).instruction());
         assertThrows(MemoryAllocationException.class, () -> memory.allocateUser(1));
         assertThrows(MemoryAllocationException.class, () -> memory.allocateKernel(1));
         assertThrows(MemoryProtectionException.class, () -> memory.writeInstruction(kernel, 0, instruction));
         assertThrows(MemoryProtectionException.class, () -> memory.writeUserBlock(kernel, List.of(instruction)));
         assertThrows(MemoryProtectionException.class, () -> memory.writeUserBlock(kernel, List.of()));
-        assertThrows(MemoryProtectionException.class, () -> memory.writePcb(user, 0, pcb));
+        assertThrows(MemoryProtectionException.class, () -> memory.materializePcb(user, pcb));
     }
 
     @Test
@@ -107,12 +110,12 @@ class MainMemoryTest {
         assertThrows(InvalidMemoryReleaseException.class, () -> memory.release(user));
         assertThrows(MemoryProtectionException.class, () -> memory.writeUserBlock(user, List.of(instruction)));
         assertEquals(before, memory.cell(32));
-        var kernel = memory.allocateKernel(1);
+        var kernel = memory.allocateKernel(28);
         var pcb = new ProcessControlBlock(1, 32, 2);
-        memory.writePcb(kernel, 0, pcb);
-        assertThrows(NullPointerException.class, () -> memory.writePcb(kernel, 0, null));
-        assertThrows(InvalidMemoryAddressException.class, () -> memory.writePcb(kernel, 1, pcb));
-        assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(0)).pcb());
+        memory.materializePcb(kernel, pcb);
+        assertThrows(NullPointerException.class, () -> memory.materializePcb(kernel, null));
+        assertThrows(MemoryProtectionException.class, () -> memory.materializePcb(kernel, pcb));
+        assertTrue(assertInstanceOf(PcbContent.class, memory.read(0)).belongsTo(pcb));
     }
 
     @Test
@@ -166,16 +169,17 @@ class MainMemoryTest {
     void clearUserAndResetKeepContentAndAllocationsConsistent() {
         var memory = memory();
         var user = memory.allocateUser(96);
-        var kernel = memory.allocateKernel(32);
+        var kernel = memory.allocateKernel(28);
+        memory.allocateKernel(4);
         var pcb = new ProcessControlBlock(1, 32, 96);
-        memory.writePcb(kernel, 0, pcb);
+        memory.materializePcb(kernel, pcb);
         memory.writeInstruction(user, 95, instruction);
         var historical = memory.cell(127);
         memory.clearUserSpace();
         memory.clearUserSpace();
         for (int i = 32; i < 128; i++) assertTrue(memory.isEmpty(i));
         assertEquals(new InstructionContent(instruction), historical.content());
-        assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(0)).pcb());
+        assertTrue(assertInstanceOf(PcbContent.class, memory.read(0)).belongsTo(pcb));
         assertThrows(MemoryAllocationException.class, () -> memory.allocateKernel(1));
         assertThrows(InvalidMemoryReleaseException.class, () -> memory.release(user));
         var reused = memory.allocateUser(96);
@@ -191,25 +195,27 @@ class MainMemoryTest {
 
     @Test
     void kernelReleaseClearsOnlyItsOwnRangeAndRejectsForeignKernelWrites() {
-        var memory = memory();
-        var first = memory.allocateKernel(1);
-        var second = memory.allocateKernel(1);
+        var memory = new MainMemory(new MemoryConfiguration(160, 64));
+        var first = memory.allocateKernel(28);
+        var second = memory.allocateKernel(28);
         var user = memory.allocateUser(1);
         var pcb = new ProcessControlBlock(1, user.base(), user.size());
-        memory.writePcb(first, 0, pcb);
-        memory.writePcb(second, 0, pcb);
+        var other = new ProcessControlBlock(2, user.base(), user.size());
+        memory.materializePcb(first, pcb);
+        memory.materializePcb(second, other);
+        var preserved = java.util.stream.IntStream.range(28,56).mapToObj(memory::cell).toList();
         memory.writeInstruction(user, 0, instruction);
-        var foreign = memory().allocateKernel(1);
-        assertThrows(MemoryProtectionException.class, () -> memory.writePcb(foreign, 0, pcb));
+        var foreign = memory().allocateKernel(28);
+        assertThrows(MemoryProtectionException.class, () -> memory.materializePcb(foreign, pcb));
         assertThrows(InvalidMemoryReleaseException.class, () -> memory.release(foreign));
         memory.release(first);
-        assertTrue(memory.isEmpty(0));
-        assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(1)).pcb());
-        assertEquals(new InstructionContent(instruction), memory.read(32));
-        var reused = memory.allocateKernel(1);
+        for (int i=0;i<28;i++) assertTrue(memory.isEmpty(i));
+        assertEquals(preserved, java.util.stream.IntStream.range(28,56).mapToObj(memory::cell).toList());
+        assertEquals(new InstructionContent(instruction), memory.read(64));
+        var reused = memory.allocateKernel(28);
         assertEquals(0, reused.base());
         assertNotEquals(first.allocationId(), reused.allocationId());
-        assertThrows(MemoryProtectionException.class, () -> memory.writePcb(first, 0, pcb));
+        assertThrows(MemoryProtectionException.class, () -> memory.materializePcb(first, pcb));
         assertThrows(InvalidMemoryReleaseException.class, () -> memory.release(first));
     }
 

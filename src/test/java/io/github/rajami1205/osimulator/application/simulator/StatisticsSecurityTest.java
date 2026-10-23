@@ -80,7 +80,7 @@ class StatisticsSecurityTest {
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(5, clock()); assertAccounting(pcb(1).accounting(),0,5,null);
     }
     @Test void terminalPcAndOverflowPreflightConsumeNoTick() throws Exception {
-        init(); submit("one", "ADD AX"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(33);
+        init(); submit("one", "ADD AX"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(pcb(1).programEndAddressExclusive());
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(1, clock()); assertEquals(1, pcb(1).accounting().cpuTicks());
         simulator.reset(); init(); submit("one", "INC"); simulator.start();
         var counter = field("tickCounter", CpuTickCounter.class); var ticks = CpuTickCounter.class.getDeclaredField("ticks"); ticks.setAccessible(true); ticks.setLong(counter, Long.MAX_VALUE);
@@ -110,7 +110,7 @@ class StatisticsSecurityTest {
     }
     @Test void wrongCanonicalKernelOrMismatchedUserExtentFailsBeforeDispatch() throws Exception {
         init(); submit("one","INC"); simulator.start(); var memory = field("memory",MainMemory.class);
-        memory.writePcb(resources(1).kernel(),0,new ProcessControlBlock(1,32,1));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resources(1).kernel(),new ProcessControlBlock(1,32,1));
         assertThrows(ExecutionEngineException.class,simulator::step); assertEquals(0,clock()); assertEquals(List.of(1),simulator.snapshot().readyQueue());
         simulator.reset(); init(); submit("one","INC"); simulator.start(); memory=field("memory",MainMemory.class);
         var original=resources(1); var different=memory.allocateUser(2); var registry=field("processResources",ProcessResourceRegistry.class);
@@ -126,7 +126,7 @@ class StatisticsSecurityTest {
         field("memory",MainMemory.class).release(resources(1).kernel());
         var swapError=assertThrows(ExecutionEngineException.class,()->simulator.swapOut(1));
         assertInstanceOf(MemoryProtectionException.class,swapError.getCause()); assertEquals(SimulatorState.ERROR,simulator.snapshot().simulatorState());
-        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),128,64));
+        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 255),128,64));
         submit("large","INC","INC"); assertInstanceOf(AdmissionResult.Waiting.class,simulator.attemptNextAdmission().orElseThrow());
         assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState()); assertEquals(0,clock());
         simulator.reset(); init(); submit("one","INC"); simulator.attemptNextAdmission();
@@ -144,7 +144,7 @@ class StatisticsSecurityTest {
     }
     @Test void swapInCapacityWaitAndAdmissionIntegrityTaxonomyRemainDistinct() throws Exception {
         init(); submit("one","INC"); simulator.attemptNextAdmission(); simulator.swapOut(1);
-        field("memory",MainMemory.class).allocateUser(224);
+        field("memory",MainMemory.class).allocateUser(116);
         assertInstanceOf(SwapResult.Waiting.class,simulator.swapIn(1));
         assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState()); assertEquals(0,clock());
         simulator.reset(); init(); submit("one","INC"); simulator.attemptNextAdmission(); submit("two","INC");

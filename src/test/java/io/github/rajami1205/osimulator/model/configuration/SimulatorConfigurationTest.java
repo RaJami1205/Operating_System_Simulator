@@ -10,7 +10,7 @@ class SimulatorConfigurationTest {
     @Test
     void exposesApprovedDefaults() {
         var configuration = SimulatorConfiguration.defaults();
-        assertEquals(new MemoryConfiguration(256, 32), configuration.mainMemory());
+        assertEquals(new MemoryConfiguration(256, 140), configuration.mainMemory());
         assertEquals(512, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());
     }
@@ -27,7 +27,7 @@ class SimulatorConfigurationTest {
 
     @Test
     void acceptsMinimumStorageAndVirtualMemory() {
-        var configuration = new SimulatorConfiguration(new MemoryConfiguration(128, 32), 128, 64);
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(256, 140), 128, 64);
         assertEquals(128, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());
     }
@@ -42,6 +42,20 @@ class SimulatorConfigurationTest {
             "128,128", "128,129", "512,512", "512,513"})
     void rejectsInvalidCapacities(int secondary, int virtual) {
         assertThrows(IllegalArgumentException.class,
-                () -> new SimulatorConfiguration(new MemoryConfiguration(256, 32), secondary, virtual));
+                () -> new SimulatorConfiguration(new MemoryConfiguration(256, 140), secondary, virtual));
     }
+    @ParameterizedTest
+    @CsvSource({"255,140", "256,139", "256,256", "256,257"})
+    void rejectsInvalidSessionMemory(int main,int kernel) {
+        assertThrows(IllegalArgumentException.class, () ->
+                new SimulatorConfiguration(new MemoryConfiguration(main,kernel),512,64));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"256,140", "257,140", "256,141", "256,255", "512,140", "512,300"})
+    void acceptsSessionBoundariesWithoutExtraUserMinimum(int main,int kernel) {
+        var configuration=new SimulatorConfiguration(new MemoryConfiguration(main,kernel),512,64);
+        assertEquals(main-kernel,configuration.mainMemory().userPositions());
+    }
+
 }

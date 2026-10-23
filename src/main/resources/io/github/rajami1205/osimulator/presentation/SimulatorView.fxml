@@ -41,7 +41,7 @@
                                 <Region HBox.hgrow="ALWAYS"/>
                                 <Label fx:id="mainMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="mainMemorySlider" min="128" max="1024" value="256" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Slider fx:id="mainMemorySlider" min="256" max="1024" value="256" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
                             <Label fx:id="mainMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
@@ -50,7 +50,7 @@
                                 <Region HBox.hgrow="ALWAYS"/>
                                 <Label fx:id="kernelMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="kernelMemorySlider" min="32" max="255" value="32" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Slider fx:id="kernelMemorySlider" min="140" max="255" value="140" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
                             <Label fx:id="kernelMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">

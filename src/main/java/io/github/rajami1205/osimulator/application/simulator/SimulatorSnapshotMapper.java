@@ -90,7 +90,21 @@ final class SimulatorSnapshotMapper {
         return switch (content) {
             case EmptyContent ignored -> Optional.empty();
             case InstructionContent value -> Optional.of(SemanticFormatter.semanticText(value.instruction()));
-            case PcbContent value -> Optional.of("PCB PID=" + value.pcb().processId());
+            case PcbContent value -> Optional.of("PCB " + value.ownerPid() + " · " + value.field().name() + ": " + pcbValueText(value.value()));
+        };
+    }
+
+    /** Formatea valores capturados sin consultar un PCB vivo. */
+    private static String pcbValueText(PcbValue value) {
+        return switch (value) {
+            case PcbValue.Empty ignored -> "—";
+            case PcbValue.Number number -> Long.toString(number.value());
+            case PcbValue.Flag flag -> Boolean.toString(flag.value());
+            case PcbValue.State state -> state.value().name();
+            case PcbValue.InstructionValue instruction -> SemanticFormatter.semanticText(instruction.value());
+            case PcbValue.Register register -> register.value().displayText();
+            case PcbValue.Timestamp time -> time.value().toString();
+            case PcbValue.Names names -> names.values().toString();
         };
     }
 

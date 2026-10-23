@@ -220,8 +220,10 @@ class SimulatorOrchestratorTest {
         simulator.start();
         completeInstruction();
         completeInstruction();
+        simulator.step(); // ADD intermediate tick publishes context/accounting.
+        simulator.step();
         var before = simulator.snapshot();
-        assertThrows(ExecutionEngineException.class, this::completeInstruction);
+        assertThrows(ExecutionEngineException.class, simulator::step);
         var failed = simulator.snapshot();
         assertEquals(SimulatorState.ERROR, failed.simulatorState());
         assertEquals(before.memory(), failed.memory());
@@ -307,10 +309,10 @@ class SimulatorOrchestratorTest {
     @Test
     void formatsKernelPcbAsImmutableDescriptiveText() {
         var pcb = new io.github.rajami1205.osimulator.model.process.ProcessControlBlock(7, 32, 1);
-        var text = simulator.contentText(new io.github.rajami1205.osimulator.model.memory.PcbContent(pcb));
-        assertEquals(Optional.of("PCB PID=7"), text);
+        var text = simulator.contentText(io.github.rajami1205.osimulator.model.memory.PcbMemoryImage.capture(pcb).cells().getFirst());
+        assertEquals(Optional.of("PCB 7 · PID: 7"), text);
         pcb.changeState(io.github.rajami1205.osimulator.model.process.ProcessState.TERMINATED);
-        assertEquals(Optional.of("PCB PID=7"), text);
+        assertEquals(Optional.of("PCB 7 · PID: 7"), text);
     }
 
     @Test
@@ -395,8 +397,8 @@ class SimulatorOrchestratorTest {
         assertEquals(before.currentInstruction(), after.currentInstruction());
         assertTrue(after.process().isEmpty());
         assertTrue(after.program().isEmpty());
-        assertEquals(Optional.of("PCB PID=1"), after.memory().getFirst().content());
-        assertEquals(Optional.of("LOAD AX"), after.memory().get(32).content());
+        assertEquals(Optional.of("PCB 1 · PID: 1"), after.memory().getFirst().content());
+        assertEquals(Optional.of("LOAD AX"), after.memory().get(140).content());
         assertEquals(JobState.ADMITTED, simulator.jobs().getFirst().state());
         assertEquals(JobState.PENDING, history.getFirst().state());
         assertThrows(IllegalStateException.class, simulator::step);

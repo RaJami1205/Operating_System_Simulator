@@ -1,5 +1,9 @@
 package io.github.rajami1205.osimulator.application.process;
 
+import io.github.rajami1205.osimulator.model.memory.PcbContent;
+import io.github.rajami1205.osimulator.model.memory.PcbValue;
+import io.github.rajami1205.osimulator.model.memory.PcbMemoryImage;
+import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
@@ -56,6 +60,7 @@ public final class ProcessCompletionService {
         }
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing completed resources"));
         memory.validatePcbAllocation(resource.kernel(), pcb);
+        validateStoredLink(pcb, resource);
         int size = switch (resource.residence()) {
             case UserImageResidence.Resident resident -> {
                 if (resident.allocation().base() != pcb.memoryBounds().base()) {
@@ -75,19 +80,30 @@ public final class ProcessCompletionService {
         if (!pcb.nextPcbAddress().equals(next)) throw new IllegalStateException("Invalid outgoing PCB link");
         if (previous != null) {
             memory.validatePcbAllocation(resources.find(previous.processId()).orElseThrow().kernel(), previous);
+            validateStoredLink(previous, resources.find(previous.processId()).orElseThrow());
             if (!previous.nextPcbAddress().equals(Optional.of(resource.address()))) {
                 throw new IllegalStateException("Invalid incoming PCB link");
             }
         }
 
-        pcb.replaceAccounting(pcb.accounting().finishAt(realClock.instant()));
-        var record = new CompletedProcessRecord(pid, pcb.cpuContext(), pcb.accounting());
+        if (index + 1 < entries.size()) {
+            var successor = entries.get(index + 1);
+            memory.validatePcbAllocation(resources.find(successor.processId()).orElseThrow().kernel(), successor);
+        }
+        var previousImage = previous == null ? null
+                : PcbMemoryImage.capture(previous, next);
+        var finishedAccounting = pcb.accounting().finishAt(realClock.instant());
+        var record = new CompletedProcessRecord(pid, pcb.cpuContext(), finishedAccounting);
+        if (previous != null) {
+            memory.writePcbImage(resources.find(previous.processId()).orElseThrow().kernel(), previous, previousImage);
+            previous.setNextPcbAddress(next);
+        }
+        pcb.replaceAccounting(finishedAccounting);
         // Todas las comprobaciones de identidad, contenido y enlaces preceden a las operaciones destructivas.
         switch (resource.residence()) {
             case UserImageResidence.Resident resident -> memory.release(resident.allocation());
             case UserImageResidence.Suspended swapped -> storage.releaseSwap(swapped.allocation());
         }
-        if (previous != null) previous.setNextPcbAddress(next);
         memory.release(resource.kernel());
         resources.remove(pid);
         table.remove(pid);
@@ -95,4 +111,14 @@ public final class ProcessCompletionService {
         suspended.remove(pid);
         completed.add(record);
     }
+    /** Un enlace corrupto en la representación no autoriza limpieza ni reparación silenciosa. */
+    private void validateStoredLink(ProcessControlBlock pcb, ProcessResources resource) {
+        var expected = pcb.nextPcbAddress().<PcbValue>map(
+                address -> new PcbValue.Number(address.address()))
+                .orElse(PcbValue.Empty.INSTANCE);
+        var cell = (PcbContent) memory.read(
+                resource.kernel().base() + PcbField.NEXT_PCB.offset());
+        if (!cell.value().equals(expected)) throw new IllegalStateException("Invalid materialized PCB link");
+    }
+
 }

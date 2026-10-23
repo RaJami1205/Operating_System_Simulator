@@ -18,12 +18,14 @@ public final class Dispatcher {
     private final ReadyQueue ready;
     private final ProcessResourceRegistry resources;
     private ProcessControlBlock owner;
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
 
     /** Recibe CPU, tabla, cola y recursos de la misma sesión; comienza sin owner. */
     public Dispatcher(CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
             ProcessResourceRegistry resources, MainMemory memory) {
         this.memory = Objects.requireNonNull(memory);
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.cpu = Objects.requireNonNull(cpu);
         this.table = Objects.requireNonNull(table);
         this.ready = Objects.requireNonNull(ready);
@@ -58,6 +60,7 @@ public final class Dispatcher {
         ready.poll();
         pcb.changeState(ProcessState.RUNNING);
         owner = pcb;
+        pcbSynchronizer.sync(pcb);
     }
 
     /**
@@ -69,6 +72,7 @@ public final class Dispatcher {
             throw new IllegalStateException("Only a blocked/terminated owner may release CPU");
         }
         owner.replaceCpuContext(cpu.snapshot());
+        pcbSynchronizer.sync(owner);
         owner = null;
     }
 }

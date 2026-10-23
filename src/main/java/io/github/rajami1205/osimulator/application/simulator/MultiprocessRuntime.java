@@ -23,6 +23,7 @@ public final class MultiprocessRuntime {
     private final ExecutionEngine engine;
     private final ExecutionProgress progress;
     private final CpuRegisters<Instruction> cpu;
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
     private final SimulatedFileSystem filesystem;
     private final ScreenDevice screen;
@@ -60,6 +61,7 @@ public final class MultiprocessRuntime {
         this.progress = Objects.requireNonNull(progress);
         this.cpu = Objects.requireNonNull(cpu);
         this.memory = Objects.requireNonNull(memory);
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.filesystem = Objects.requireNonNull(filesystem);
         this.screen = Objects.requireNonNull(screen);
         this.keyboard = Objects.requireNonNull(keyboard);
@@ -148,7 +150,9 @@ public final class MultiprocessRuntime {
         // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
         var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
         var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, resident.allocation());
+        pcb.replaceCpuContext(cpu.snapshot());
         pcb.replaceAccounting(accounted);
+        pcbSynchronizer.sync(pcb);
         tickCounter.advance();
         if (result == TickResult.WAITING_FOR_INPUT) {
             dispatcher.release();

@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SwappingOrchestratorTest {
     private final SimulatorOrchestrator simulator=new SimulatorOrchestrator(new ProgramLoader(),new ExecutionEngine());
-    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64)); }
+    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(160,64),512,64)); }
     private void admit(int id,int size) {
         simulator.submitProgram(new ProgramImage("p"+id,Collections.nCopies(size,new IncInstruction())));
         assertEquals(Optional.of(new AdmissionResult.Admitted(id)),simulator.attemptNextAdmission());

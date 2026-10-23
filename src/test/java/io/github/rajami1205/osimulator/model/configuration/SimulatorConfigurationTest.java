@@ -10,7 +10,7 @@ class SimulatorConfigurationTest {
     @Test
     void exposesApprovedDefaults() {
         var configuration = SimulatorConfiguration.defaults();
-        assertEquals(new MemoryConfiguration(256, 32), configuration.mainMemory());
+        assertEquals(new MemoryConfiguration(256, 140), configuration.mainMemory());
         assertEquals(512, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());
     }

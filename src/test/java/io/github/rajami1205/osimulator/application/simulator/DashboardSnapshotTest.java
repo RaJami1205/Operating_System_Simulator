@@ -54,30 +54,30 @@ class DashboardSnapshotTest {
         simulator.attemptNextAdmission(); simulator.attemptNextAdmission();
         var pcb = field(simulator, "processTable", ProcessTable.class).find(1).orElseThrow();
         pcb.stack().pushAll(List.of(8, 3)); pcb.openFiles().open("z"); pcb.openFiles().open("a"); pcb.setPriority(9);
-        var context = new CpuContext<Instruction>(32, Optional.of(new IncInstruction()), 1, 2, 3, 4,
+        var context = new CpuContext<Instruction>(140, Optional.of(new IncInstruction()), 1, 2, 3, 4,
                 new TextRegisterValue("path"), 5, new TextRegisterValue("text"), new ConditionFlags(true, true));
         pcb.replaceCpuContext(context);
         var old = simulator.snapshot(); var row = old.processes().getFirst();
         assertEquals(List.of("one", "two"), old.jobs().stream().map(j -> j.programName()).toList());
         assertEquals(List.of(1, 2), old.processes().stream().map(SimulatorSnapshot.ProcessDetails::processId).toList());
-        assertEquals(List.of(1, 2), old.readyQueue()); assertEquals(Optional.of(32), row.base());
+        assertEquals(List.of(1, 2), old.readyQueue()); assertEquals(Optional.of(140), row.base());
         assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(List.of(8, 3), row.stack());
-        assertEquals(9, row.priority()); assertEquals(0, row.kernelAddress()); assertEquals(Optional.of(1), row.nextPcbAddress());
+        assertEquals(9, row.priority()); assertEquals(0, row.kernelAddress()); assertEquals(Optional.of(28), row.nextPcbAddress());
         assertEquals("path", row.savedContext().dxText()); assertEquals("text", row.savedContext().alText());
-        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.<Instruction>initial().withProgramCounter(32));
+        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.<Instruction>initial().withProgramCounter(140));
         assertEquals(List.of(8, 3), row.stack()); assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(9, row.priority());
         assertThrows(UnsupportedOperationException.class, () -> row.stack().add(1));
         assertThrows(UnsupportedOperationException.class, () -> row.openFiles().clear());
         simulator.swapOut(1); var suspended = simulator.snapshot().processes().getFirst();
         assertEquals(SimulatorSnapshot.Residency.SUSPENDED, suspended.residency()); assertTrue(suspended.base().isEmpty());
-        assertEquals(2, suspended.limit()); assertEquals(Optional.of(32), row.base());
+        assertEquals(2, suspended.limit()); assertEquals(Optional.of(140), row.base());
         assertEquals(List.of(2), simulator.snapshot().readyQueue());
     }
     @Test void fifoScreenAndResetAreImmutableObservations() {
         initialize(); submit("one", "INT 09H", "INT 10H"); submit("two", "INT 09H", "INC"); simulator.start();
         for (int i = 0; i < 4; i++) simulator.step();
         var waiting = simulator.snapshot();
-        assertEquals(List.of(new PendingKeyboardRequest(1, 32), new PendingKeyboardRequest(2, 34)), waiting.pendingKeyboardRequests());
+        assertEquals(List.of(new PendingKeyboardRequest(1, 140), new PendingKeyboardRequest(2, 142)), waiting.pendingKeyboardRequests());
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), waiting.runtimeStatus());
         simulator.swapOut(1); simulator.swapOut(2); simulator.submitKeyboardInput(7); simulator.submitKeyboardInput(8);
         assertEquals(List.of(2), simulator.snapshot().suspendedReadyQueue());
@@ -100,9 +100,9 @@ class DashboardSnapshotTest {
         initialize(); submit("test.asm", "MOV AX, 7"); simulator.attemptNextAdmission();
         var snapshot = simulator.snapshot();
         assertEquals(256, snapshot.memory().size()); assertEquals(512, snapshot.storage().size());
-        assertEquals(Optional.of("PCB PID=1"), snapshot.memory().getFirst().content());
-        assertEquals(Optional.of("MOV AX, 7"), snapshot.memory().get(32).content());
-        assertEquals("KERNEL", snapshot.memory().get(31).region()); assertEquals("USER", snapshot.memory().get(32).region());
+        assertEquals(Optional.of("PCB 1 · PID: 1"), snapshot.memory().getFirst().content());
+        assertEquals(Optional.of("MOV AX, 7"), snapshot.memory().get(140).content());
+        assertEquals("KERNEL", snapshot.memory().get(139).region()); assertEquals("USER", snapshot.memory().get(140).region());
         assertEquals(StorageRegion.FILE_INDEX, snapshot.storage().getFirst().region());
         assertEquals(StorageRegion.VIRTUAL_MEMORY, snapshot.storage().get(448).region());
         assertTrue(snapshot.storage().getFirst().content().startsWith("PROGRAM name=\"test.asm\" start="));

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MultiprocessRuntimeTest {
     private final SimulatorOrchestrator simulator=new SimulatorOrchestrator(new ProgramLoader(),new ExecutionEngine());
     private final AsmParser parser=new AsmParser();
-    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,32),512,64)); }
+    private void initialize() { simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(236,140),512,64)); }
     private void submit(String name,String... instructions) { simulator.submitProgram(new ProgramImage(name,parser.parse(List.of(instructions)))); }
     private <T> T field(Object object,String name,Class<T> type) {
         try { var f=object.getClass().getDeclaredField(name);f.setAccessible(true);return type.cast(f.get(object)); }
@@ -61,7 +61,7 @@ class MultiprocessRuntimeTest {
         assertThrows(IllegalStateException.class,simulator::step);simulator.resume();assertEquals(before,simulator.snapshot());
         tick(1,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);
         tick(1,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
-        assertEquals(37,pcb(2).programCounter());assertTrue(dispatcher().owner().isEmpty());
+        assertEquals(145,pcb(2).programCounter());assertTrue(dispatcher().owner().isEmpty());
         var first=simulator.completedProcesses().getFirst().finalContext();
         assertEquals("first",first.dxValue().textValue());assertEquals("data",first.alValue().textValue());
         assertEquals(0x40,first.ah());assertTrue(first.conditionFlags().equal());
@@ -75,15 +75,15 @@ class MultiprocessRuntimeTest {
         assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
         assertEquals(0,table().size());assertTrue(resources().entries().isEmpty());assertTrue(ready().entries().isEmpty());
         assertTrue(simulator.snapshot().memory().stream().allMatch(row->row.content().isEmpty()));
-        assertEquals(2,storage().entries().size());assertEquals(32,memory().allocateUser(96).base());
-        assertEquals(0,memory().allocateKernel(32).base());
+        assertEquals(2,storage().entries().size());assertEquals(140,memory().allocateUser(96).base());
+        assertEquals(0,memory().allocateKernel(140).base());
     }
     @Test void inputCompletionDoesNotMutateAnotherOwnerAndJoinsReadyTail() {
         initialize();submit("input","INT 09H","INC");submit("cpu","ADD AX");submit("third","INC");simulator.start();
         block(1,RuntimeStatus.RUNNABLE);tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);
         var before=simulator.snapshot();simulator.submitKeyboardInput(42);
         assertEquals(before.cpu(),simulator.snapshot().cpu());assertEquals(before.currentInstruction(),simulator.snapshot().currentInstruction());assertEquals(before.program(),simulator.snapshot().program());assertEquals(1,progress().consumedTicks());
-        assertEquals(List.of(3,1),ready().entries());assertEquals(42,pcb(1).cpuContext().dx());assertEquals(33,pcb(1).programCounter());
+        assertEquals(List.of(3,1),ready().entries());assertEquals(42,pcb(1).cpuContext().dx());assertEquals(141,pcb(1).programCounter());
         assertEquals(ProcessState.READY,pcb(1).state());assertTrue(simulator.pendingKeyboardRequests().isEmpty());
         tick(2,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(2,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);
         tick(3,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);tick(1,TickResult.PROGRAM_FINISHED,RuntimeStatus.FINISHED);
@@ -92,9 +92,9 @@ class MultiprocessRuntimeTest {
     @Test void fifoPausedValuesDrainBeforeNewInt09AndKeepRequestsUnique() {
         initialize();submit("p1","INT 09H","INC");submit("p2","INT 09H","INC");submit("p3","INT 09H");simulator.start();
         block(1,RuntimeStatus.RUNNABLE);block(2,RuntimeStatus.RUNNABLE);
-        assertEquals(List.of(new PendingKeyboardRequest(1,32),new PendingKeyboardRequest(2,34)),simulator.pendingKeyboardRequests());
+        assertEquals(List.of(new PendingKeyboardRequest(1,140),new PendingKeyboardRequest(2,142)),simulator.pendingKeyboardRequests());
         simulator.pause();simulator.submitKeyboardInput(11);simulator.submitKeyboardInput(22);simulator.submitKeyboardInput(33);
-        assertEquals(2,simulator.pendingKeyboardRequests().size());assertEquals(32,pcb(1).programCounter());
+        assertEquals(2,simulator.pendingKeyboardRequests().size());assertEquals(140,pcb(1).programCounter());
         simulator.resume();assertTrue(simulator.pendingKeyboardRequests().isEmpty());assertTrue(dispatcher().owner().isEmpty());
         assertEquals(List.of(3,1,2),ready().entries());assertEquals(11,pcb(1).cpuContext().dx());assertEquals(22,pcb(2).cpuContext().dx());
         tick(3,TickResult.IN_PROGRESS,RuntimeStatus.RUNNABLE);tick(3,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);

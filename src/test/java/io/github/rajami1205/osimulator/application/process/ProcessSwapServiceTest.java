@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessSwapServiceTest {
-    private final MainMemory memory=new MainMemory(new MemoryConfiguration(128,32));
+    private final MainMemory memory=new MainMemory(new MemoryConfiguration(236,140));
     private final SecondaryStorage storage=new SecondaryStorage(512,64);
     private final ProcessTable table=new ProcessTable();
     private final ProcessResourceRegistry registry=new ProcessResourceRegistry();
@@ -39,7 +39,7 @@ class ProcessSwapServiceTest {
         var resources=resource(1);var original=user(1);
         memory.writeInstruction(original,0,new DecInstruction());
         var image=memory.readUserBlock(original);
-        pcb.setProgramCounter(34);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
+        pcb.setProgramCounter(142);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
         var context=pcb.cpuContext();var accounting=pcb.accounting();var link=pcb.nextPcbAddress();
         storage.createUserFile("file");storage.writeUserFile("file","hello");var index=storage.entries();
         assertEquals(new SwapResult.Completed(),swap.swapOut(1));
@@ -51,7 +51,7 @@ class ProcessSwapServiceTest {
         assertEquals(image,storage.readSwapBlock(disk(1)));
         assertEquals(448,disk(1).base());
         assertEquals(StorageRegion.VIRTUAL_MEMORY,storage.regionOf(disk(1).base()));
-        assertSame(pcb,((PcbContent)memory.read(resources.address().address())).pcb());
+        assertTrue(((PcbContent)memory.read(resources.address().address())).belongsTo(pcb));
         assertEquals(resources.kernel(),resource(1).kernel());assertEquals(link,pcb.nextPcbAddress());
         assertSame(pcb,table.find(1).orElseThrow());assertEquals(3,table.size());
         assertThrows(RuntimeException.class,()->memory.readUserBlock(original));
@@ -91,9 +91,9 @@ class ProcessSwapServiceTest {
         queue.remove(1);assertThrows(IllegalStateException.class,()->swap.swapOut(1));queue.enqueue(1);
         swap.swapOut(1);assertThrows(IllegalStateException.class,()->swap.swapOut(1));
         queue.enqueue(1);assertThrows(IllegalStateException.class,()->swap.swapIn(1));queue.remove(1);swap.swapIn(1);
-        memory.writePcb(resource(1).kernel(),0,new ProcessControlBlock(1,32,2));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resource(1).kernel(),new ProcessControlBlock(1,140,2));
         assertThrows(RuntimeException.class,()->swap.swapOut(1));
-        memory.writePcb(resource(1).kernel(),0,pcb);memory.release(user(1));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resource(1).kernel(),pcb);memory.release(user(1));
         assertThrows(RuntimeException.class,()->swap.swapOut(1));
         assertThrows(IllegalArgumentException.class,()->swap.swapOut(999));
     }
@@ -129,13 +129,13 @@ class ProcessSwapServiceTest {
         var original = resource(1); var image = storage.readSwapBlock(disk(1));
         var contextField = ProcessControlBlock.class.getDeclaredField("cpuContext");
         contextField.setAccessible(true);
-        var corrupt = pcb.cpuContext().withProgramCounter(31);
+        var corrupt = pcb.cpuContext().withProgramCounter(139);
         contextField.set(pcb, corrupt);
         assertThrows(RuntimeException.class, () -> swap.swapIn(1));
         assertSame(corrupt, pcb.cpuContext()); assertSame(original, resource(1));
         assertEquals(ProcessState.READY_SUSPENDED, pcb.state());
         assertEquals(image, storage.readSwapBlock(disk(1)));
-        assertEquals(32, pcb.instructionAddress(0));
+        assertEquals(140, pcb.instructionAddress(0));
         var all = memory.allocateUser(96);
         assertTrue(memory.isEmpty(all.base())); memory.release(all);
     }

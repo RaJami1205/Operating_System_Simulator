@@ -153,7 +153,7 @@ class DashboardControllerTest {
         f.action("handleResume"); f.action("handleAutomatic"); f.enabled("stepButton", false); f.enabled("automaticButton", false);
         f.action("handleReset");
         assertEquals(256, f.widget("mainMemorySlider", Slider.class).getValue());
-        assertEquals(32, f.widget("kernelMemorySlider", Slider.class).getValue());
+        assertEquals(140, f.widget("kernelMemorySlider", Slider.class).getValue());
         assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
         assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
         assertTrue(f.widget("programPathField", TextField.class).getText().isEmpty());

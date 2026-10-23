@@ -2,6 +2,8 @@ package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.memory.PcbField;
+import io.github.rajami1205.osimulator.model.process.ProcessTable;
 
 /** Configuración inmutable de la máquina; las capacidades no crean subsistemas. */
 public record SimulatorConfiguration(
@@ -23,8 +25,9 @@ public record SimulatorConfiguration(
         }
     }
 
-    /** Devuelve capacidades aprobadas Main/Kernel/Secondary/Virtual de 256/32/512/64. */
+    /** Devuelve capacidades aprobadas Main/Kernel/Secondary/Virtual de 256/140/512/64. */
     public static SimulatorConfiguration defaults() {
-        return new SimulatorConfiguration(new MemoryConfiguration(256, 32), 512, 64);
+        return new SimulatorConfiguration(new MemoryConfiguration(256, PcbField.PCB_SIZE
+                * ProcessTable.MAX_ADMITTED_PROCESSES), 512, 64);
     }
 }

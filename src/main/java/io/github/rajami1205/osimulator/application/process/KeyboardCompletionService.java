@@ -2,6 +2,7 @@ package io.github.rajami1205.osimulator.application.process;
 
 import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
 import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ import java.util.Objects;
  * proceso. La completion no consume ticks.
  */
 public final class KeyboardCompletionService {
+    private final PcbKernelSynchronizer synchronizer;
     private final KeyboardDevice keyboard;
     private final ProcessTable table;
     private final ProcessResourceRegistry resources;
@@ -24,7 +26,8 @@ public final class KeyboardCompletionService {
 
     /** Asocia dispositivo FIFO, PCBs y colas de la sesión; comienza sin solicitudes pendientes. */
     public KeyboardCompletionService(KeyboardDevice keyboard, ProcessTable table, ProcessResourceRegistry resources,
-            ReadyQueue ready, SuspendedReadyQueue suspended) {
+            ReadyQueue ready, SuspendedReadyQueue suspended, MainMemory memory) {
+        this.synchronizer = new PcbKernelSynchronizer(memory, resources);
         this.keyboard = Objects.requireNonNull(keyboard);
         this.table = Objects.requireNonNull(table);
         this.resources = Objects.requireNonNull(resources);
@@ -69,6 +72,7 @@ public final class KeyboardCompletionService {
                     || (swapped != (residence instanceof UserImageResidence.Suspended))) {
                 throw new IllegalStateException("Inconsistent keyboard target/context/residence");
             }
+            synchronizer.validate(pcb);
             int next = request.interruptPc() + 1;
             int input = keyboard.poll().orElseThrow();
             pcb.replaceCpuContext(pcb.cpuContext().withDx(new NumericRegisterValue(input)).withProgramCounter(next));
@@ -83,6 +87,7 @@ public final class KeyboardCompletionService {
                 pcb.changeState(ProcessState.READY);
                 ready.enqueue(pid);
             }
+            synchronizer.sync(pcb);
         }
         return List.copyOf(terminated);
     }

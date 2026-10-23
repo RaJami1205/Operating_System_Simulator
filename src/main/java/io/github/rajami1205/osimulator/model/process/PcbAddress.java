@@ -1,6 +1,6 @@
 package io.github.rajami1205.osimulator.model.process;
 
-/** Dirección simulada; no implica que exista todavía un PCB residente en Kernel. */
+/** Base simulada del bloque Kernel completo; no es un offset ni acredita residencia por sí sola. */
 public record PcbAddress(int address) {
     /** Rechaza direcciones simuladas negativas; no comprueba residencia Kernel. */
     public PcbAddress {

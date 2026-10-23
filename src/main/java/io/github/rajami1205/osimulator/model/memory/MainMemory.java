@@ -81,16 +81,51 @@ public final class MainMemory {
         return List.copyOf(image);
     }
 
-    /**
-     * Exige la reserva Kernel original de una posición y que contenga exactamente el PCB canónico
-     * indicado.
-     */
+    /** Valida identidad activa y ownership/layout de cada celda antes de sincronizar o liberar. */
     public void validatePcbAllocation(MemoryAllocation allocation, ProcessControlBlock pcb) {
-        validateWrite(allocation, MemoryRegion.KERNEL, 0, 1);
-        if (allocation.size() != 1 || !(positions[allocation.base()] instanceof PcbContent content)
-                || content.pcb() != pcb) {
-            throw new MemoryProtectionException("Kernel allocation does not contain the canonical PCB");
+        validatePcbRange(allocation);
+        Objects.requireNonNull(pcb);
+        for (var field : PcbField.values()) {
+            if (!(positions[allocation.base() + field.offset()] instanceof PcbContent cell)
+                    || !cell.belongsTo(pcb) || cell.field() != field) {
+                throw new MemoryProtectionException("Kernel block does not contain the canonical PCB layout");
+            }
         }
+    }
+
+    private void validatePcbRange(MemoryAllocation allocation) {
+        validateWrite(allocation, MemoryRegion.KERNEL, 0, allocation.size());
+        if (allocation.size() != PcbField.PCB_SIZE) {
+            throw new MemoryProtectionException("PCB requires exactly " + PcbField.PCB_SIZE + " Kernel cells");
+        }
+    }
+
+    /** Materializa únicamente sobre una reserva completa vacía; nunca sobrescribe otro propietario. */
+    public void materializePcb(MemoryAllocation allocation, ProcessControlBlock pcb) {
+        var image = PcbMemoryImage.capture(pcb);
+        validatePcbRange(allocation);
+        for (int address = allocation.base(); address < allocation.endExclusive(); address++) {
+            if (!isEmpty(address)) throw new MemoryProtectionException("PCB allocation is not empty");
+        }
+        copyPcbImage(allocation, pcb, image);
+    }
+
+    /** Prevalida imagen y bloque completo antes de la única copia atómica observable. */
+    public void writePcbImage(MemoryAllocation allocation, ProcessControlBlock pcb, PcbMemoryImage image) {
+        validatePcbAllocation(allocation, pcb);
+        copyPcbImage(allocation, pcb, image);
+    }
+
+    private void copyPcbImage(MemoryAllocation allocation, ProcessControlBlock pcb, PcbMemoryImage image) {
+        var cells = Objects.requireNonNull(image).cells();
+        for (var field : PcbField.values()) {
+            var cell = cells.get(field.offset());
+            if (!cell.belongsTo(pcb) || cell.field() != field) {
+                throw new MemoryProtectionException("PCB image owner/layout mismatch");
+            }
+        }
+        var prepared = cells.toArray(PcbContent[]::new);
+        System.arraycopy(prepared, 0, positions, allocation.base(), prepared.length);
     }
 
     /** Valida handle USER y offset antes de almacenar una instrucción no nula. */
@@ -105,12 +140,6 @@ public final class MainMemory {
         validateWrite(allocation, MemoryRegion.USER, 0, program.size());
         var content = program.stream().map(InstructionContent::new).toArray(InstructionContent[]::new);
         System.arraycopy(content, 0, positions, allocation.base(), content.length);
-    }
-
-    /** Valida handle Kernel y offset antes de conservar la referencia al PCB canónico. */
-    public void writePcb(MemoryAllocation allocation, int offset, ProcessControlBlock pcb) {
-        validateWrite(allocation, MemoryRegion.KERNEL, offset, 1);
-        positions[allocation.base() + offset] = new PcbContent(pcb);
     }
 
     /**

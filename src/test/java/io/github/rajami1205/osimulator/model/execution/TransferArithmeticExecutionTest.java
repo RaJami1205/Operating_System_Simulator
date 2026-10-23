@@ -37,8 +37,8 @@ class TransferArithmeticExecutionTest {
         var progress = new ExecutionProgress();
         var flags = cpu.conditionFlags();
         assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
-        assertEquals(1, cpu.programCounter());
-        assertEquals(1, pcb.programCounter());
+        assertEquals(33, cpu.programCounter());
+        assertEquals(33, pcb.programCounter());
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
         assertEquals(flags, cpu.conditionFlags());
         assertTrue(progress.isIdle());
@@ -113,8 +113,8 @@ class TransferArithmeticExecutionTest {
             var before = cpu.snapshot();
             var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
             assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
-            assertEquals(before, cpu.snapshot());
-            assertEquals(0, pcb.programCounter());
+            assertEquals(before.withProgramCounter(32), cpu.snapshot());
+            assertEquals(32, pcb.programCounter());
             assertTrue(progress.isIdle());
         }
     }

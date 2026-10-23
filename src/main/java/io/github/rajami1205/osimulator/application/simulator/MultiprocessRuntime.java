@@ -134,8 +134,8 @@ public final class MultiprocessRuntime {
         if (dispatcher.owner().isEmpty()) return new RuntimeStepResult.Idle(status());
 
         var pcb = dispatcher.owner().orElseThrow();
-        if (pcb.programCounter() < 0 || pcb.programCounter() >= pcb.instructionCount()) {
-            throw new IllegalStateException("Executable owner must have a fetchable logical PC");
+        if (!pcb.hasExecutableProgramCounter()) {
+            throw new IllegalStateException("Executable owner must have a fetchable physical PC");
         }
         var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
         if (!(resource.residence() instanceof UserImageResidence.Resident resident)) {

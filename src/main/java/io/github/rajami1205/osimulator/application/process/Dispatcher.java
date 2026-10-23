@@ -48,7 +48,7 @@ public final class Dispatcher {
                 || !(resource.residence() instanceof UserImageResidence.Resident resident)
                 || resident.allocation().base() != pcb.memoryBounds().base()
                 || resident.allocation().size() != pcb.instructionCount()
-                || pcb.programCounter() >= pcb.instructionCount()
+                || !pcb.hasExecutableProgramCounter()
                 || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING)) {
             throw new IllegalStateException("Invalid dispatch candidate or CPU ownership");
         }

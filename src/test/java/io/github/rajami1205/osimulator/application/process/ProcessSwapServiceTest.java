@@ -39,7 +39,7 @@ class ProcessSwapServiceTest {
         var resources=resource(1);var original=user(1);
         memory.writeInstruction(original,0,new DecInstruction());
         var image=memory.readUserBlock(original);
-        pcb.setProgramCounter(2);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
+        pcb.setProgramCounter(34);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
         var context=pcb.cpuContext();var accounting=pcb.accounting();var link=pcb.nextPcbAddress();
         storage.createUserFile("file");storage.writeUserFile("file","hello");var index=storage.entries();
         assertEquals(new SwapResult.Completed(),swap.swapOut(1));
@@ -62,7 +62,7 @@ class ProcessSwapServiceTest {
         assertEquals(new ProcessMemoryBounds(user(1).base(),3),pcb.memoryBounds());
         assertEquals(image,memory.readUserBlock(user(1)));assertEquals(List.of(2,3,1),queue.entries());
         assertThrows(RuntimeException.class,()->storage.readSwapBlock(oldSwap));
-        assertSame(context,pcb.cpuContext());assertEquals(2,pcb.programCounter());
+        assertEquals(context.withProgramCounter(user(1).base()+2),pcb.cpuContext());assertEquals(user(1).base()+2,pcb.programCounter());
         assertSame(accounting,pcb.accounting());assertEquals(List.of(7),pcb.stack().values());
         assertTrue(pcb.openFiles().contains("file"));assertEquals(9,pcb.priority());
         assertEquals(index,storage.entries());assertEquals("hello",storage.readUserFile("file"));
@@ -122,6 +122,22 @@ class ProcessSwapServiceTest {
         assertSame(original,resource(1));assertEquals(image,storage.readSwapBlock(handle));assertTrue(queue.entries().isEmpty());
         fault.writeFailure=null;
         var all=memory.allocateUser(96);memory.release(all);swap.swapIn(1);
+    }
+
+    @Test void rejectedRelocationRollsBackDestinationWithoutPublishingBoundsOrContext() throws Exception {
+        var pcb = admit(1, 3); swap.swapOut(1);
+        var original = resource(1); var image = storage.readSwapBlock(disk(1));
+        var contextField = ProcessControlBlock.class.getDeclaredField("cpuContext");
+        contextField.setAccessible(true);
+        var corrupt = pcb.cpuContext().withProgramCounter(31);
+        contextField.set(pcb, corrupt);
+        assertThrows(RuntimeException.class, () -> swap.swapIn(1));
+        assertSame(corrupt, pcb.cpuContext()); assertSame(original, resource(1));
+        assertEquals(ProcessState.READY_SUSPENDED, pcb.state());
+        assertEquals(image, storage.readSwapBlock(disk(1)));
+        assertEquals(32, pcb.instructionAddress(0));
+        var all = memory.allocateUser(96);
+        assertTrue(memory.isEmpty(all.base())); memory.release(all);
     }
 
     @Test void failedSourceReleaseRollsBackPreparedSwapWithoutReorderingReady() throws Exception {

@@ -19,7 +19,8 @@ public final class KeyboardCompletionService {
     private final ProcessResourceRegistry resources;
     private final ReadyQueue ready;
     private final SuspendedReadyQueue suspended;
-    private final LinkedHashMap<Integer, PendingKeyboardRequest> pending = new LinkedHashMap<>();
+    // Offsets internos estables ante relocation; la vista pública siempre expone PC físico.
+    private final LinkedHashMap<Integer, Integer> pending = new LinkedHashMap<>();
 
     /** Asocia dispositivo FIFO, PCBs y colas de la sesión; comienza sin solicitudes pendientes. */
     public KeyboardCompletionService(KeyboardDevice keyboard, ProcessTable table, ProcessResourceRegistry resources,
@@ -32,7 +33,10 @@ public final class KeyboardCompletionService {
     }
 
     /** Devuelve copia inmutable de solicitudes en orden FIFO para inspección. */
-    public List<PendingKeyboardRequest> pending() { return List.copyOf(pending.values()); }
+    public List<PendingKeyboardRequest> pending() {
+        return pending.entrySet().stream().map(entry -> new PendingKeyboardRequest(entry.getKey(),
+                table.find(entry.getKey()).orElseThrow().instructionAddress(entry.getValue()))).toList();
+    }
     /** Retira la solicitud del PID durante cleanup, sin consumir valores del dispositivo. */
     public void remove(int pid) { pending.remove(pid); }
 
@@ -40,11 +44,11 @@ public final class KeyboardCompletionService {
     public void register(ProcessControlBlock pcb) {
         Objects.requireNonNull(pcb, "pcb must not be null");
         if (table.find(pcb.processId()).orElse(null) != pcb || pcb.state() != ProcessState.BLOCKED
-                || pcb.programCounter() >= pcb.instructionCount()) {
+                || !pcb.hasExecutableProgramCounter()) {
             throw new IllegalStateException("Invalid keyboard block");
         }
-        var request = new PendingKeyboardRequest(pcb.processId(), pcb.programCounter());
-        if (pending.putIfAbsent(pcb.processId(), request) != null) throw new IllegalStateException("Duplicate keyboard request");
+        int offset = pcb.programCounter() - pcb.instructionAddress(0);
+        if (pending.putIfAbsent(pcb.processId(), offset) != null) throw new IllegalStateException("Duplicate keyboard request");
     }
 
     /**
@@ -54,13 +58,13 @@ public final class KeyboardCompletionService {
     public List<Integer> drain() {
         var terminated = new ArrayList<Integer>();
         while (!pending.isEmpty() && keyboard.hasInput()) {
-            var request = pending.firstEntry().getValue();
+            var request = pending().getFirst();
             int pid = request.processId();
             var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Missing keyboard target"));
             var residence = resources.find(pid).orElseThrow().residence();
             boolean swapped = pcb.state() == ProcessState.BLOCKED_SUSPENDED;
             if ((!swapped && pcb.state() != ProcessState.BLOCKED) || pcb.programCounter() != request.interruptPc()
-                    || pcb.programCounter() >= pcb.instructionCount() || ready.entries().contains(pid)
+                    || !pcb.hasExecutableProgramCounter() || ready.entries().contains(pid)
                     || suspended.entries().contains(pid)
                     || (swapped != (residence instanceof UserImageResidence.Suspended))) {
                 throw new IllegalStateException("Inconsistent keyboard target/context/residence");
@@ -69,7 +73,7 @@ public final class KeyboardCompletionService {
             int input = keyboard.poll().orElseThrow();
             pcb.replaceCpuContext(pcb.cpuContext().withDx(new NumericRegisterValue(input)).withProgramCounter(next));
             pending.remove(pid);
-            if (next == pcb.instructionCount()) {
+            if (pcb.hasTerminalProgramCounter()) {
                 pcb.changeState(ProcessState.TERMINATED);
                 terminated.add(pid);
             } else if (swapped) {

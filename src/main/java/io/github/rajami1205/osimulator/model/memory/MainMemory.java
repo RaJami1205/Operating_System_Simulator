@@ -147,10 +147,13 @@ public final class MainMemory {
     }
 
     /** Exige el handle USER activo y un PC dentro del bloque; rechaza el marcador terminal y contenido que no sea InstructionContent. */
-    public Instruction readInstruction(MemoryAllocation allocation, int logicalPc) {
-        validateWrite(allocation, MemoryRegion.USER, logicalPc, 1);
-        if (positions[allocation.base() + logicalPc] instanceof InstructionContent content) return content.instruction();
-        throw new MemoryProtectionException("No instruction at process address: " + logicalPc);
+    public Instruction readInstruction(MemoryAllocation allocation, int physicalPc) {
+        validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
+        if (physicalPc < allocation.base() || physicalPc >= allocation.endExclusive()) {
+            throw new MemoryProtectionException("Physical PC outside process allocation: " + physicalPc);
+        }
+        if (positions[physicalPc] instanceof InstructionContent content) return content.instruction();
+        throw new MemoryProtectionException("No instruction at process address: " + physicalPc);
     }
 
     /** Vacía USER e invalida sus handles; preserva Kernel y su allocator. */

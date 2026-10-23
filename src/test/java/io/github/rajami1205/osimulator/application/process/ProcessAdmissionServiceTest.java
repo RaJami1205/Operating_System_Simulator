@@ -36,7 +36,7 @@ class ProcessAdmissionServiceTest {
             assertEquals(new AdmissionResult.Admitted(i), service.admit(i * 10));
             var pcb = table.find(i).orElseThrow();
             assertEquals(ProcessState.READY, pcb.state());
-            assertEquals(0, pcb.programCounter());
+            assertEquals(pcb.programStartAddress(), pcb.programCounter());
             assertEquals(new ProcessMemoryBounds(32 + (i - 1) * 2, 2), pcb.memoryBounds());
             assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(i - 1)).pcb());
             assertSame(instruction, memory.readInstruction(pcb.memoryBounds(), 0));

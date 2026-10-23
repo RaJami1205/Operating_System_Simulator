@@ -115,7 +115,7 @@ public record SimulatorSnapshot(
             Objects.requireNonNull(operand, "operand must not be null");
         }
     }
-    /** Vista compatible de identidad, estado, bounds físicos y PC lógico guardado. */
+    /** Vista compatible de identidad, estado, bounds físicos y PC físico guardado. */
     public record ProcessSnapshot(
             int processId, String processState, int startAddress,
             int instructionCount, int endExclusive, int savedProgramCounter

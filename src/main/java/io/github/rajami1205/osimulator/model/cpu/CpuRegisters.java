@@ -55,7 +55,7 @@ public final class CpuRegisters<I> {
         return programCounter;
     }
 
-    /** Exige PC lógico no negativo, sin aplicarle el rango signed 16-bit de datos. */
+    /** Exige PC físico no negativo, sin aplicarle el rango signed 16-bit de datos. */
     public void setProgramCounter(int address) {
         if (address < 0) {
             throw new InvalidProgramCounterException(

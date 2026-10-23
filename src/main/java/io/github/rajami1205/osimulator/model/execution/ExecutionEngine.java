@@ -49,8 +49,8 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnder
 public final class ExecutionEngine {
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
     private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
-    /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
-    private record Continue(int nextLogicalPc) implements SemanticOutcome { }
+    /** Próximo PC físico que debe publicarse tras completar la instrucción. */
+    private record Continue(int nextPhysicalPc) implements SemanticOutcome { }
     /** Finalización explícita sin avanzar al siguiente PC. */
     private record Terminate() implements SemanticOutcome { }
     /** INT09 sin entrada disponible; solicita BLOCKED sin avanzar PC todavía. */
@@ -82,17 +82,15 @@ public final class ExecutionEngine {
         progress.validateContext(memory, cpu, pcb, allocation);
 
         int currentProgramCounter = pcb.programCounter();
-        int instructionCount = pcb.instructionCount();
-        if (currentProgramCounter == instructionCount) {
-            cpu.setProgramCounter(instructionCount);
-            pcb.changeState(ProcessState.TERMINATED);
-            return TickResult.PROGRAM_FINISHED;
-        }
-
         try {
             memory.validateUserAllocation(allocation, pcb.memoryBounds());
         } catch (RuntimeException exception) {
             throw new ExecutionEngineException("Invalid process allocation", exception);
+        }
+        if (pcb.hasTerminalProgramCounter()) {
+            cpu.setProgramCounter(currentProgramCounter);
+            pcb.changeState(ProcessState.TERMINATED);
+            return TickResult.PROGRAM_FINISHED;
         }
         if (progress.isIdle()) {
             Instruction instruction;
@@ -120,7 +118,7 @@ public final class ExecutionEngine {
         }
 
         return switch (outcome) {
-            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextLogicalPc());
+            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextPhysicalPc());
             case Terminate ignored -> {
                 progress.clear();
                 pcb.changeState(ProcessState.TERMINATED);
@@ -140,7 +138,7 @@ public final class ExecutionEngine {
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
         progress.clear();
-        if (nextProgramCounter == pcb.instructionCount()) {
+        if (pcb.hasTerminalProgramCounter()) {
             pcb.changeState(ProcessState.TERMINATED);
             return TickResult.PROGRAM_FINISHED;
         }
@@ -186,12 +184,12 @@ public final class ExecutionEngine {
                 case CmpInstruction cmp -> cpu.writeConditionFlags(new ConditionFlags(
                         cpu.readRegister(cmp.left()) == cpu.readRegister(cmp.right()),
                         cpu.conditionFlags().overflow()));
-                case JmpInstruction jump -> { return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount())); }
+                case JmpInstruction jump -> { return new Continue(branchTarget(currentPc, jump.displacement(), pcb)); }
                 case JeInstruction jump -> {
-                    if (cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
+                    if (cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb));
                 }
                 case JneInstruction jump -> {
-                    if (!cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
+                    if (!cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb));
                 }
                 case PushInstruction push -> pcb.stack().push(cpu.readRegister(push.source()));
                 case PopInstruction pop -> cpu.writeRegister(pop.destination(), pcb.stack().pop());
@@ -260,11 +258,11 @@ public final class ExecutionEngine {
 
     /**
      * Calcula PC + displacement con aritmética amplia y rechaza destinos fuera de
-     * 0..instructionCount-1.
+     * [Base, EndExclusive).
      */
-    private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {
+    private int branchTarget(int currentPc, BranchDisplacement displacement, ProcessControlBlock pcb) {
         long target = (long) currentPc + displacement.value();
-        if (target < 0 || target >= instructionCount) {
+        if (target < pcb.programStartAddress() || target >= pcb.programEndAddressExclusive()) {
             throw new ExecutionEngineException("Branch target outside process instructions: " + target);
         }
         return (int) target;

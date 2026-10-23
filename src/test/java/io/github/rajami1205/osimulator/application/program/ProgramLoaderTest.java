@@ -41,14 +41,14 @@ class ProgramLoaderTest {
         ProcessControlBlock pcb = new ProgramLoader().load(memory, 7, program);
 
         assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.<Instruction>initial()
-                .withProgramCounter(0), pcb.cpuContext());
+                .withProgramCounter(pcb.programStartAddress()), pcb.cpuContext());
         assertProgramStoredAt(memory, 32, program);
         assertAll(
                 () -> assertEquals(7, pcb.processId()),
                 () -> assertEquals(32, pcb.programStartAddress()),
                 () -> assertEquals(5, pcb.instructionCount()),
                 () -> assertEquals(37, pcb.programEndAddressExclusive()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -175,7 +175,7 @@ class ProgramLoaderTest {
                 () -> assertEquals(32, pcb.programStartAddress()),
                 () -> assertEquals(userPositions, pcb.instructionCount()),
                 () -> assertEquals(memory.size(), pcb.programEndAddressExclusive()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -203,7 +203,7 @@ class ProgramLoaderTest {
                         assertInstanceOf(InstructionContent.class, memory.read(lastMemoryAddress)).instruction()
                 ),
                 () -> assertEquals(lastMemoryAddress, pcb.programEndAddressExclusive()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -222,7 +222,7 @@ class ProgramLoaderTest {
                 () -> assertEquals(32, pcb.programStartAddress()),
                 () -> assertEquals(1, pcb.instructionCount()),
                 () -> assertEquals(33, pcb.programEndAddressExclusive()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -234,7 +234,7 @@ class ProgramLoaderTest {
         assertTrue(memory.isEmpty(reserved.base()));
         ProcessControlBlock pcb = new ProgramLoader().load(memory, 1, createRepresentativeProgram());
         assertEquals(37, pcb.programStartAddress());
-        assertEquals(0, pcb.programCounter());
+        assertEquals(pcb.programStartAddress(), pcb.programCounter());
         assertProgramStoredAt(memory, 37, createRepresentativeProgram());
         assertTrue(memory.isEmpty(32));
     }
@@ -248,7 +248,7 @@ class ProgramLoaderTest {
         loader.load(memory, 1, first);
         var pcb = loader.load(memory, 2, second);
         assertEquals(37, pcb.programStartAddress());
-        assertEquals(0, pcb.programCounter());
+        assertEquals(pcb.programStartAddress(), pcb.programCounter());
         assertProgramStoredAt(memory, 32, first);
         assertProgramStoredAt(memory, 37, second);
     }
@@ -267,7 +267,7 @@ class ProgramLoaderTest {
                 () -> assertSame(unrelatedInstruction, assertInstanceOf(InstructionContent.class, memory.read(90)).instruction())
         );
         assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.<Instruction>initial()
-                .withProgramCounter(0), pcb.cpuContext());
+                .withProgramCounter(pcb.programStartAddress()), pcb.cpuContext());
         assertProgramStoredAt(memory, 32, program);
     }
 
@@ -305,7 +305,7 @@ class ProgramLoaderTest {
                 () -> assertSame(secondInstruction, assertInstanceOf(InstructionContent.class, memory.read(33)).instruction()),
                 () -> assertEquals(2, pcb.instructionCount()),
                 () -> assertEquals(34, pcb.programEndAddressExclusive()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -331,8 +331,8 @@ class ProgramLoaderTest {
                 () -> assertEquals(2, secondPcb.instructionCount()),
                 () -> assertEquals(33, firstPcb.programEndAddressExclusive()),
                 () -> assertEquals(34, secondPcb.programEndAddressExclusive()),
-                () -> assertEquals(0, firstPcb.programCounter()),
-                () -> assertEquals(0, secondPcb.programCounter()),
+                () -> assertEquals(firstPcb.programStartAddress(), firstPcb.programCounter()),
+                () -> assertEquals(secondPcb.programStartAddress(), secondPcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, firstPcb.state()),
                 () -> assertEquals(ProcessState.READY, secondPcb.state()),
                 () -> assertEquals(firstProgram.get(0), assertInstanceOf(InstructionContent.class, firstMemory.read(32)).instruction()),
@@ -360,7 +360,7 @@ class ProgramLoaderTest {
                 () -> assertSame(instruction, assertInstanceOf(InstructionContent.class, successfulMemory.read(32)).instruction()),
                 () -> assertEquals(2, pcb.processId()),
                 () -> assertEquals(1, pcb.instructionCount()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.READY, pcb.state())
         );
     }
@@ -381,7 +381,7 @@ class ProgramLoaderTest {
         var pcb = new ProgramLoader().load(memory, 1, program);
         assertEquals(32, pcb.memoryBounds().base());
         assertEquals(41, pcb.memoryBounds().limit());
-        assertEquals(0, pcb.programCounter());
+        assertEquals(pcb.programStartAddress(), pcb.programCounter());
         assertProgramStoredAt(memory, 32, program);
         assertEquals(0, memory.allocateKernel(32).base());
         for (int address = 0; address < 32; address++) assertTrue(memory.isEmpty(address));

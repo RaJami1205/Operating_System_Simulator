@@ -51,7 +51,7 @@ class ProcessCompletionServiceTest {
         assertThrows(RuntimeException.class,()->memory.release(((UserImageResidence.Resident)resource.residence()).allocation()));
         assertEquals(finalContext,completion.completed().getFirst().finalContext());
         var history=completion.completed();assertThrows(UnsupportedOperationException.class,history::clear);
-        pcb.replaceCpuContext(CpuContext.initial());assertEquals(finalContext,history.getFirst().finalContext());
+        pcb.replaceCpuContext(CpuContext.<Instruction>initial().withProgramCounter(pcb.programStartAddress()));assertEquals(finalContext,history.getFirst().finalContext());
         for(var other:List.copyOf(table.entries())) { terminate(other.processId());completion.complete(other.processId()); }
         assertTrue(table.entries().isEmpty());assertTrue(registry.entries().isEmpty());
         assertEquals(32,memory.allocateUser(96).base());assertEquals(0,memory.allocateKernel(32).base());

@@ -80,7 +80,7 @@ class StatisticsSecurityTest {
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(5, clock()); assertAccounting(pcb(1).accounting(),0,5,null);
     }
     @Test void terminalPcAndOverflowPreflightConsumeNoTick() throws Exception {
-        init(); submit("one", "ADD AX"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(1);
+        init(); submit("one", "ADD AX"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(33);
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(1, clock()); assertEquals(1, pcb(1).accounting().cpuTicks());
         simulator.reset(); init(); submit("one", "INC"); simulator.start();
         var counter = field("tickCounter", CpuTickCounter.class); var ticks = CpuTickCounter.class.getDeclaredField("ticks"); ticks.setAccessible(true); ticks.setLong(counter, Long.MAX_VALUE);

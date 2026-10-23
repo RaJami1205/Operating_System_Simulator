@@ -87,7 +87,7 @@ class SimulatorOrchestratorTest {
         assertTrue(simulator.snapshot().process().isEmpty());
         simulator.step();
         snapshot = simulator.snapshot();
-        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "RUNNING", 32, 2, 34, 1),
+        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "RUNNING", 32, 2, 34, 33),
                 snapshot.process().orElseThrow());
         assertEquals(List.of(new SimulatorSnapshot.ProgramEntry(32, "MOV AX, 5"),
                 new SimulatorSnapshot.ProgramEntry(33, "LOAD AX")), snapshot.program());
@@ -131,8 +131,8 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.RUNNING, first.simulatorState());
         assertEquals(5, first.cpu().orElseThrow().ax());
         assertEquals(0, first.cpu().orElseThrow().accumulator());
-        assertEquals(1, first.cpu().orElseThrow().programCounter());
-        assertEquals(1, first.process().orElseThrow().savedProgramCounter());
+        assertEquals(33, first.cpu().orElseThrow().programCounter());
+        assertEquals(33, first.process().orElseThrow().savedProgramCounter());
         assertEquals("RUNNING", first.process().orElseThrow().processState());
         assertEquals(Optional.of("MOV AX, 5"), first.cpu().orElseThrow().instructionRegister());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
@@ -144,8 +144,8 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.FINISHED, last.simulatorState());
         assertTrue(last.process().isEmpty());
         assertTrue(last.program().isEmpty());
-        assertEquals(2, last.cpu().orElseThrow().programCounter());
-        assertEquals(2, simulator.completedProcesses().getFirst().finalContext().programCounter());
+        assertEquals(34, last.cpu().orElseThrow().programCounter());
+        assertEquals(34, simulator.completedProcesses().getFirst().finalContext().programCounter());
         assertEquals(5, last.cpu().orElseThrow().accumulator());
         assertTrue(last.currentInstruction().isEmpty());
         assertEquals(Optional.of("LOAD AX"), last.cpu().orElseThrow().instructionRegister());
@@ -228,7 +228,7 @@ class SimulatorOrchestratorTest {
         assertEquals(before.program(), failed.program());
         assertEquals(before.process(), failed.process());
         assertEquals(32767, failed.cpu().orElseThrow().accumulator());
-        assertEquals(2, failed.cpu().orElseThrow().programCounter());
+        assertEquals(34, failed.cpu().orElseThrow().programCounter());
         assertEquals("ADD AX", failed.currentInstruction().orElseThrow().semanticInstruction());
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(failed, simulator.snapshot());
@@ -474,7 +474,7 @@ class SimulatorOrchestratorTest {
         simulator.step();
         simulator.step(); // ADD 1/3
         var partial = simulator.snapshot();
-        assertEquals(1, partial.cpu().orElseThrow().programCounter());
+        assertEquals(33, partial.cpu().orElseThrow().programCounter());
         assertEquals(0, partial.cpu().orElseThrow().accumulator());
         assertEquals("ADD AX", partial.currentInstruction().orElseThrow().semanticInstruction());
         simulator.pause();
@@ -522,7 +522,7 @@ class SimulatorOrchestratorTest {
                 assertTrue(snapshot.program().isEmpty());
                 assertTrue(snapshot.memory().stream().allMatch(row -> row.content().isEmpty()));
             }
-            assertEquals(index + 1, snapshot.cpu().orElseThrow().programCounter());
+            assertEquals(32 + index + 1, snapshot.cpu().orElseThrow().programCounter());
             if (index == 2 || index == 4) assertEquals("", snapshot.currentInstruction().orElseThrow().operand());
             assertEquals(index == expected.size() - 1 ? SimulatorState.FINISHED : SimulatorState.RUNNING, snapshot.simulatorState());
         }
@@ -549,10 +549,10 @@ class SimulatorOrchestratorTest {
     }
 
     private void completeInstruction() {
-        int pc = simulator.snapshot().cpu().orElseThrow().programCounter();
-        do { simulator.step(); }
-        while (simulator.snapshot().simulatorState() == SimulatorState.RUNNING
-                && simulator.snapshot().cpu().orElseThrow().programCounter() == pc);
+        RuntimeStepResult result;
+        do { result = simulator.step(); }
+        while (result instanceof RuntimeStepResult.Executed executed
+                && executed.tickResult() == io.github.rajami1205.osimulator.model.execution.TickResult.IN_PROGRESS);
     }
 
     private void load(List<Instruction> instructions) {

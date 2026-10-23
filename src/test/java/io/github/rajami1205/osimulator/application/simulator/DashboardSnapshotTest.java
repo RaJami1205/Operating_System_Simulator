@@ -54,7 +54,7 @@ class DashboardSnapshotTest {
         simulator.attemptNextAdmission(); simulator.attemptNextAdmission();
         var pcb = field(simulator, "processTable", ProcessTable.class).find(1).orElseThrow();
         pcb.stack().pushAll(List.of(8, 3)); pcb.openFiles().open("z"); pcb.openFiles().open("a"); pcb.setPriority(9);
-        var context = new CpuContext<Instruction>(0, Optional.of(new IncInstruction()), 1, 2, 3, 4,
+        var context = new CpuContext<Instruction>(32, Optional.of(new IncInstruction()), 1, 2, 3, 4,
                 new TextRegisterValue("path"), 5, new TextRegisterValue("text"), new ConditionFlags(true, true));
         pcb.replaceCpuContext(context);
         var old = simulator.snapshot(); var row = old.processes().getFirst();
@@ -64,7 +64,7 @@ class DashboardSnapshotTest {
         assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(List.of(8, 3), row.stack());
         assertEquals(9, row.priority()); assertEquals(0, row.kernelAddress()); assertEquals(Optional.of(1), row.nextPcbAddress());
         assertEquals("path", row.savedContext().dxText()); assertEquals("text", row.savedContext().alText());
-        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.initial());
+        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.<Instruction>initial().withProgramCounter(32));
         assertEquals(List.of(8, 3), row.stack()); assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(9, row.priority());
         assertThrows(UnsupportedOperationException.class, () -> row.stack().add(1));
         assertThrows(UnsupportedOperationException.class, () -> row.openFiles().clear());
@@ -77,7 +77,7 @@ class DashboardSnapshotTest {
         initialize(); submit("one", "INT 09H", "INT 10H"); submit("two", "INT 09H", "INC"); simulator.start();
         for (int i = 0; i < 4; i++) simulator.step();
         var waiting = simulator.snapshot();
-        assertEquals(List.of(new PendingKeyboardRequest(1, 0), new PendingKeyboardRequest(2, 0)), waiting.pendingKeyboardRequests());
+        assertEquals(List.of(new PendingKeyboardRequest(1, 32), new PendingKeyboardRequest(2, 34)), waiting.pendingKeyboardRequests());
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), waiting.runtimeStatus());
         simulator.swapOut(1); simulator.swapOut(2); simulator.submitKeyboardInput(7); simulator.submitKeyboardInput(8);
         assertEquals(List.of(2), simulator.snapshot().suspendedReadyQueue());

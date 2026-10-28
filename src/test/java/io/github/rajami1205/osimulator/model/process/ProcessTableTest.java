@@ -4,6 +4,33 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessTableTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {5, 10, 15, 20, 25})
+    void configurableCapacityIncludesSuspendedProcessesAndReleasesSlots(int capacity) {
+        var table = new ProcessTable(capacity);
+        for (int pid = 1; pid <= capacity; pid++) {
+            var pcb = new ProcessControlBlock(pid, 140, 1);
+            pcb.changeState(pid % 2 == 0 ? ProcessState.READY_SUSPENDED : ProcessState.BLOCKED_SUSPENDED);
+            table.register(pcb);
+        }
+        assertTrue(table.isFull());
+        assertThrows(IllegalArgumentException.class, () -> table.register(new ProcessControlBlock(1, 140, 1)));
+        var extra = new ProcessControlBlock(capacity + 1, 140, 1);
+        assertThrows(IllegalStateException.class, () -> table.register(extra));
+        assertEquals(capacity, table.size());
+        table.remove(1);
+        assertFalse(table.isFull());
+        table.register(extra);
+        assertTrue(table.isFull());
+        assertSame(extra, table.find(capacity + 1).orElseThrow());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, -1})
+    void rejectsNonpositiveCapacity(int capacity) {
+        assertThrows(IllegalArgumentException.class, () -> new ProcessTable(capacity));
+    }
+
     @Test
     void preservesCanonicalIdentityAdmissionOrderAndHistoricalStructuralViews() {
         var table = new ProcessTable();

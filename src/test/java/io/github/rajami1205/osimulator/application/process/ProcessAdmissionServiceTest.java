@@ -15,6 +15,33 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessAdmissionServiceTest {
+    @Test
+    void configuredCapacityAdmitsTwentyFiveCanonicalBlocksAndWaitsWithoutResources() {
+        var configuration = new io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration(
+                new MemoryConfiguration(1024, 700), 512, 64, 5);
+        var memory = new MainMemory(configuration.mainMemory());
+        var table = new ProcessTable(configuration.maxProcesses());
+        var registry = new ProcessResourceRegistry();
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        for (int pid = 1; pid <= 26; pid++) submit(pid, 1);
+        for (int pid = 1; pid <= 25; pid++) {
+            assertEquals(new AdmissionResult.Admitted(pid), service.admit(pid));
+            var pcb = table.find(pid).orElseThrow();
+            var resource = registry.find(pid).orElseThrow();
+            assertEquals(PcbField.PCB_SIZE, resource.kernel().size());
+            memory.validatePcbAllocation(resource.kernel(), pcb);
+            if (pid > 1) assertEquals(Optional.of(resource.address()), table.find(pid - 1).orElseThrow().nextPcbAddress());
+        }
+        var beforeQueue = queue.entries();
+        var beforeResources = registry.entries();
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED), service.admit(26));
+        assertEquals(JobState.PENDING, jobs.find(26).orElseThrow().state());
+        assertEquals(beforeQueue, queue.entries());
+        assertEquals(beforeResources, registry.entries());
+        assertTrue(memory.isEmpty(725));
+        assertTrue(table.find(25).orElseThrow().nextPcbAddress().isEmpty());
+    }
+
     private final MainMemory memory = new MainMemory(new MemoryConfiguration(236, 140));
     private final SecondaryStorage storage = new SecondaryStorage(512, 64);
     private final JobList jobs = new JobList();

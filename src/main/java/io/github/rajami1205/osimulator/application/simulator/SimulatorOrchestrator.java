@@ -104,6 +104,9 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
+        if (configuration.cpuCount() != 1) {
+            throw new IllegalArgumentException("Multi-CPU execution is not implemented; initialize with one CPU");
+        }
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         ExecutionProgress newProgress = new ExecutionProgress();
@@ -113,7 +116,7 @@ public final class SimulatorOrchestrator {
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
         JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
-        ProcessTable newProcesses = new ProcessTable();
+        ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ReadyQueue newReadyQueue = new ReadyQueue();
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
         ProcessSwapService newSwap = new ProcessSwapService(newMemory, newStorage, newProcesses, newResources, newReadyQueue);

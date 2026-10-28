@@ -7,9 +7,33 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @ParameterizedTest
+    @CsvSource({"1,5,140", "2,10,280", "3,15,420", "4,20,560", "5,25,700"})
+    void validatesCapacityAndExactKernelBoundary(int cpus, int capacity, int kernel) {
+        int main = Math.max(256, kernel + 1);
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(main, kernel), 512, 64, cpus);
+        assertEquals(cpus, configuration.cpuCount());
+        assertEquals(capacity, configuration.maxProcesses());
+        assertEquals(kernel, configuration.minimumKernelMemory());
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(main, kernel - 1), 512, 64, cpus));
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(kernel, kernel), 512, 64, cpus));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, 6})
+    void rejectsInvalidCpuCount(int cpus) {
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(1024, 700), 512, 64, cpus));
+    }
+
     @Test
     void exposesApprovedDefaults() {
         var configuration = SimulatorConfiguration.defaults();
+        assertEquals(1, configuration.cpuCount());
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64, 1), configuration);
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64), configuration);
         assertEquals(new MemoryConfiguration(256, 140), configuration.mainMemory());
         assertEquals(512, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());

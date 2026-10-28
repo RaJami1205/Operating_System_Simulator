@@ -18,6 +18,7 @@ import io.github.rajami1205.osimulator.application.process.SwapResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
+import io.github.rajami1205.osimulator.model.execution.SimulationClock;
 import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
 import io.github.rajami1205.osimulator.model.scheduling.FcfsProcessScheduler;
 import io.github.rajami1205.osimulator.model.job.Job;
@@ -80,6 +81,7 @@ public final class SimulatorOrchestrator {
     private SimulatorConfiguration configuration;
 
     private CpuTickCounter tickCounter;
+    private SimulationClock simulationClock;
     private final Clock realClock;
 
     /** Recibe loader y engine; usa Clock del sistema por defecto o el Clock inyectado para accounting real. */
@@ -129,6 +131,7 @@ public final class SimulatorOrchestrator {
         cpu = newCpu;
         executionProgress = newProgress;
         tickCounter = new CpuTickCounter();
+        simulationClock = new SimulationClock();
         screen = newScreen;
         keyboard = newKeyboard;
         secondaryStorage = newStorage;
@@ -149,7 +152,7 @@ public final class SimulatorOrchestrator {
                 readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
         runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,
                 screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
-                jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, realClock);
+                jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, simulationClock, realClock);
         this.configuration = configuration;
     }
 
@@ -382,6 +385,7 @@ public final class SimulatorOrchestrator {
         processCompletion = null;
         runtime = null;
         tickCounter = null;
+        simulationClock = null;
         compatibilitySequence = 0;
         configuration = null;
     }
@@ -401,7 +405,8 @@ public final class SimulatorOrchestrator {
                 dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
                 jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
                 runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
-                completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()));
+                completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()),
+                simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()));
         if (snapshot.addressTranslationError().isPresent()) lifecycle.markError();
         return snapshot;
     }

@@ -36,8 +36,22 @@ public record SimulatorSnapshot(
         List<Integer> screenOutput,
         OptionalLong cpuTicks,
         Optional<Integer> nextInstructionPhysicalAddress,
-        Optional<String> addressTranslationError
+        Optional<String> addressTranslationError,
+        OptionalLong simulationTimeSeconds
 ) {
+    /** Compatibilidad con snapshots anteriores sin observación del reloj lógico. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<PendingKeyboardRequest> pendingKeyboardRequests, List<CompletedProcess> completedProcesses,
+            List<StorageEntry> storage, List<Integer> screenOutput, OptionalLong cpuTicks,
+            Optional<Integer> nextInstructionPhysicalAddress, Optional<String> addressTranslationError) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, pendingKeyboardRequests, completedProcesses,
+                storage, screenOutput, cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, OptionalLong.empty());
+    }
     /** Conserva la construcción de las vistas originales y deja vacías las vistas adicionales de la sesión. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
@@ -67,6 +81,10 @@ public record SimulatorSnapshot(
         Objects.requireNonNull(cpuTicks);
         Objects.requireNonNull(nextInstructionPhysicalAddress);
         Objects.requireNonNull(addressTranslationError);
+        Objects.requireNonNull(simulationTimeSeconds);
+        if (simulationTimeSeconds.isPresent() && simulationTimeSeconds.getAsLong() < 0) {
+            throw new IllegalArgumentException("Negative simulation time");
+        }
         if (cpuTicks.isPresent() && cpuTicks.getAsLong() < 0) throw new IllegalArgumentException("Negative CPU ticks");
     }
     /**

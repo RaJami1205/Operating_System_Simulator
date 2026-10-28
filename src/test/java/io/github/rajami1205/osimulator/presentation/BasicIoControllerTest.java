@@ -46,12 +46,19 @@ class BasicIoControllerTest {
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));
                 assertEquals(SimulatorState.RUNNING,simulator.snapshot().simulatorState());
-                assertTrue(((Button)field(controller,"stepButton")).isDisabled());
+                assertFalse(((Button)field(controller,"stepButton")).isDisabled());
                 assertTrue(((Button)field(controller,"automaticButton")).isDisabled());
                 var waiting=simulator.snapshot();
                 callback.handle(new javafx.event.ActionEvent());
-                invoke(controller,"handleStep"); invoke(controller,"handleAutomatic");
                 assertEquals(waiting,simulator.snapshot());
+                invoke(controller,"handleStep"); invoke(controller,"handleAutomatic");
+                var afterIdle = simulator.snapshot();
+                assertEquals(waiting.simulationTimeSeconds().orElseThrow() + 1, afterIdle.simulationTimeSeconds().orElseThrow());
+                for (var component : afterIdle.getClass().getRecordComponents()) {
+                    if (!component.getName().equals("simulationTimeSeconds")) {
+                        assertEquals(component.getAccessor().invoke(waiting), component.getAccessor().invoke(afterIdle), component.getName());
+                    }
+                }
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 invoke(controller,"handlePause"); simulator.submitKeyboardInput(55);
                 assertEquals(SimulatorState.PAUSED,simulator.snapshot().simulatorState());

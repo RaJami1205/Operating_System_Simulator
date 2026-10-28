@@ -28,6 +28,28 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void manualIdleAdvancesTimeWhileAutomaticStopsAndRefreshIsFree() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Simulation Time: 0 s"));
+        f.load("clock.asm", "INT 09H"); f.action("handleStart"); f.action("handleAutomatic");
+        var timeline = (Timeline) get(f.controller, "automaticTimeline");
+        try {
+            var callback = timeline.getKeyFrames().getFirst().getOnFinished();
+            callback.handle(new javafx.event.ActionEvent()); callback.handle(new javafx.event.ActionEvent());
+            assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
+            assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            callback.handle(new javafx.event.ActionEvent());
+            f.enabled("stepButton", true); f.enabled("automaticButton", false);
+            f.action("handleStep"); f.action("refresh");
+            assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            assertEquals(2, f.simulator.snapshot().cpuTicks().orElseThrow());
+            assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Simulation Time: 3 s"));
+            f.action("handlePause"); f.enabled("stepButton", false); f.action("handleResume");
+            f.simulator.submitKeyboardInput(1); f.action("refresh");
+            f.enabled("stepButton", false); assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            f.action("handleReset"); assertTrue(f.simulator.snapshot().simulationTimeSeconds().isEmpty());
+        } finally { timeline.stop(); }
+    }); }
     @Test void cpuDisplayUsesTranslatedNextAddressAndClearlyLabelsLogicalHistory() throws Exception { onFx(() -> {
         var f = new Fixture();
         f.action("handleInitialize");
@@ -232,7 +254,7 @@ class DashboardControllerTest {
         assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
         f.action("refresh"); f.action("refresh"); assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
-        f.enabled("stepButton", false); f.enabled("automaticButton", false); f.enabled("pauseButton", true);
+        f.enabled("stepButton", true); f.enabled("automaticButton", false); f.enabled("pauseButton", true);
         f.action("handlePause"); input.setText("0"); f.action("handleKeyboardSend");
         assertEquals(1, f.simulator.snapshot().pendingKeyboardRequests().size()); assertEquals(SimulatorState.PAUSED, f.simulator.snapshot().simulatorState());
         f.action("handleResume"); f.action("handleStep");
@@ -263,7 +285,9 @@ class DashboardControllerTest {
         var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(256); f.widget("kernelMemorySlider", Slider.class).setValue(255);
         f.action("handleInitialize"); f.load("large.asm", "INC", "INC"); f.action("handleStart");
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_CAPACITY), f.simulator.snapshot().runtimeStatus());
-        f.enabled("stepButton", false); f.enabled("pauseButton", true); f.enabled("keyboardSendButton", true);
+        f.enabled("stepButton", true); f.enabled("pauseButton", true); f.enabled("keyboardSendButton", true);
+        f.action("handleStep"); assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+        assertEquals(0, f.simulator.snapshot().cpuTicks().orElseThrow());
         var queue = get(f.simulator, "readyQueue"); queue.getClass().getMethod("enqueue", int.class).invoke(queue, 999);
         f.action("refresh"); assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
         f.closeAlerts(); f.action("refresh"); assertTrue(Window.getWindows().isEmpty());
@@ -303,8 +327,10 @@ class DashboardControllerTest {
                 if (tick > 1) f.realClock.advance(java.time.Duration.ofSeconds(1));
                 callback.handle(new javafx.event.ActionEvent());
                 assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(tick, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
                 assertEquals(Integer.toString(tick), f.widget("cpuTicksLabel", Label.class).getText());
                 f.action("refresh"); assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(tick, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
             }
             var completed = f.simulator.snapshot().completedProcesses().getFirst();
             @SuppressWarnings("unchecked") TableColumn<CompletedProcess,String> column = (TableColumn<CompletedProcess,String>) get(f.controller,"completedCpuTicksColumn");

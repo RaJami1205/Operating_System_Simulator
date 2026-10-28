@@ -4,7 +4,7 @@ import io.github.rajami1205.osimulator.model.execution.TickResult;
 import java.util.Objects;
 
 /**
- * Resultado de un Step: un tick ejecutado o Idle sin consumo, acompañado por la disponibilidad global del
+ * Resultado de un Step: un tick ejecutado o Idle sin trabajo de CPU, acompañado por la disponibilidad global del
  * runtime.
  */
 public sealed interface RuntimeStepResult {
@@ -19,7 +19,7 @@ public sealed interface RuntimeStepResult {
             Objects.requireNonNull(status);
         }
     }
-    /** Step sin ejecución de CPU; informa si el workload espera o terminó. */
+    /** Sin CPU: una espera confirma un segundo lógico; FINISHED no consume tiempo. */
     record Idle(RuntimeStatus status) implements RuntimeStepResult {
         /** Exige estado global no nulo para un Step sin consumo de CPU. */
         public Idle { Objects.requireNonNull(status); }

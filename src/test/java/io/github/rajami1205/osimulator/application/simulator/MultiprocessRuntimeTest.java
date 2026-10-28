@@ -101,11 +101,17 @@ class MultiprocessRuntimeTest {
         assertEquals(33,simulator.completedProcesses().getFirst().finalContext().dx());
         tick(1,TickResult.PROGRAM_FINISHED,RuntimeStatus.RUNNABLE);tick(2,TickResult.PROGRAM_FINISHED,RuntimeStatus.FINISHED);
     }
-    @Test void allBlockedIdleHasNoTickAndTerminalInputCleansOnlyItsProcess() {
+    @Test void allBlockedIdleHasNoCpuTickAndTerminalInputCleansOnlyItsProcess() throws Exception {
         initialize();submit("a","INT 09H");submit("b","INT 09H");simulator.start();
         block(1,RuntimeStatus.RUNNABLE);block(2,RuntimeStatus.WAITING_FOR_INPUT);
         var before=simulator.snapshot();for(int i=0;i<3;i++) assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_INPUT),simulator.step());
-        assertEquals(before,simulator.snapshot());
+        var after = simulator.snapshot();
+        assertEquals(before.simulationTimeSeconds().orElseThrow() + 3, after.simulationTimeSeconds().orElseThrow());
+        for (var component : SimulatorSnapshot.class.getRecordComponents()) {
+            if (!component.getName().equals("simulationTimeSeconds")) {
+                assertEquals(component.getAccessor().invoke(before), component.getAccessor().invoke(after), component.getName());
+            }
+        }
         simulator.submitKeyboardInput(10);assertEquals(1,table().size());assertEquals(RuntimeStatus.WAITING_FOR_INPUT,simulator.runtimeStatus());
         simulator.submitKeyboardInput(20);assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
         assertEquals(List.of(10,20),simulator.completedProcesses().stream().map(r->r.finalContext().dx()).toList());
@@ -146,6 +152,8 @@ class MultiprocessRuntimeTest {
         memory().allocateUser(100);simulator.start();
         assertEquals(List.of(1,2),suspended().entries());assertTrue(ready().entries().isEmpty());
         for(int i=0;i<3;i++) assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_CAPACITY),simulator.step());
+        assertEquals(3, simulator.snapshot().simulationTimeSeconds().orElseThrow());
+        assertEquals(0, simulator.snapshot().cpuTicks().orElseThrow());
         assertEquals(List.of(1,2),suspended().entries());assertEquals(SimulatorState.RUNNING,simulator.snapshot().simulatorState());
         assertTrue(simulator.completedProcesses().isEmpty());
     }

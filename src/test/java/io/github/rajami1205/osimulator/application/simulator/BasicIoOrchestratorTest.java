@@ -39,12 +39,19 @@ class BasicIoOrchestratorTest {
             } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
         }
     }
-    @Test void runningSubmissionCompletesWaitAndInvalidSubmissionDoesNotChangeRuntime() {
+    @Test void runningSubmissionCompletesWaitAndInvalidSubmissionDoesNotChangeRuntime() throws Exception {
         load("INT 09H","INC"); twoTicks(); state(SimulatorState.RUNNING,"BLOCKED",0,0);
         var before=simulator.snapshot();
         for(int value:new int[]{-1,256}) assertThrows(IllegalArgumentException.class,()->simulator.submitKeyboardInput(value));
         for(int i=0;i<5;i++) simulator.step();
-        assertEquals(before,simulator.snapshot()); assertTrue(simulator.waitingForInput());
+        var after = simulator.snapshot();
+        assertEquals(before.simulationTimeSeconds().orElseThrow() + 5, after.simulationTimeSeconds().orElseThrow());
+        for (var component : SimulatorSnapshot.class.getRecordComponents()) {
+            if (!component.getName().equals("simulationTimeSeconds")) {
+                assertEquals(component.getAccessor().invoke(before), component.getAccessor().invoke(after), component.getName());
+            }
+        }
+        assertTrue(simulator.waitingForInput());
         simulator.submitKeyboardInput(255); state(SimulatorState.RUNNING,"READY",1,255);
         assertFalse(simulator.waitingForInput());
         simulator.step(); state(SimulatorState.FINISHED,"TERMINATED",2,255);

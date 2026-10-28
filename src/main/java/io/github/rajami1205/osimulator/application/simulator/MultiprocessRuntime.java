@@ -40,6 +40,7 @@ public final class MultiprocessRuntime {
     private final ProcessScheduler scheduler;
     private boolean started;
     private final CpuTickCounter tickCounter;
+    private final SimulationClock simulationClock;
     private final java.time.Clock realClock;
     // Un swap-in fallido sólo se reintenta tras un cambio relevante, no en cada Step sin trabajo.
     private boolean reconsiderSwap = true;
@@ -53,8 +54,10 @@ public final class MultiprocessRuntime {
             ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
             ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
             JobList jobs, ProcessTable table, ProcessResourceRegistry resources, ReadyQueue ready,
-            SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter, java.time.Clock realClock) {
+            SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter,
+            SimulationClock simulationClock, java.time.Clock realClock) {
         this.tickCounter = Objects.requireNonNull(tickCounter);
+        this.simulationClock = Objects.requireNonNull(simulationClock);
         this.realClock = Objects.requireNonNull(realClock);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.engine = Objects.requireNonNull(engine);
@@ -125,15 +128,23 @@ public final class MultiprocessRuntime {
     }
 
     /**
-     * Coordina input y dispatch gratuito, ejecuta como máximo un tick y publica accounting sólo tras
-     * éxito; después procesa bloqueo o completion sin preemption por tick.
+     * Drena eventos gratuitos; confirma un segundo por tick exitoso o espera válida. Un tick se confirma
+     * tras sincronizar CPU/PCB/Kernel, antes del cleanup posterior; FINISHED sin CPU no consume tiempo.
      */
     public RuntimeStepResult step() {
         if (!started) throw new IllegalStateException("Runtime has not started");
         drainInput();
-        validateStructure();
+        // Los eventos iniciales son gratuitos y pueden agotar el workload sin abrir un intervalo.
+        if (status() == RuntimeStatus.FINISHED) return new RuntimeStepResult.Idle(RuntimeStatus.FINISHED);
+        simulationClock.validateCanAdvance();
         if (dispatcher.owner().isEmpty()) scheduler.selectNext().ifPresent(dispatcher::dispatch);
-        if (dispatcher.owner().isEmpty()) return new RuntimeStepResult.Idle(status());
+        if (dispatcher.owner().isEmpty()) {
+            var idleStatus = status();
+            if (idleStatus == RuntimeStatus.WAITING_FOR_INPUT || idleStatus == RuntimeStatus.WAITING_FOR_CAPACITY) {
+                simulationClock.advance();
+            }
+            return new RuntimeStepResult.Idle(idleStatus);
+        }
 
         var pcb = dispatcher.owner().orElseThrow();
         if (!pcb.hasExecutableProgramCounter()) {
@@ -154,6 +165,8 @@ public final class MultiprocessRuntime {
         pcb.replaceAccounting(accounted);
         pcbSynchronizer.sync(pcb);
         tickCounter.advance();
+        // Commit temporal global: el cleanup posterior puede fallar sin deshacer este intervalo.
+        simulationClock.advance();
         if (result == TickResult.WAITING_FOR_INPUT) {
             dispatcher.release();
             input.register(pcb);

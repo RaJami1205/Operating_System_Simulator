@@ -221,9 +221,14 @@ public final class SimulatorController {
     private boolean runnable() {
         return view.simulatorState() == SimulatorState.RUNNING && view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE;
     }
-    /** Solicita un único Step cuando es ejecutable y detiene Automatic si deja de estar RUNNABLE. */
+    /** Manual permite confirmar intervalos IDLE; Automatic sigue exigiendo trabajo ejecutable. */
+    private boolean canStep() {
+        return view.simulatorState() == SimulatorState.RUNNING
+                && view.runtimeStatus().filter(status -> status != RuntimeStatus.FINISHED).isPresent();
+    }
+    /** Solicita un intervalo válido; Manual admite esperas y Automatic se detiene fuera de RUNNABLE. */
     private void executeSingleStep() {
-        if (!runnable()) { stopAutomaticExecution(); refresh(); return; }
+        if (!canStep() || (automaticMode && !runnable())) { stopAutomaticExecution(); refresh(); return; }
         command(() -> {
             var result = orchestrator.step();
             if (result.status() != RuntimeStatus.RUNNABLE) stopAutomaticExecution();
@@ -306,7 +311,9 @@ public final class SimulatorController {
         }
         cpuTicksLabel.setText(snapshot.cpuTicks().isPresent() ? Long.toString(snapshot.cpuTicks().getAsLong()) : "\u2014");
         simulatorStateLabel.setText(snapshot.simulatorState().name());
-        runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014"));
+        runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014")
+                + "\nSimulation Time: " + (snapshot.simulationTimeSeconds().isPresent()
+                ? snapshot.simulationTimeSeconds().getAsLong() + " s" : "\u2014"));
         ownerValueLabel.setText(snapshot.ownerPid().map(pid -> "PID " + pid).orElse("Idle"));
         cpuOwnerLabel.setText(snapshot.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers"));
         renderCpu(snapshot);
@@ -395,7 +402,7 @@ public final class SimulatorController {
         boolean keyboard = loading || state == SimulatorState.RUNNING || state == SimulatorState.PAUSED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
         loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
-        stepButton.setDisable(!runnable() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
+        stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false); keyboardField.setDisable(!keyboard); keyboardSendButton.setDisable(!keyboard);
         mainMemorySlider.setDisable(!configuring); kernelMemorySlider.setDisable(!configuring);

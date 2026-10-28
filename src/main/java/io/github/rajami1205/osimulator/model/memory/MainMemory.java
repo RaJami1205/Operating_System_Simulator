@@ -143,6 +143,32 @@ public final class MainMemory {
     }
 
     /**
+     * Traduce código lógico mediante un handle USER activo procedente de los recursos canónicos del
+     * proceso. No autentica un PID ni concede autorización permanente para accesos posteriores.
+     */
+    public PhysicalAddress translateInstructionAddress(MemoryAllocation allocation,
+            LogicalCodeRange range, LogicalAddress address) {
+        Objects.requireNonNull(allocation, "allocation must not be null");
+        Objects.requireNonNull(range, "range must not be null");
+        Objects.requireNonNull(address, "address must not be null");
+        validateWrite(allocation, MemoryRegion.USER, 0, allocation.size());
+        if (range.length() != allocation.size()) {
+            throw new MemoryProtectionException("Logical code length and USER allocation disagree");
+        }
+        long offset = (long) address.value() - range.base().value();
+        if (offset < 0 || offset >= range.length()) {
+            throw new MemoryProtectionException("Logical address is outside executable code");
+        }
+        long physical = (long) allocation.base() + offset;
+        if (physical > Integer.MAX_VALUE || physical < allocation.base()
+                || physical >= allocation.endExclusive()
+                || physical < configuration.userStartAddress() || physical >= size()) {
+            throw new MemoryProtectionException("Translated address is outside USER allocation");
+        }
+        return new PhysicalAddress((int) physical);
+    }
+
+    /**
      * Traduce un índice lógico dentro de Limit a Base más índice y verifica la reserva actual; esta API
      * por bounds no acredita identidad histórica del handle.
      */

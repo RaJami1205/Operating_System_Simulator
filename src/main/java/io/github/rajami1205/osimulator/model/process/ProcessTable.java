@@ -6,14 +6,24 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * PCBs canónicos admitidos, incluidos suspended, en orden de admisión y con límite cinco. No sustituye
+ * PCBs canónicos admitidos, incluidos suspended, en orden de admisión y con capacidad por instancia. No sustituye
  * ReadyQueue ni administra allocations.
  */
 public final class ProcessTable {
+    /** Capacidad histórica de una CPU; no es el límite de todas las instancias. */
     public static final int MAX_ADMITTED_PROCESSES = 5;
+    private final int capacity;
     private final LinkedHashMap<Integer, ProcessControlBlock> processes = new LinkedHashMap<>();
 
-    /** Publica el PCB canónico sin PID duplicado y sin superar cinco procesos admitidos. */
+    public ProcessTable() { this(MAX_ADMITTED_PROCESSES); }
+
+    /** Recibe un cupo positivo; la configuración de sesión determina la capacidad permitida. */
+    public ProcessTable(int capacity) {
+        if (capacity <= 0) throw new IllegalArgumentException("Process capacity must be positive");
+        this.capacity = capacity;
+    }
+
+    /** Publica el PCB canónico sin PID duplicado y sin superar la capacidad admitida. */
     public void register(ProcessControlBlock pcb) {
         Objects.requireNonNull(pcb, "pcb must not be null");
         if (processes.containsKey(pcb.processId())) throw new IllegalArgumentException("Duplicate PID: " + pcb.processId());
@@ -31,8 +41,8 @@ public final class ProcessTable {
     public List<ProcessControlBlock> entries() { return List.copyOf(processes.values()); }
     /** Cuenta PCBs admitidos, incluidos los suspended hasta su retirada. */
     public int size() { return processes.size(); }
-    /** Indica si se alcanzó el límite de cinco procesos; no considera la cantidad de Jobs. */
-    public boolean isFull() { return size() >= MAX_ADMITTED_PROCESSES; }
+    /** Indica si se alcanzó el cupo configurado; no considera la cantidad de Jobs. */
+    public boolean isFull() { return size() >= capacity; }
     /** Devuelve el último PCB en orden de admisión para mantener la cadena Kernel. */
     public Optional<ProcessControlBlock> last() {
         var last = processes.lastEntry();

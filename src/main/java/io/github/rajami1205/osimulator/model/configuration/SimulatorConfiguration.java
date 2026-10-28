@@ -9,22 +9,37 @@ import io.github.rajami1205.osimulator.model.process.ProcessTable;
 public record SimulatorConfiguration(
         MemoryConfiguration mainMemory,
         int secondaryStoragePositions,
-        int virtualMemoryPositions
+        int virtualMemoryPositions,
+        int cpuCount
 ) {
+    public static final int MIN_CPU_COUNT = 1;
+    public static final int MAX_CPU_COUNT = 5;
+    public static final int PROCESSES_PER_CPU = ProcessTable.MAX_ADMITTED_PROCESSES;
     public static final int MIN_MAIN_MEMORY = 256;
+    /** Mínimo compatible de una CPU para los controles actuales. */
     public static final int MIN_KERNEL_MEMORY = PcbField.PCB_SIZE * ProcessTable.MAX_ADMITTED_PROCESSES;
 
+    /** Conserva la configuración histórica de una CPU. */
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, MIN_CPU_COUNT);
+    }
+
     /**
-     * Exige Main >= 256 y Kernel >= 140, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
+     * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
      */
     public SimulatorConfiguration {
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
+        if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {
+            throw new IllegalArgumentException("CPU count must be between 1 and 5");
+        }
         if (mainMemory.totalPositions() < MIN_MAIN_MEMORY) {
             throw new IllegalArgumentException("Main Memory must be at least " + MIN_MAIN_MEMORY);
         }
-        if (mainMemory.kernelReservedPositions() < MIN_KERNEL_MEMORY) {
-            throw new IllegalArgumentException("Kernel Memory must be at least " + MIN_KERNEL_MEMORY);
+        int requiredKernel = PcbField.PCB_SIZE * PROCESSES_PER_CPU * cpuCount;
+        if (mainMemory.kernelReservedPositions() < requiredKernel) {
+            throw new IllegalArgumentException("Kernel Memory must be at least " + requiredKernel);
         }
         if (secondaryStoragePositions < 128) {
             throw new IllegalArgumentException("Secondary Storage must be at least 128");
@@ -33,6 +48,12 @@ public record SimulatorConfiguration(
             throw new IllegalArgumentException("Virtual Memory must be at least 64 and less than Secondary Storage");
         }
     }
+
+    /** Cupo de admisión; no garantiza residencia de las imágenes USER ni ejecución multi-CPU. */
+    public int maxProcesses() { return PROCESSES_PER_CPU * cpuCount; }
+
+    /** Celdas necesarias para los bloques PCB de la capacidad configurada. */
+    public int minimumKernelMemory() { return PcbField.PCB_SIZE * maxProcesses(); }
 
     /**
      * Defaults 256/140/512/64. Kernel garantiza cinco bloques PCB de 28 celdas;

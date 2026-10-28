@@ -29,8 +29,8 @@ class PcbMemoryImageTest {
             assertEquals(PcbValue.Empty.INSTANCE,value(image,field));
         assertThrows(UnsupportedOperationException.class,()->image.cells().clear());
         assertThrows(UnsupportedOperationException.class,()->((PcbValue.Names)value(image,PcbField.OPEN_FILES)).values().clear());
-        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setProgramCounter(141);
-        assertEquals(new PcbValue.Number(140),value(image,PcbField.PC));
+        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setProgramCounter(4097);
+        assertEquals(new PcbValue.Number(4096),value(image,PcbField.PC));
         var updated=PcbMemoryImage.capture(pcb);
         assertEquals(new PcbValue.Number(-1),value(updated,PcbField.STACK_TOP));
         assertEquals(PcbValue.Empty.INSTANCE,value(updated,PcbField.STACK_0));

@@ -18,6 +18,29 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ProcessControlBlockTest {
 
     @Test
+    void logicalRangeRejectsOverflowAndRemainsIdenticalAcrossRelocation() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ProcessControlBlock(1, 0, Integer.MAX_VALUE));
+        var pcb = new ProcessControlBlock(1, 140, 3);
+        var range = pcb.logicalCodeRange();
+        assertEquals(4096, range.base().value());
+        assertEquals(4099, range.endExclusive().value());
+        assertEquals(4098, pcb.logicalInstructionAddress(2));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.logicalInstructionAddress(-1));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.logicalInstructionAddress(3));
+        pcb.setProgramCounter(4099);
+        var context = pcb.cpuContext();
+        pcb.changeState(ProcessState.READY_SUSPENDED);
+        pcb.relocateSuspended(new ProcessMemoryBounds(200, 3));
+        org.junit.jupiter.api.Assertions.assertSame(range, pcb.logicalCodeRange());
+        org.junit.jupiter.api.Assertions.assertSame(context, pcb.cpuContext());
+        assertFalse(pcb.hasExecutableProgramCounter());
+        org.junit.jupiter.api.Assertions.assertTrue(pcb.hasTerminalProgramCounter());
+        pcb.changeState(ProcessState.READY);
+        assertEquals(200, pcb.memoryBounds().base());
+    }
+
+    @Test
     void shouldDefineExactlyTheApprovedProcessStates() {
         assertArrayEquals(
                 new ProcessState[]{
@@ -43,7 +66,7 @@ class ProcessControlBlockTest {
                 () -> assertEquals(5, pcb.instructionCount()),
                 () -> assertEquals(105, pcb.programEndAddressExclusive()),
                 () -> assertEquals(ProcessState.NEW, pcb.state()),
-                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
     }
 
@@ -54,7 +77,7 @@ class ProcessControlBlockTest {
         assertAll(
                 () -> assertEquals(0, pcb.programStartAddress()),
                 () -> assertEquals(1, pcb.programEndAddressExclusive()),
-                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
     }
 
@@ -119,7 +142,7 @@ class ProcessControlBlockTest {
 
         assertAll(
                 () -> assertEquals(Integer.MAX_VALUE, pcb.programEndAddressExclusive()),
-                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
     }
 
@@ -144,8 +167,8 @@ class ProcessControlBlockTest {
 
         assertAll(
                 () -> assertEquals(ProcessState.NEW, pcb.state()),
-                () -> assertEquals(pcb.programStartAddress(), pcb.programCounter()),
-                () -> assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.initial().withProgramCounter(programStartAddress), pcb.cpuContext())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter()),
+                () -> assertEquals(io.github.rajami1205.osimulator.model.cpu.CpuContext.initial().withProgramCounter(ProcessControlBlock.LOGICAL_CODE_BASE), pcb.cpuContext())
         );
     }
 
@@ -202,7 +225,7 @@ class ProcessControlBlockTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {100, 101, 102, 103, 104, 105})
+    @ValueSource(ints = {4096, 4097, 4098, 4099, 4100, 4101})
     void shouldAcceptProgramCounterThroughoutInclusiveSavedRange(int programCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
 
@@ -212,7 +235,7 @@ class ProcessControlBlockTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 99, 106, Integer.MIN_VALUE, Integer.MAX_VALUE})
+    @ValueSource(ints = {-1, 4095, 4102, Integer.MIN_VALUE, Integer.MAX_VALUE})
     void shouldRejectProgramCounterOutsideSavedRange(int programCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
 
@@ -230,11 +253,11 @@ class ProcessControlBlockTest {
     @ValueSource(ints = {-1, 6})
     void shouldPreserveProgramCounterAfterFailedMutation(int invalidProgramCounter) {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
-        pcb.setProgramCounter(102);
+        pcb.setProgramCounter(4098);
 
         assertInvalidProgramCounter(pcb, invalidProgramCounter);
 
-        assertEquals(102, pcb.programCounter());
+        assertEquals(4098, pcb.programCounter());
     }
 
     @Test
@@ -242,7 +265,7 @@ class ProcessControlBlockTest {
         ProcessControlBlock pcb = new ProcessControlBlock(
                 1,
                 0,
-                Integer.MAX_VALUE
+                Integer.MAX_VALUE - ProcessControlBlock.LOGICAL_CODE_BASE
         );
 
         pcb.setProgramCounter(Integer.MAX_VALUE);
@@ -253,11 +276,11 @@ class ProcessControlBlockTest {
     @Test
     void shouldKeepProgramCounterUnchangedWhenStateChanges() {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
-        pcb.setProgramCounter(102);
+        pcb.setProgramCounter(4098);
 
         pcb.changeState(ProcessState.TERMINATED);
 
-        assertEquals(102, pcb.programCounter());
+        assertEquals(4098, pcb.programCounter());
     }
 
     @Test
@@ -265,7 +288,7 @@ class ProcessControlBlockTest {
         ProcessControlBlock pcb = new ProcessControlBlock(1, 100, 5);
         pcb.changeState(ProcessState.READY);
 
-        pcb.setProgramCounter(105);
+        pcb.setProgramCounter(4101);
 
         assertEquals(ProcessState.READY, pcb.state());
     }
@@ -275,7 +298,7 @@ class ProcessControlBlockTest {
         ProcessControlBlock pcb = new ProcessControlBlock(7, 100, 5);
 
         pcb.changeState(ProcessState.RUNNING);
-        pcb.setProgramCounter(103);
+        pcb.setProgramCounter(4099);
 
         assertAll(
                 () -> assertEquals(7, pcb.processId()),

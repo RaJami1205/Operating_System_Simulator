@@ -27,7 +27,7 @@ class DispatcherTest {
     }
     @Test void restoresAndSavesEveryFieldAndDoesNotLeakIntoNextProcess() {
         var p1=add(1);var p2=add(2);
-        var context=new CpuContext<Instruction>(65,Optional.of(new IncInstruction()),7,8,9,10,
+        var context=new CpuContext<Instruction>(4097,Optional.of(new IncInstruction()),7,8,9,10,
                 new TextRegisterValue("DX text"),0x40,new TextRegisterValue("AL text"),new ConditionFlags(true,true));
         p1.replaceCpuContext(context);p1.stack().push(6);p1.openFiles().open("notes");
         dispatcher.dispatch(1);
@@ -35,22 +35,22 @@ class DispatcherTest {
         assertEquals(List.of(2),ready.entries());assertEquals(ProcessState.RUNNING,p1.state());
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(2));
         assertThrows(IllegalStateException.class,dispatcher::release);
-        var finalContext=context.withProgramCounter(66).withDx(new NumericRegisterValue(255));
+        var finalContext=context.withProgramCounter(4098).withDx(new NumericRegisterValue(255));
         cpu.restore(finalContext);p1.changeState(ProcessState.BLOCKED);dispatcher.release();
         assertEquals(finalContext,p1.cpuContext());assertEquals(finalContext,cpu.snapshot());
         assertTrue(dispatcher.owner().isEmpty());assertEquals(List.of(6),p1.stack().values());
         assertTrue(p1.openFiles().contains("notes"));
         dispatcher.dispatch(2);
-        assertEquals(CpuContext.initial().withProgramCounter(p2.programStartAddress()),cpu.snapshot());assertSame(p2,dispatcher.owner().orElseThrow());
+        assertEquals(CpuContext.initial().withProgramCounter(p2.logicalCodeRange().base().value()),cpu.snapshot());assertSame(p2,dispatcher.owner().orElseThrow());
         p2.changeState(ProcessState.TERMINATED);dispatcher.release();
-        assertEquals(CpuContext.initial().withProgramCounter(p2.programStartAddress()),p2.cpuContext());
+        assertEquals(CpuContext.initial().withProgramCounter(p2.logicalCodeRange().base().value()),p2.cpuContext());
     }
     @Test void rejectedCandidatesPreserveHeadCpuAndOwnership() {
         var p1=add(1);add(2);var before=cpu.snapshot();
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(2));
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(99));
-        p1.setProgramCounter(67);assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));
-        p1.setProgramCounter(64);p1.changeState(ProcessState.READY_SUSPENDED);
+        p1.setProgramCounter(4099);assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));
+        p1.setProgramCounter(4096);p1.changeState(ProcessState.READY_SUSPENDED);
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));
         p1.changeState(ProcessState.READY);resources.remove(1);
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));

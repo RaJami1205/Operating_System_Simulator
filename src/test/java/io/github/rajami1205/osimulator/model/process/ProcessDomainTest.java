@@ -95,7 +95,7 @@ class ProcessDomainTest {
     void pcbOwnsComponentsAndPreservesContextThroughCompatibilityPcUpdates() {
         var pcb = new ProcessControlBlock(1, 100, 5);
         var other = new ProcessControlBlock(2, 200, 5);
-        assertEquals(CpuContext.initial().withProgramCounter(100), pcb.cpuContext());
+        assertEquals(CpuContext.initial().withProgramCounter(4096), pcb.cpuContext());
         assertEquals(new ProcessMemoryBounds(100, 5), pcb.memoryBounds());
         assertEquals(ProcessAccounting.initial(), pcb.accounting());
         assertEquals(0, pcb.priority());
@@ -104,16 +104,16 @@ class ProcessDomainTest {
         pcb.openFiles().open("file");
         assertTrue(other.stack().isEmpty());
         assertEquals(0, other.openFiles().size());
-        var context = new CpuContext<Instruction>(100, Optional.of(new LoadInstruction(RegisterName.AX)),
+        var context = new CpuContext<Instruction>(4096, Optional.of(new LoadInstruction(RegisterName.AX)),
                 1, 2, 3, 4, 5, 6, 7, new ConditionFlags(true, true));
         pcb.replaceCpuContext(context);
-        pcb.setProgramCounter(105);
-        assertEquals(context.withProgramCounter(105), pcb.cpuContext());
-        assertEquals(100, context.programCounter());
+        pcb.setProgramCounter(4101);
+        assertEquals(context.withProgramCounter(4101), pcb.cpuContext());
+        assertEquals(4096, context.programCounter());
         assertEquals(ProcessState.NEW, pcb.state());
         var before = pcb.cpuContext();
-        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(106)));
-        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(99)));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(4102)));
+        assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.replaceCpuContext(context.withProgramCounter(4095)));
         assertThrows(InvalidProcessProgramCounterException.class, () -> pcb.setProgramCounter(-1));
         assertThrows(NullPointerException.class, () -> pcb.replaceCpuContext(null));
         assertEquals(before, pcb.cpuContext());

@@ -319,7 +319,7 @@ public final class SimulatorController {
         programTable.getItems().setAll(snapshot.program()); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
         readyList.getItems().setAll(snapshot.readyQueue().stream().map(pid -> "PID " + pid).toList());
         suspendedList.getItems().setAll(snapshot.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList());
-        pendingList.getItems().setAll(snapshot.pendingKeyboardRequests().stream().map(r -> "PID " + r.processId() + " / PC " + r.interruptPc()).toList());
+        pendingList.getItems().setAll(snapshot.pendingKeyboardRequests().stream().map(r -> "PID " + r.processId() + " / Logical PC " + r.interruptLogicalPc()).toList());
         screenList.getItems().setAll(snapshot.screenOutput().stream().map(Object::toString).toList());
         var selected = completedTable.getSelectionModel().getSelectedItem();
         completedTable.getItems().setAll(snapshot.completedProcesses());
@@ -352,7 +352,10 @@ public final class SimulatorController {
     /** Muestra registros del CPU activo y tooltips, sin confundirlos con el contexto guardado del PCB. */
     private void renderCpu(SimulatorSnapshot snapshot) {
         var cpu = snapshot.cpu();
-        value(pcValueLabel, cpu.map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
+        value(pcValueLabel, snapshot.addressTranslationError().isPresent() ? "ERROR"
+                : snapshot.nextInstructionPhysicalAddress().map(Object::toString).orElse("\u2014"));
+        cpuOwnerLabel.setText(cpuOwnerLabel.getText() + "\nLogical PC: "
+                + snapshot.ownerPid().flatMap(pid -> cpu).map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
         value(irValueLabel, cpu.flatMap(CpuSnapshot::instructionRegister).orElse("\u2014"));
         value(acValueLabel, cpu.map(v -> Integer.toString(v.accumulator())).orElse("\u2014"));
         value(axValueLabel, cpu.map(v -> Integer.toString(v.ax())).orElse("\u2014"));

@@ -25,7 +25,7 @@ class FcfsProcessSchedulerTest {
     void selectsQueueOrderWithoutConsumingOrMutatingCanonicalState() {
         var second = register(2, 1, 100);
         var first = register(9, 20, -100);
-        first.setProgramCounter(35);
+        first.setProgramCounter(4099);
         first.setNextPcbAddress(Optional.of(new PcbAddress(5)));
         var context = first.cpuContext();
         var accounting = first.accounting();
@@ -40,7 +40,7 @@ class FcfsProcessSchedulerTest {
         assertEquals(ProcessState.READY, second.state());
         assertSame(context, first.cpuContext());
         assertSame(accounting, first.accounting());
-        assertEquals(35, first.programCounter());
+        assertEquals(4099, first.programCounter());
         assertEquals(Optional.of(new PcbAddress(5)), first.nextPcbAddress());
         queue.poll();
         queue.enqueue(9);

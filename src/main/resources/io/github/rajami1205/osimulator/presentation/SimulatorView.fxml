@@ -124,7 +124,7 @@
                                     <ColumnConstraints percentWidth="50"/>
                                 </columnConstraints>
                                 <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="0">
-                                    <Label text="PC" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label text="Physical PC" minWidth="-Infinity" styleClass="metric-label"/>
                                     <Label fx:id="pcValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
                                 </HBox>
                                 <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="0">
@@ -219,7 +219,7 @@
                                         <columns>
                                             <TableColumn fx:id="pidColumn" text="PID" prefWidth="55"/>
                                             <TableColumn fx:id="processStateColumn" text="State" prefWidth="145"/>
-                                            <TableColumn fx:id="processPcColumn" text="PC" prefWidth="55"/>
+                                            <TableColumn fx:id="processPcColumn" text="Logical PC" prefWidth="85"/>
                                             <TableColumn fx:id="residencyColumn" text="Residency" prefWidth="100"/>
                                             <TableColumn fx:id="baseColumn" text="Base" prefWidth="60"/>
                                             <TableColumn fx:id="limitColumn" text="Limit" prefWidth="60"/>
@@ -296,7 +296,7 @@
                                     </placeholder>
                                     <columns>
                                         <TableColumn fx:id="completedPidColumn" text="PID" prefWidth="70"/>
-                                        <TableColumn fx:id="completedPcColumn" text="Final PC" prefWidth="90"/>
+                                        <TableColumn fx:id="completedPcColumn" text="Final Logical PC" prefWidth="115"/>
                                         <TableColumn fx:id="completedCpuTicksColumn" text="CPU Ticks" prefWidth="95"/>
                                         <TableColumn fx:id="completedIrColumn" text="Final IR" prefWidth="400"/>
                                     </columns>

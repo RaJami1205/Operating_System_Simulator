@@ -23,10 +23,10 @@ class BasicIoOrchestratorTest {
         if (process.equals("TERMINATED")) {
             assertTrue(snapshot.process().isEmpty());
             var context=simulator.completedProcesses().getFirst().finalContext();
-            assertEquals(140 + pc,context.programCounter());assertEquals(dx,context.dx());
+            assertEquals(4096 + pc,context.programCounter());assertEquals(dx,context.dx());
         } else if (process.equals("RUNNING")) {
             assertEquals(process,snapshot.process().orElseThrow().processState());
-            assertEquals(140 + pc,snapshot.cpu().orElseThrow().programCounter());
+            assertEquals(4096 + pc,snapshot.cpu().orElseThrow().programCounter());
             assertEquals(dx,snapshot.cpu().orElseThrow().dx());
         } else {
             assertTrue(snapshot.process().isEmpty());
@@ -34,7 +34,7 @@ class BasicIoOrchestratorTest {
                 var field=SimulatorOrchestrator.class.getDeclaredField("processTable");field.setAccessible(true);
                 var table=(io.github.rajami1205.osimulator.model.process.ProcessTable)field.get(simulator);
                 var pcb=table.find(1).orElseThrow();
-                assertEquals(process,pcb.state().name());assertEquals(140 + pc,pcb.programCounter());
+                assertEquals(process,pcb.state().name());assertEquals(4096 + pc,pcb.programCounter());
                 assertEquals(dx,pcb.cpuContext().dx());
             } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
         }

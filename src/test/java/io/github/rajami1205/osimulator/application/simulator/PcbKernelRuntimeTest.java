@@ -53,7 +53,7 @@ class PcbKernelRuntimeTest {
         assertEquals(new PcbValue.Number(7),value(1,PcbField.AX));
         for(int i=0;i<2;i++) {
             simulator.step();assertPublished(1);
-            assertEquals(new PcbValue.Number(141),value(1,PcbField.PC));
+            assertEquals(new PcbValue.Number(4097),value(1,PcbField.PC));
             assertEquals(new PcbValue.Number(0),value(1,PcbField.AC));
         }
         simulator.step();assertPublished(1);assertEquals(new PcbValue.Number(7),value(1,PcbField.AC));
@@ -67,7 +67,7 @@ class PcbKernelRuntimeTest {
         assertInstanceOf(PcbValue.Timestamp.class,value(1,PcbField.START));
         simulator.submitKeyboardInput(42);assertPublished(1);
         assertEquals(42,pcb(1).cpuContext().dx());
-        assertEquals(new PcbValue.Number(147),value(1,PcbField.PC));
+        assertEquals(new PcbValue.Number(4103),value(1,PcbField.PC));
     }
 
     @Test void relativeBranchPublishesPhysicalTargetAndOccupiedKernelLimitsAdmission() {
@@ -77,10 +77,10 @@ class PcbKernelRuntimeTest {
         submit("branch",source.toArray(String[]::new));submit("waiting","INC");simulator.start();
         assertEquals(1,field("processTable",ProcessTable.class).size());
         for(int i=0;i<16;i++) simulator.step();
-        assertEquals(156,pcb(1).programCounter());
-        for(int i=0;i<10 && pcb(1).programCounter()==156;i++) {simulator.step();assertPublished(1);}
-        assertEquals(new PcbValue.Number(152),value(1,PcbField.PC));
-        assertEquals(152,simulator.snapshot().cpu().orElseThrow().programCounter());
+        assertEquals(4112,pcb(1).programCounter());
+        for(int i=0;i<10 && pcb(1).programCounter()==4112;i++) {simulator.step();assertPublished(1);}
+        assertEquals(new PcbValue.Number(4108),value(1,PcbField.PC));
+        assertEquals(4108,simulator.snapshot().cpu().orElseThrow().programCounter());
     }
 
     @Test void contextSwitchKeyboardAndRelocationKeepKernelIdentityAndCapturedValues() {
@@ -96,7 +96,7 @@ class PcbKernelRuntimeTest {
         field("memory",MainMemory.class).allocateUser(3);
         simulator.swapIn(1);assertPublished(1);
         assertEquals(kernel,resource(1).kernel());
-        assertEquals(pcb(1).programStartAddress()+2,pcb(1).programCounter());
+        assertEquals(pcb(1).logicalCodeRange().base().value()+2,pcb(1).programCounter());
         assertEquals(25,pcb(1).cpuContext().dx());
     }
     @Test void fileOperationsPublishOpenNamesAndFailureDoesNotPublishPartialStackImage() {

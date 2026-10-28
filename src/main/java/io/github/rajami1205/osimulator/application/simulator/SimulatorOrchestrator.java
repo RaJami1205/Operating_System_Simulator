@@ -397,11 +397,13 @@ public final class SimulatorOrchestrator {
             try { status = Optional.of(runtime.status()); }
             catch (RuntimeException failure) { lifecycle.markError(); }
         }
-        return SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
+        var snapshot = SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
                 dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
                 jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
                 runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
                 completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()));
+        if (snapshot.addressTranslationError().isPresent()) lifecycle.markError();
+        return snapshot;
     }
 
     /** Delega el texto descriptivo de memoria al mapper sin exponer entidades mutables. */

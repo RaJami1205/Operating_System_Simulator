@@ -74,8 +74,8 @@ public final class ProcessSwapService {
     }
 
     /**
-     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY; rebasa el PC
-     * físico y devuelve Waiting por capacidad.
+     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY;
+     * conserva el contexto lógico completo y devuelve Waiting por capacidad.
      */
     public SwapResult swapIn(int processId) {
         var pcb = process(processId);

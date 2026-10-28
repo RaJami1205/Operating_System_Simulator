@@ -34,14 +34,16 @@ public record SimulatorSnapshot(
         List<CompletedProcess> completedProcesses,
         List<StorageEntry> storage,
         List<Integer> screenOutput,
-        OptionalLong cpuTicks
+        OptionalLong cpuTicks,
+        Optional<Integer> nextInstructionPhysicalAddress,
+        Optional<String> addressTranslationError
 ) {
     /** Conserva la construcción de las vistas originales y deja vacías las vistas adicionales de la sesión. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
             List<ProgramEntry> program, List<MemoryEntry> memory) {
         this(state, cpu, instruction, process, program, memory, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty());
+                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty(), Optional.empty(), Optional.empty());
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
@@ -63,11 +65,13 @@ public record SimulatorSnapshot(
         storage = List.copyOf(storage);
         screenOutput = List.copyOf(screenOutput);
         Objects.requireNonNull(cpuTicks);
+        Objects.requireNonNull(nextInstructionPhysicalAddress);
+        Objects.requireNonNull(addressTranslationError);
         if (cpuTicks.isPresent() && cpuTicks.getAsLong() < 0) throw new IllegalArgumentException("Negative CPU ticks");
     }
     /**
      * Valores inmutables de CPU y representación semántica de IR; DX/AL conservan su tipo numérico o
-     * textual.
+     * textual. El PC es lógico; cero sólo representa un CPU genérico sin proceso.
      */
     public record CpuSnapshot(
             int programCounter, int accumulator, int ax, int bx, int cx, RegisterValue dxValue,
@@ -115,7 +119,7 @@ public record SimulatorSnapshot(
             Objects.requireNonNull(operand, "operand must not be null");
         }
     }
-    /** Vista compatible de identidad, estado, bounds físicos y PC físico guardado. */
+    /** Vista compatible de identidad, estado, bounds físicos y PC lógico guardado. */
     public record ProcessSnapshot(
             int processId, String processState, int startAddress,
             int instructionCount, int endExclusive, int savedProgramCounter

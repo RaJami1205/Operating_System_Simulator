@@ -27,7 +27,7 @@ public record CpuContext<I>(
     /** Devuelve AL numérico; rechaza acceso numérico cuando el contexto conserva texto. */
     public int al() { return alValue.numericValue(); }
 
-    /** Crea PC/datos en cero, IR vacío y flags limpias como contexto CPU genérico; un PCB admitido inicializa PC en su Base. */
+    /** Crea PC/datos en cero, IR vacío y flags limpias como contexto CPU genérico; un PCB admitido inicializa PC en su base lógica. */
     public static <I> CpuContext<I> initial() {
         return new CpuContext<>(0, Optional.empty(), 0, 0, 0, 0, 0, 0, 0, ConditionFlags.CLEAR);
     }

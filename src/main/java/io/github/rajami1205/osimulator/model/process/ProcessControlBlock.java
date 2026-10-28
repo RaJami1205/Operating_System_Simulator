@@ -6,14 +6,19 @@ import java.util.Objects;
 import java.util.Optional;
 import io.github.rajami1205.osimulator.model.cpu.CpuContext;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
+import io.github.rajami1205.osimulator.model.memory.LogicalCodeRange;
 
 /**
  * Estado persistente del proceso: contexto guardado, bounds, stack, archivos, accounting y enlace Kernel.
  * El CPU activo permanece separado y priority sólo es metadata para FCFS.
  */
 public final class ProcessControlBlock {
+    /** Base compartida por los espacios lógicos independientes de cada proceso. */
+    public static final int LOGICAL_CODE_BASE = 4096;
 
     private final int processId;
+    private final LogicalCodeRange logicalCodeRange;
     private ProcessMemoryBounds memoryBounds;
     private final ProcessStack stack = new ProcessStack();
     private final OpenFileTable openFiles = new OpenFileTable();
@@ -31,7 +36,8 @@ public final class ProcessControlBlock {
         validateProcessId(processId);
         this.processId = processId;
         this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
-        this.cpuContext = CpuContext.<Instruction>initial().withProgramCounter(programStartAddress);
+        this.logicalCodeRange = new LogicalCodeRange(new LogicalAddress(LOGICAL_CODE_BASE), instructionCount);
+        this.cpuContext = CpuContext.<Instruction>initial().withProgramCounter(logicalCodeRange.base().value());
     }
 
     /** Devuelve bounds físicos vigentes; rechaza la consulta mientras el proceso está suspended. */
@@ -44,40 +50,33 @@ public final class ProcessControlBlock {
 
     /** Publica nueva Base durante swap-in; exige estado suspended y el mismo Limit lógico. */
     public void relocateSuspended(ProcessMemoryBounds bounds) {
-        var context = relocatedContext(bounds);
-        memoryBounds = bounds;
-        cpuContext = context;
-    }
-    /** Prepara relocation sin mutar; conserva offset incluso para el marcador terminal. */
-    private CpuContext<Instruction> relocatedContext(ProcessMemoryBounds bounds) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
                 || bounds.limit() != memoryBounds.limit()) {
             throw new IllegalStateException("Relocation requires suspended state and unchanged limit");
         }
-        long offset = (long) programCounter() - memoryBounds.base();
-        long next = (long) bounds.base() + offset;
-        if (offset < 0 || offset > bounds.limit() || next > Integer.MAX_VALUE) {
-            throw new InvalidProcessProgramCounterException("Invalid relocation position");
-        }
-        return cpuContext.withProgramCounter((int) next);
+        validateOperationalProgramCounter(programCounter());
+        memoryBounds = bounds;
     }
 
-    /** Dirección física actual o última dirección residente de una posición del programa. */
-    public int instructionAddress(int offset) {
-        if (offset < 0 || offset >= memoryBounds.limit()) {
+    /** Rango lógico inmutable, independiente de la residencia. */
+    public LogicalCodeRange logicalCodeRange() { return logicalCodeRange; }
+
+    /** Dirección lógica de una posición ejecutable del programa. */
+    public int logicalInstructionAddress(int offset) {
+        if (offset < 0 || offset >= logicalCodeRange.length()) {
             throw new InvalidProcessProgramCounterException("Invalid instruction offset: " + offset);
         }
-        return memoryBounds.base() + offset;
+        return logicalCodeRange.base().value() + offset;
     }
 
-    /** PC ejecutable según la ubicación actual o última ubicación residente. */
+    /** PC lógico ejecutable, independiente de la residencia. */
     public boolean hasExecutableProgramCounter() {
-        return programCounter() >= memoryBounds.base() && programCounter() < memoryBounds.endExclusive();
+        return programCounter() >= logicalCodeRange.base().value() && programCounter() < logicalCodeRange.endExclusive().value();
     }
 
-    /** Distingue el marcador terminal físico, también durante suspensión. */
-    public boolean hasTerminalProgramCounter() { return programCounter() == memoryBounds.endExclusive(); }
+    /** Distingue el marcador terminal lógico, también durante suspensión. */
+    public boolean hasTerminalProgramCounter() { return programCounter() == logicalCodeRange.endExclusive().value(); }
 
     /** Expone el contexto inmutable guardado, que puede diferir del CPU mientras el proceso ejecuta. */
     public CpuContext<Instruction> cpuContext() { return cpuContext; }
@@ -92,7 +91,7 @@ public final class ProcessControlBlock {
     /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */
     public Optional<PcbAddress> nextPcbAddress() { return nextPcbAddress; }
 
-    /** Reemplaza el contexto guardado sólo después de validar su PC físico contra Base/EndExclusive. */
+    /** Reemplaza el contexto guardado sólo después de validar su PC lógico. */
     public void replaceCpuContext(CpuContext<Instruction> context) {
         Objects.requireNonNull(context, "context must not be null");
         validateOperationalProgramCounter(context.programCounter());
@@ -159,12 +158,12 @@ public final class ProcessControlBlock {
         cpuContext = cpuContext.withProgramCounter(programCounter);
     }
 
-    /** El PC físico admite EndExclusive únicamente como marcador terminal. */
+    /** El PC lógico admite EndExclusive únicamente como marcador terminal. */
     private void validateOperationalProgramCounter(int programCounter) {
-        if (programCounter < memoryBounds.base() || programCounter > memoryBounds.endExclusive()) {
+        if (programCounter < logicalCodeRange.base().value() || programCounter > logicalCodeRange.endExclusive().value()) {
             throw new InvalidProcessProgramCounterException(
-                    "Process Program Counter must be between " + memoryBounds.base()
-                            + " and " + memoryBounds.endExclusive() + ": " + programCounter);
+                    "Logical Program Counter must be between " + logicalCodeRange.base().value()
+                            + " and " + logicalCodeRange.endExclusive().value() + ": " + programCounter);
         }
     }
     /** Exige un identificador positivo para el proceso. */

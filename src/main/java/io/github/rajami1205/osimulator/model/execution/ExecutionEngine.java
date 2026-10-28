@@ -15,6 +15,7 @@ import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
 import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
 import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
@@ -49,8 +50,8 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnder
 public final class ExecutionEngine {
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
     private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
-    /** Próximo PC físico que debe publicarse tras completar la instrucción. */
-    private record Continue(int nextPhysicalPc) implements SemanticOutcome { }
+    /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
+    private record Continue(int nextLogicalPc) implements SemanticOutcome { }
     /** Finalización explícita sin avanzar al siguiente PC. */
     private record Terminate() implements SemanticOutcome { }
     /** INT09 sin entrada disponible; solicita BLOCKED sin avanzar PC todavía. */
@@ -92,10 +93,15 @@ public final class ExecutionEngine {
             pcb.changeState(ProcessState.TERMINATED);
             return TickResult.PROGRAM_FINISHED;
         }
+        if (!pcb.hasExecutableProgramCounter()) {
+            throw new ExecutionEngineException("Logical PC outside executable code");
+        }
         if (progress.isIdle()) {
             Instruction instruction;
             try {
-                instruction = memory.readInstruction(allocation, currentProgramCounter);
+                var physical = memory.translateInstructionAddress(allocation, pcb.logicalCodeRange(),
+                        new LogicalAddress(currentProgramCounter));
+                instruction = memory.readInstruction(allocation, physical.value());
             } catch (MemoryProtectionException exception) {
                 throw new ExecutionEngineException("Unable to fetch process instruction", exception);
             }
@@ -118,7 +124,7 @@ public final class ExecutionEngine {
         }
 
         return switch (outcome) {
-            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextPhysicalPc());
+            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextLogicalPc());
             case Terminate ignored -> {
                 progress.clear();
                 pcb.changeState(ProcessState.TERMINATED);
@@ -258,11 +264,11 @@ public final class ExecutionEngine {
 
     /**
      * Calcula PC + displacement con aritmética amplia y rechaza destinos fuera de
-     * [Base, EndExclusive).
+     * [logicalBase, logicalEndExclusive).
      */
     private int branchTarget(int currentPc, BranchDisplacement displacement, ProcessControlBlock pcb) {
         long target = (long) currentPc + displacement.value();
-        if (target < pcb.programStartAddress() || target >= pcb.programEndAddressExclusive()) {
+        if (target < pcb.logicalCodeRange().base().value() || target >= pcb.logicalCodeRange().endExclusive().value()) {
             throw new ExecutionEngineException("Branch target outside process instructions: " + target);
         }
         return (int) target;

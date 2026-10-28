@@ -42,6 +42,8 @@ final class SimulatorSnapshotMapper {
             }
         }
         Optional<ProcessSnapshot> active = Optional.empty();
+        Optional<Integer> nextPhysical = Optional.empty();
+        Optional<String> translationError = Optional.empty();
         var program = new ArrayList<ProgramEntry>();
         if (owner.isPresent()) {
             var pcb = owner.orElseThrow();
@@ -51,12 +53,20 @@ final class SimulatorSnapshotMapper {
                 active = Optional.of(new ProcessSnapshot(pcb.processId(), pcb.state().name(), base,
                         pcb.instructionCount(), base + pcb.instructionCount(), pcb.programCounter()));
                 try {
+                    if (pcb.state() != ProcessState.TERMINATED && pcb.hasExecutableProgramCounter()) {
+                        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+                        nextPhysical = Optional.of(memory.translateInstructionAddress(resident.allocation(),
+                                pcb.logicalCodeRange(), new LogicalAddress(cpu.programCounter())).value());
+                    }
                     var image = memory.readUserBlock(resident.allocation());
                     for (int i = 0; i < image.size(); i++) {
                         program.add(new ProgramEntry(base + i, SemanticFormatter.semanticText(image.get(i))));
                     }
                 } catch (RuntimeException failure) {
-                    if (state != SimulatorState.ERROR) throw failure;
+                    state = SimulatorState.ERROR;
+                    status = Optional.empty();
+                    nextPhysical = Optional.empty();
+                    translationError = Optional.of("Invalid instruction allocation/address");
                     // Conserva la inspección del CPU y las celdas físicas aunque la allocation activa sea inválida.
                 }
             }
@@ -65,7 +75,7 @@ final class SimulatorSnapshotMapper {
                 owner.map(ProcessControlBlock::processId), Optional.ofNullable(configuration), jobs, processes,
                 ready, suspended, pending, completed.stream().map(value -> new CompletedProcess(
                         value.processId(), context(value.finalContext()), value.accounting())).toList(),
-                storageRows(storage), screen, cpuTicks);
+                storageRows(storage), screen, cpuTicks, nextPhysical, translationError);
     }
 
     /** Copia registros/flags y formatea IR sin retener CpuRegisters ni ejecutar instrucciones. */

@@ -12,7 +12,7 @@ final class DashboardDetails {
     private DashboardDetails() {}
     /** Formatea registros y flags de una vista CPU, conservando valores tipados y marcadores de ausencia. */
     static String context(CpuSnapshot cpu) {
-        return "PC: " + cpu.programCounter() + "   IR: " + cpu.instructionRegister().orElse("\u2014")
+        return "Logical PC: " + cpu.programCounter() + "   IR: " + cpu.instructionRegister().orElse("\u2014")
                 + "\nAC: " + cpu.accumulator() + "   AX: " + cpu.ax() + "   BX: " + cpu.bx() + "   CX: " + cpu.cx()
                 + "\nDX: " + cpu.dxText() + "   AH: " + cpu.ah() + "   AL: " + cpu.alText()
                 + "\nEqual: " + cpu.flags().equal() + "   Overflow: " + cpu.flags().overflow();

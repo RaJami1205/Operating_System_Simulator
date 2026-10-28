@@ -28,6 +28,32 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void cpuDisplayUsesTranslatedNextAddressAndClearlyLabelsLogicalHistory() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        f.load("logical.asm", "ADD AX", "INC"); f.action("handleStart");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        f.action("handleStep");
+        assertEquals("140", f.widget("pcValueLabel", Label.class).getText());
+        assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: 4096"));
+        f.action("handleStep"); f.action("handleStep");
+        assertEquals("141", f.widget("pcValueLabel", Label.class).getText());
+        assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: 4097"));
+        f.action("handleStep");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        assertTrue(DashboardDetails.context(f.simulator.snapshot().completedProcesses().getFirst().finalContext())
+                .contains("Logical PC: 4098"));
+        f.action("handleReset"); f.action("handleInitialize");
+        f.load("invalid.asm", "ADD AX"); f.action("handleStart"); f.action("handleStep");
+        var resources = (io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry) get(f.simulator, "processResources");
+        var resident = (io.github.rajami1205.osimulator.application.process.UserImageResidence.Resident)
+                resources.find(1).orElseThrow().residence();
+        ((io.github.rajami1205.osimulator.model.memory.MainMemory) get(f.simulator, "memory")).release(resident.allocation());
+        f.action("refresh");
+        assertEquals("ERROR", f.widget("pcValueLabel", Label.class).getText());
+        assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
+    }); }
     @BeforeAll static void toolkit() {
         assumeTrue(!System.getProperty("os.name").toLowerCase().contains("linux") || System.getenv("DISPLAY") != null);
         try { Platform.startup(() -> Platform.setImplicitExit(false)); } catch (IllegalStateException alreadyStarted) { }
@@ -123,7 +149,7 @@ class DashboardControllerTest {
         var snapshot = new SimulatorSnapshot(initial.simulatorState(), initial.cpu(), initial.currentInstruction(),
                 initial.process(), initial.program(), initial.memory(), initial.runtimeStatus(), initial.ownerPid(),
                 initial.configuration(), initial.jobs(), processes, initial.readyQueue(), initial.suspendedReadyQueue(),
-                initial.pendingKeyboardRequests(), completed, initial.storage(), initial.screenOutput(), initial.cpuTicks());
+                initial.pendingKeyboardRequests(), completed, initial.storage(), initial.screenOutput(), initial.cpuTicks(), initial.nextInstructionPhysicalAddress(), initial.addressTranslationError());
         var render = SimulatorController.class.getDeclaredMethod("render", SimulatorSnapshot.class); render.setAccessible(true);
         render.invoke(f.controller, snapshot);
         f.widget("processTable", TableView.class).getSelectionModel().select(1);

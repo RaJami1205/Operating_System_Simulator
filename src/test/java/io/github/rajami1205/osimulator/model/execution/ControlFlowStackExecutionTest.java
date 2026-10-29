@@ -2,7 +2,6 @@ package io.github.rajami1205.osimulator.model.execution;
 
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 
@@ -22,14 +21,13 @@ class ControlFlowStackExecutionTest {
     private static final class Session {
         private final ScreenDevice screen = new ScreenDevice();
     private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
-        private final KeyboardDevice keyboard = new KeyboardDevice();
         final MainMemory memory = new MainMemory(new MemoryConfiguration(128, 32));
         final CpuRegisters<Instruction> cpu = new CpuRegisters<>();
         final ExecutionEngine engine = new ExecutionEngine();
         final ProcessControlBlock pcb;
         final io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
         Session(Instruction... instructions) { var loaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instructions)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
-        TickResult tick() { return engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, allocation); }
+        TickResult tick() { return engine.executeTick(filesystem, screen, memory, cpu, pcb, allocation); }
         void pc(int value) { pcb.setProgramCounter(value); cpu.setProgramCounter(value); }
         void assertPc(int value) { assertEquals(value, cpu.programCounter()); assertEquals(value, pcb.programCounter()); }
         void failure(Instruction instruction, Class<? extends Throwable> cause) {

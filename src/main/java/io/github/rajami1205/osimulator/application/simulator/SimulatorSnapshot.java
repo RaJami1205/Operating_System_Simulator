@@ -9,7 +9,6 @@ import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
-import io.github.rajami1205.osimulator.application.process.PendingKeyboardRequest;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,7 +29,6 @@ public record SimulatorSnapshot(
         List<ProcessDetails> processes,
         List<Integer> readyQueue,
         List<Integer> suspendedReadyQueue,
-        List<PendingKeyboardRequest> pendingKeyboardRequests,
         List<CompletedProcess> completedProcesses,
         List<StorageEntry> storage,
         List<Integer> screenOutput,
@@ -45,11 +43,11 @@ public record SimulatorSnapshot(
             List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
             Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
             List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
-            List<PendingKeyboardRequest> pendingKeyboardRequests, List<CompletedProcess> completedProcesses,
+            List<CompletedProcess> completedProcesses,
             List<StorageEntry> storage, List<Integer> screenOutput, OptionalLong cpuTicks,
             Optional<Integer> nextInstructionPhysicalAddress, Optional<String> addressTranslationError) {
         this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
-                jobs, processes, readyQueue, suspendedReadyQueue, pendingKeyboardRequests, completedProcesses,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses,
                 storage, screenOutput, cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, OptionalLong.empty());
     }
     /** Conserva la construcción de las vistas originales y deja vacías las vistas adicionales de la sesión. */
@@ -57,7 +55,7 @@ public record SimulatorSnapshot(
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
             List<ProgramEntry> program, List<MemoryEntry> memory) {
         this(state, cpu, instruction, process, program, memory, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty(), Optional.empty(), Optional.empty());
+                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty(), Optional.empty(), Optional.empty());
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
@@ -74,7 +72,6 @@ public record SimulatorSnapshot(
         processes = List.copyOf(processes);
         readyQueue = List.copyOf(readyQueue);
         suspendedReadyQueue = List.copyOf(suspendedReadyQueue);
-        pendingKeyboardRequests = List.copyOf(pendingKeyboardRequests);
         completedProcesses = List.copyOf(completedProcesses);
         storage = List.copyOf(storage);
         screenOutput = List.copyOf(screenOutput);

@@ -27,7 +27,6 @@ import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
 import io.github.rajami1205.osimulator.model.cpu.TextRegisterValue;
 import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
@@ -49,13 +48,11 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnder
  */
 public final class ExecutionEngine {
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
-    private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
+    private sealed interface SemanticOutcome permits Continue, Terminate { }
     /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
     private record Continue(int nextLogicalPc) implements SemanticOutcome { }
     /** Finalización explícita sin avanzar al siguiente PC. */
     private record Terminate() implements SemanticOutcome { }
-    /** INT09 sin entrada disponible; solicita BLOCKED sin avanzar PC todavía. */
-    private record WaitForKeyboard() implements SemanticOutcome { }
 
     /**
      * Completa una instrucción usando la allocation USER canónica; detecta PC terminal antes del fetch.
@@ -63,7 +60,6 @@ public final class ExecutionEngine {
     public TickResult executeTick(
             SimulatedFileSystem filesystem,
             ScreenDevice screen,
-            KeyboardDevice keyboard,
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
@@ -75,7 +71,6 @@ public final class ExecutionEngine {
 
         Objects.requireNonNull(filesystem, "filesystem must not be null");
         Objects.requireNonNull(screen, "screen must not be null");
-        Objects.requireNonNull(keyboard, "keyboard must not be null");
         validateExecutableState(pcb);
 
         int currentProgramCounter = pcb.programCounter();
@@ -103,17 +98,13 @@ public final class ExecutionEngine {
         cpu.setProgramCounter(currentProgramCounter);
         cpu.loadInstructionRegister(instruction);
         if (pcb.state() == ProcessState.READY) pcb.changeState(ProcessState.RUNNING);
-        var outcome = executeInstruction(instruction, cpu, pcb, currentProgramCounter, screen, keyboard, filesystem);
+        var outcome = executeInstruction(instruction, cpu, pcb, currentProgramCounter, screen, filesystem);
 
         return switch (outcome) {
             case Continue next -> publishNextPc(cpu, pcb, next.nextLogicalPc());
             case Terminate ignored -> {
                 pcb.changeState(ProcessState.TERMINATED);
                 yield TickResult.PROGRAM_FINISHED;
-            }
-            case WaitForKeyboard ignored -> {
-                pcb.changeState(ProcessState.BLOCKED);
-                yield TickResult.WAITING_FOR_INPUT;
             }
         };
     }
@@ -149,7 +140,6 @@ public final class ExecutionEngine {
             ProcessControlBlock pcb,
             int currentPc,
             ScreenDevice screen,
-            KeyboardDevice keyboard,
             SimulatedFileSystem filesystem
     ) {
         try {
@@ -159,11 +149,6 @@ public final class ExecutionEngine {
                         case FILESYSTEM -> filesystem.execute(cpu, pcb);
                         case TERMINATE -> { return new Terminate(); }
                         case SCREEN -> screen.append(cpu.readRegister(RegisterName.DX));
-                        case KEYBOARD -> {
-                            var input = keyboard.poll();
-                            if (input.isEmpty()) return new WaitForKeyboard();
-                            cpu.writeRegister(RegisterName.DX, input.getAsInt());
-                        }
                     }
                 }
                 case CmpInstruction cmp -> cpu.writeConditionFlags(new ConditionFlags(

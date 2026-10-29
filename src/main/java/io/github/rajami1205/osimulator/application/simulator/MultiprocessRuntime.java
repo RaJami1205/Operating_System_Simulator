@@ -15,7 +15,7 @@ import java.util.HashSet;
 import java.util.Objects;
 
 /**
- * Coordina Step, bloqueo, completion y disponibilidad global sobre un CPU. Delega ownership al Dispatcher
+ * Coordina Step, completion y disponibilidad global sobre un CPU. Delega ownership al Dispatcher
  * y mantiene FCFS non-preemptive; Step ejecuta como máximo un tick.
  */
 public final class MultiprocessRuntime {
@@ -26,8 +26,6 @@ public final class MultiprocessRuntime {
     private final MainMemory memory;
     private final SimulatedFileSystem filesystem;
     private final ScreenDevice screen;
-    private final KeyboardDevice keyboard;
-    private final KeyboardCompletionService input;
     private final ProcessCompletionService completion;
     private final ProcessSwapService swap;
     private final JobScheduler admission;
@@ -50,7 +48,7 @@ public final class MultiprocessRuntime {
      */
     public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine,
             CpuRegisters<Instruction> cpu, MainMemory memory, SimulatedFileSystem filesystem,
-            ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
+            ScreenDevice screen,
             ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
             JobList jobs, ProcessTable table, ProcessResourceRegistry resources, ReadyQueue ready,
             SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter,
@@ -65,8 +63,6 @@ public final class MultiprocessRuntime {
         this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.filesystem = Objects.requireNonNull(filesystem);
         this.screen = Objects.requireNonNull(screen);
-        this.keyboard = Objects.requireNonNull(keyboard);
-        this.input = Objects.requireNonNull(input);
         this.completion = Objects.requireNonNull(completion);
         this.swap = Objects.requireNonNull(swap);
         this.admission = Objects.requireNonNull(admission);
@@ -99,24 +95,10 @@ public final class MultiprocessRuntime {
     }
 
     /**
-     * Completa input en contextos guardados y procesa cleanup/admisión derivada; nunca ejecuta el CPU ni
-     * suma ticks.
-     */
-    public void drainInput() {
-        if (!started) return;
-        int before = input.pending().size();
-        var terminated = input.drain();
-        for (int pid : terminated) completion.complete(pid);
-        if (!terminated.isEmpty()) admitWaiting();
-        if (input.pending().size() != before) reconsiderSwap = true;
-        settle();
-    }
-
-    /**
      * Reintenta swap-in de la cabeza suspended sólo ante cambios relevantes y sin owner/READY; no
      * selecciona víctimas de swap-out.
      */
-    private void settle() {
+    void settle() {
         if (started && reconsiderSwap && dispatcher.owner().isEmpty()
                 && ready.peek().isEmpty() && suspended.peek().isPresent()) {
             int pid = suspended.peek().orElseThrow();
@@ -126,19 +108,19 @@ public final class MultiprocessRuntime {
     }
 
     /**
-     * Drena eventos gratuitos; confirma un segundo por tick exitoso o espera válida. Un tick se confirma
+     * Reconsidera swap-in gratuito; confirma un segundo por tick exitoso o espera válida. Un tick se confirma
      * tras sincronizar CPU/PCB/Kernel, antes del cleanup posterior; FINISHED sin CPU no consume tiempo.
      */
     public RuntimeStepResult step() {
         if (!started) throw new IllegalStateException("Runtime has not started");
-        drainInput();
-        // Los eventos iniciales son gratuitos y pueden agotar el workload sin abrir un intervalo.
+        settle();
+        // Reconsiderar swap-in no consume tiempo; FINISHED no abre un intervalo.
         if (status() == RuntimeStatus.FINISHED) return new RuntimeStepResult.Idle(RuntimeStatus.FINISHED);
         simulationClock.validateCanAdvance();
         if (dispatcher.owner().isEmpty()) scheduler.selectNext().ifPresent(dispatcher::dispatch);
         if (dispatcher.owner().isEmpty()) {
             var idleStatus = status();
-            if (idleStatus == RuntimeStatus.WAITING_FOR_INPUT || idleStatus == RuntimeStatus.WAITING_FOR_CAPACITY) {
+            if (idleStatus == RuntimeStatus.WAITING_FOR_CAPACITY) {
                 simulationClock.advance();
             }
             return new RuntimeStepResult.Idle(idleStatus);
@@ -161,18 +143,14 @@ public final class MultiprocessRuntime {
         var tickStart = realClock.instant();
         // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
         var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
-        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, resident.allocation());
+        var result = engine.executeTick(filesystem, screen, memory, cpu, pcb, resident.allocation());
         pcb.replaceCpuContext(cpu.snapshot());
         pcb.replaceAccounting(accounted);
         pcbSynchronizer.sync(pcb);
         tickCounter.advance();
         // Commit temporal global: el cleanup posterior puede fallar sin deshacer este intervalo.
         simulationClock.advance();
-        if (result == TickResult.WAITING_FOR_INPUT) {
-            dispatcher.release();
-            input.register(pcb);
-            reconsiderSwap = true;
-        } else if (result == TickResult.PROGRAM_FINISHED) {
+        if (result == TickResult.PROGRAM_FINISHED) {
             dispatcher.release();
             completion.complete(pcb.processId());
             admitWaiting();
@@ -231,16 +209,15 @@ public final class MultiprocessRuntime {
         validateStructure();
         if (started && dispatcher.owner().isEmpty() && table.size() == 0
                 && resources.entries().isEmpty() && ready.entries().isEmpty() && suspended.entries().isEmpty()
-                && input.pending().isEmpty() && jobs.entries().stream().noneMatch(j -> j.state() == JobState.PENDING)) {
+                && jobs.entries().stream().noneMatch(j -> j.state() == JobState.PENDING)) {
             return RuntimeStatus.FINISHED;
         }
         if (dispatcher.owner().isPresent() || ready.peek().isPresent()) return RuntimeStatus.RUNNABLE;
-        if (!input.pending().isEmpty()) return RuntimeStatus.WAITING_FOR_INPUT;
         return RuntimeStatus.WAITING_FOR_CAPACITY;
     }
 
     /**
-     * Comprueba correspondencia entre PCBs, estados, recursos, colas, pending input y único owner; no
+     * Comprueba correspondencia entre PCBs, estados, recursos, colas y único owner; no
      * repara ni selecciona procesos.
      */
     private void validateStructure() {
@@ -253,19 +230,15 @@ public final class MultiprocessRuntime {
                 || !pids.containsAll(suspendedPids)) {
             throw new IllegalStateException("Inconsistent active process structures");
         }
-        var pending = new HashSet<Integer>();
-        for (var request : input.pending()) {
-            if (!pids.contains(request.processId()) || !pending.add(request.processId())) {
-                throw new IllegalStateException("Invalid pending request");
-            }
-        }
         for (var pcb : table.entries()) {
             int pid = pcb.processId();
             var state = pcb.state();
+            if (state == ProcessState.BLOCKED || state == ProcessState.BLOCKED_SUSPENDED) {
+                throw new IllegalStateException("Blocked process has no supported unblocking mechanism");
+            }
             if ((state == ProcessState.RUNNING) != (owner == pcb)
                     || (state == ProcessState.READY) != readyPids.contains(pid)
                     || (state == ProcessState.READY_SUSPENDED) != suspendedPids.contains(pid)
-                    || ((state == ProcessState.BLOCKED || state == ProcessState.BLOCKED_SUSPENDED) != pending.contains(pid))
                     || state == ProcessState.NEW || state == ProcessState.TERMINATED) {
                 throw new IllegalStateException("Inconsistent process state/queue/owner");
             }

@@ -28,7 +28,7 @@ final class SimulatorSnapshotMapper {
             SimulatorConfiguration configuration, CpuRegisters<Instruction> cpu, Optional<ProcessControlBlock> owner,
             MainMemory memory, SecondaryStorage storage, List<Job> jobs, ProcessTable table,
             ProcessResourceRegistry resources, List<Integer> ready, List<Integer> suspended,
-            List<PendingKeyboardRequest> pending, List<CompletedProcessRecord> completed, List<Integer> screen,
+            List<CompletedProcessRecord> completed, List<Integer> screen,
             OptionalLong cpuTicks, OptionalLong simulationTimeSeconds) {
         var cpuView = cpu == null ? Optional.<CpuSnapshot>empty() : Optional.of(context(cpu.snapshot()));
         var instruction = owner.isEmpty() || cpu == null ? Optional.<InstructionSnapshot>empty()
@@ -74,7 +74,7 @@ final class SimulatorSnapshotMapper {
         }
         return new SimulatorSnapshot(state, cpuView, instruction, active, program, memoryRows(memory), status,
                 owner.map(ProcessControlBlock::processId), Optional.ofNullable(configuration), jobs, processes,
-                ready, suspended, pending, completed.stream().map(value -> new CompletedProcess(
+                ready, suspended, completed.stream().map(value -> new CompletedProcess(
                         value.processId(), context(value.finalContext()), value.accounting())).toList(),
                 storageRows(storage), screen, cpuTicks, nextPhysical, translationError, simulationTimeSeconds);
     }

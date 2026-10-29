@@ -11,13 +11,22 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class InterruptParserTest {
     @Test void acceptsExactlyTheSupportedFormsWithExistingSourceConventions() {
-        assertEquals(List.of(new InterruptInstruction(InterruptVector.KEYBOARD),new InterruptInstruction(InterruptVector.SCREEN),new InterruptInstruction(InterruptVector.TERMINATE)),
-                new AsmParser().parse(List.of("; comment","", " iNt\t09h ; input", "INT 10H", "int 20h")));
+        assertEquals(List.of(new InterruptInstruction(InterruptVector.SCREEN),new InterruptInstruction(InterruptVector.TERMINATE),new InterruptInstruction(InterruptVector.FILESYSTEM)),
+                new AsmParser().parse(List.of("; comment","", " iNt\t10h ; output", "int 20h", "INT 21H")));
     }
     @ParameterizedTest
     @ValueSource(strings={"INT","INT 9","INT 09","INT 0x09","INT20H","INT 11H","INT 22H","INT 10H, 20H","INT 10H 20H","INT AX"})
     void rejectsMalformedVectorsWithPhysicalLine(String source) {
         var failure=assertThrows(AsmParseException.class,()->new AsmParser().parse(List.of(";header","",source)));
         assertEquals(3,failure.lineNumber());
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"INT 09H", "int 09h", " iNt\t09h ; removed interrupt"})
+    void rejectsRemovedInterruptWithOriginalLineAndCause(String source) {
+        var failure = assertThrows(AsmParseException.class,
+                () -> new AsmParser().parse(List.of("; header", "", source)));
+        assertEquals(3, failure.lineNumber());
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+        assertTrue(failure.getCause().getMessage().contains("Unsupported interrupt vector"));
     }
 }

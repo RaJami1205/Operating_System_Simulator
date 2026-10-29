@@ -74,26 +74,22 @@ class DashboardSnapshotTest {
         assertEquals(List.of(2), simulator.snapshot().readyQueue());
     }
     @Test void fifoScreenAndResetAreImmutableObservations() {
-        initialize(); submit("one", "INT 09H", "INT 10H"); submit("two", "INT 09H", "INC"); simulator.start();
-        for (int i = 0; i < 2; i++) simulator.step();
+        initialize(); submit("one", "MOV DX, 7", "INT 10H"); submit("two", "MOV DX, 8", "INC");
+        simulator.start(); simulator.swapOut(2);
         var waiting = simulator.snapshot();
-        assertEquals(List.of(new PendingKeyboardRequest(1,4096), new PendingKeyboardRequest(2,4096)), waiting.pendingKeyboardRequests());
-        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), waiting.runtimeStatus());
-        simulator.swapOut(1); simulator.swapOut(2); simulator.submitKeyboardInput(7); simulator.submitKeyboardInput(8);
-        assertEquals(List.of(2), simulator.snapshot().suspendedReadyQueue());
-        assertEquals(List.of(1), simulator.snapshot().readyQueue());
-        assertEquals(2, waiting.pendingKeyboardRequests().size());
+        assertEquals(List.of(2), waiting.suspendedReadyQueue());
+        assertEquals(List.of(1), waiting.readyQueue());
         for (int i = 0; i < 10 && simulator.snapshot().simulatorState() != SimulatorState.FINISHED; i++) simulator.step();
         var done = simulator.snapshot(); assertEquals(List.of(7), done.screenOutput());
         assertEquals(List.of(1, 2), done.completedProcesses().stream().map(SimulatorSnapshot.CompletedProcess::processId).toList());
         for (List<?> list : List.of(done.jobs(), done.processes(), done.readyQueue(), done.suspendedReadyQueue(),
-                done.pendingKeyboardRequests(), done.completedProcesses(), done.memory(), done.storage(), done.screenOutput())) {
+                done.completedProcesses(), done.memory(), done.storage(), done.screenOutput())) {
             assertThrows(UnsupportedOperationException.class, list::clear);
         }
         simulator.reset(); var reset = simulator.snapshot();
         assertEquals(SimulatorState.CONFIGURING, reset.simulatorState());
         for (List<?> list : List.of(reset.jobs(), reset.processes(), reset.readyQueue(), reset.suspendedReadyQueue(),
-                reset.pendingKeyboardRequests(), reset.completedProcesses(), reset.memory(), reset.storage(), reset.screenOutput())) assertTrue(list.isEmpty());
+                reset.completedProcesses(), reset.memory(), reset.storage(), reset.screenOutput())) assertTrue(list.isEmpty());
         assertEquals(List.of(7), done.screenOutput());
     }
     @Test void allPhysicalRowsAndCanonicalContentArePresent() {
@@ -120,16 +116,15 @@ class DashboardSnapshotTest {
         var value = simulator.snapshot();
         var jobs = new ArrayList<>(value.jobs()); var processes = new ArrayList<>(value.processes());
         var ready = new ArrayList<>(List.of(1)); var suspended = new ArrayList<>(List.of(2));
-        var pending = new ArrayList<>(List.of(new PendingKeyboardRequest(3, 0)));
         var completed = new ArrayList<>(value.completedProcesses()); var memory = new ArrayList<>(value.memory());
         var storage = new ArrayList<>(value.storage()); var screen = new ArrayList<>(List.of(7));
         var program = new ArrayList<>(List.of(new SimulatorSnapshot.ProgramEntry(32, "INC")));
         var copy = new SimulatorSnapshot(value.simulatorState(), value.cpu(), value.currentInstruction(), value.process(),
                 program, memory, value.runtimeStatus(), value.ownerPid(), value.configuration(), jobs, processes,
-                ready, suspended, pending, completed, storage, screen, value.cpuTicks(), value.nextInstructionPhysicalAddress(), value.addressTranslationError());
-        for (List<?> input : List.of(jobs, processes, ready, suspended, pending, completed, memory, storage, screen, program)) input.clear();
+                ready, suspended, completed, storage, screen, value.cpuTicks(), value.nextInstructionPhysicalAddress(), value.addressTranslationError());
+        for (List<?> input : List.of(jobs, processes, ready, suspended, completed, memory, storage, screen, program)) input.clear();
         assertEquals(1, copy.jobs().size()); assertEquals(List.of(1), copy.readyQueue()); assertEquals(List.of(2), copy.suspendedReadyQueue());
-        assertEquals(1, copy.pendingKeyboardRequests().size()); assertEquals(1, copy.completedProcesses().size());
+        assertEquals(1, copy.completedProcesses().size());
         assertEquals(256, copy.memory().size()); assertEquals(512, copy.storage().size()); assertEquals(List.of(7), copy.screenOutput());
         assertEquals(1, copy.program().size());
         var stack = new ArrayList<>(List.of(9)); var files = new ArrayList<>(List.of("a"));

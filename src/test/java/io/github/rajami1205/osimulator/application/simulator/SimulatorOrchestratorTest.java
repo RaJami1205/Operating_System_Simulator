@@ -234,8 +234,6 @@ class SimulatorOrchestratorTest {
         simulator.start();
         completeInstruction();
         completeInstruction();
-        simulator.step(); // ADD intermediate tick publishes context/accounting.
-        simulator.step();
         var before = simulator.snapshot();
         assertThrows(ExecutionEngineException.class, simulator::step);
         var failed = simulator.snapshot();
@@ -384,7 +382,7 @@ class SimulatorOrchestratorTest {
         simulator.pause();
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         simulator.resume();
-        for (int i = 0; i < 6; i++) simulator.step();
+        for (int i = 0; i < 3; i++) simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         assertTrue(history.stream().allMatch(job -> job.state() == JobState.PENDING));
@@ -419,7 +417,7 @@ class SimulatorOrchestratorTest {
         simulator.loadProgram(program.instructions());
         assertEquals(Optional.of(new AdmissionResult.Admitted(2)), simulator.attemptNextAdmission());
         simulator.start();
-        for (int i = 0; i < 4; i++) simulator.step();
+        for (int i = 0; i < 2; i++) simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
         simulator.reset();
         assertEmptySession(simulator.snapshot());
@@ -484,39 +482,32 @@ class SimulatorOrchestratorTest {
     }
 
     @Test
-    void pauseResumeAndResetPreserveOrDiscardPartialTicks() {
-        load(List.of(new MovInstruction(RegisterName.AX, 5), new AddInstruction(RegisterName.AX)));
+    void pauseResumePreservesCompletedInstructionsAndResetStartsFresh() {
+        load(List.of(new MovInstruction(RegisterName.AX, 5), new AddInstruction(RegisterName.AX),
+                new io.github.rajami1205.osimulator.model.instruction.IncInstruction()));
         simulator.start();
         simulator.step();
-        simulator.step(); // ADD 1/3
-        var partial = simulator.snapshot();
-        assertEquals(4097, partial.cpu().orElseThrow().programCounter());
-        assertEquals(0, partial.cpu().orElseThrow().accumulator());
-        assertEquals("ADD AX", partial.currentInstruction().orElseThrow().semanticInstruction());
+        simulator.step();
+        var completed = simulator.snapshot();
+        assertEquals(4098, completed.cpu().orElseThrow().programCounter());
+        assertEquals(5, completed.cpu().orElseThrow().accumulator());
+        assertEquals("ADD AX", completed.currentInstruction().orElseThrow().semanticInstruction());
+        assertEquals(2, completed.cpuTicks().orElseThrow());
         simulator.pause();
         assertThrows(IllegalStateException.class, simulator::step);
         simulator.resume();
-        assertEquals(partial, simulator.snapshot());
-        simulator.step(); // ADD 2/3: semantics stay atomic, successful CPU usage advances.
-        assertEquals(partial.cpu(), simulator.snapshot().cpu());
-        assertEquals(partial.currentInstruction(), simulator.snapshot().currentInstruction());
-        assertEquals(partial.cpuTicks().orElseThrow() + 1, simulator.snapshot().cpuTicks().orElseThrow());
-        assertEquals(3, simulator.snapshot().processes().getFirst().accounting().cpuTicks());
-        simulator.step(); // ADD 3/3
+        assertEquals(completed, simulator.snapshot());
+        simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
-        assertEquals(5, simulator.snapshot().cpu().orElseThrow().accumulator());
+        assertEquals(6, simulator.snapshot().cpu().orElseThrow().accumulator());
+        assertEquals(3, simulator.snapshot().cpuTicks().orElseThrow());
         simulator.reset();
         load(List.of(new AddInstruction(RegisterName.AX)));
         simulator.start();
         simulator.step();
-        simulator.reset();
-        load(List.of(new AddInstruction(RegisterName.AX)));
-        simulator.start();
-        for (int tick = 1; tick <= 3; tick++) {
-            simulator.step(); // Same entry point used by each Automatic callback.
-            assertEquals(tick == 3 ? SimulatorState.FINISHED : SimulatorState.RUNNING,
-                    simulator.snapshot().simulatorState());
-        }
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+        assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(1, simulator.snapshot().simulationTimeSeconds().orElseThrow());
     }
 
     @Test
@@ -556,7 +547,7 @@ class SimulatorOrchestratorTest {
             load(parser.parse(List.of(text)));
             simulator.start();
             assertEquals(Optional.of(text), simulator.snapshot().memory().get(140).content());
-            if (text.equals("POP BX")) assertThrows(ExecutionEngineException.class, simulator::step);
+            if (List.of("POP BX", "JMP +2", "JMP -2", "JNE -1").contains(text)) assertThrows(ExecutionEngineException.class, simulator::step);
             else simulator.step();
             if (simulator.snapshot().ownerPid().isPresent()) assertEquals(text, simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
             else assertTrue(simulator.snapshot().currentInstruction().isEmpty());
@@ -565,10 +556,7 @@ class SimulatorOrchestratorTest {
     }
 
     private void completeInstruction() {
-        RuntimeStepResult result;
-        do { result = simulator.step(); }
-        while (result instanceof RuntimeStepResult.Executed executed
-                && executed.tickResult() == io.github.rajami1205.osimulator.model.execution.TickResult.IN_PROGRESS);
+        simulator.step();
     }
 
     private void load(List<Instruction> instructions) {

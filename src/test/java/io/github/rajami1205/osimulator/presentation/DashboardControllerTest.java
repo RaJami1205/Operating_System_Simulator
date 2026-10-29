@@ -35,18 +35,18 @@ class DashboardControllerTest {
         var timeline = (Timeline) get(f.controller, "automaticTimeline");
         try {
             var callback = timeline.getKeyFrames().getFirst().getOnFinished();
-            callback.handle(new javafx.event.ActionEvent()); callback.handle(new javafx.event.ActionEvent());
+            callback.handle(new javafx.event.ActionEvent());
             assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
-            assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
             callback.handle(new javafx.event.ActionEvent());
             f.enabled("stepButton", true); f.enabled("automaticButton", false);
             f.action("handleStep"); f.action("refresh");
-            assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
-            assertEquals(2, f.simulator.snapshot().cpuTicks().orElseThrow());
-            assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Simulation Time: 3 s"));
+            assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            assertEquals(1, f.simulator.snapshot().cpuTicks().orElseThrow());
+            assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Simulation Time: 2 s"));
             f.action("handlePause"); f.enabled("stepButton", false); f.action("handleResume");
             f.simulator.submitKeyboardInput(1); f.action("refresh");
-            f.enabled("stepButton", false); assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            f.enabled("stepButton", false); assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
             f.action("handleReset"); assertTrue(f.simulator.snapshot().simulationTimeSeconds().isEmpty());
         } finally { timeline.stop(); }
     }); }
@@ -57,9 +57,6 @@ class DashboardControllerTest {
         f.load("logical.asm", "ADD AX", "INC"); f.action("handleStart");
         assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
         f.action("handleStep");
-        assertEquals("140", f.widget("pcValueLabel", Label.class).getText());
-        assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: 4096"));
-        f.action("handleStep"); f.action("handleStep");
         assertEquals("141", f.widget("pcValueLabel", Label.class).getText());
         assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: 4097"));
         f.action("handleStep");
@@ -67,7 +64,7 @@ class DashboardControllerTest {
         assertTrue(DashboardDetails.context(f.simulator.snapshot().completedProcesses().getFirst().finalContext())
                 .contains("Logical PC: 4098"));
         f.action("handleReset"); f.action("handleInitialize");
-        f.load("invalid.asm", "ADD AX"); f.action("handleStart"); f.action("handleStep");
+        f.load("invalid.asm", "ADD AX", "INC"); f.action("handleStart"); f.action("handleStep");
         var resources = (io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry) get(f.simulator, "processResources");
         var resident = (io.github.rajami1205.osimulator.application.process.UserImageResidence.Resident)
                 resources.find(1).orElseThrow().residence();
@@ -318,7 +315,7 @@ class DashboardControllerTest {
         assertTrue(initial.contains("CPU ID: —")); assertTrue(initial.contains("Start Time: —"));
         assertTrue(initial.contains("CPU Ticks: 0")); assertTrue(initial.contains("Finish Time: —"));
         f.action("handleInitialize"); assertEquals("0", f.widget("cpuTicksLabel", Label.class).getText());
-        f.load("ticks.asm", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
+        f.load("ticks.asm", "ADD AX", "ADD AX", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
         var timeline = (Timeline)get(f.controller, "automaticTimeline");
         try {
             assertEquals(1000, timeline.getKeyFrames().getFirst().getTime().toMillis());
@@ -351,17 +348,17 @@ class DashboardControllerTest {
     @Test void completedDurationIncludesKeyboardWaitingAndPauseWithoutExtraTicks() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
         f.load("waiting.asm", "INT 09H"); f.action("handleStart");
-        f.action("handleStep"); f.action("handleStep");
+        f.action("handleStep");
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
         f.action("handlePause"); f.realClock.advance(Duration.ofSeconds(420));
         f.widget("keyboardField", TextField.class).setText("42"); f.action("handleKeyboardSend");
         assertTrue(f.simulator.snapshot().completedProcesses().isEmpty());
         f.action("handleResume");
         assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
-        assertEquals(2, f.simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(1, f.simulator.snapshot().cpuTicks().orElseThrow());
         f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
         var detail = f.widget("completedDetailArea", TextArea.class).getText();
-        assertTrue(detail.contains("CPU Ticks: 2"));
+        assertTrue(detail.contains("CPU Ticks: 1"));
         assertTrue(detail.endsWith("Elapsed Time: 00:07:00\nDuration (s): 420"));
     }); }
     @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {

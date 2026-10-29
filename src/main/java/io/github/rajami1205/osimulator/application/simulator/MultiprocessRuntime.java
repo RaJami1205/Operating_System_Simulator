@@ -21,7 +21,6 @@ import java.util.Objects;
 public final class MultiprocessRuntime {
     private final Dispatcher dispatcher;
     private final ExecutionEngine engine;
-    private final ExecutionProgress progress;
     private final CpuRegisters<Instruction> cpu;
     private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
@@ -49,7 +48,7 @@ public final class MultiprocessRuntime {
      * Recibe los servicios canónicos de sesión y separa el contador de ticks del Clock real; comienza sin
      * workload iniciado.
      */
-    public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine, ExecutionProgress progress,
+    public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine,
             CpuRegisters<Instruction> cpu, MainMemory memory, SimulatedFileSystem filesystem,
             ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
             ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
@@ -61,7 +60,6 @@ public final class MultiprocessRuntime {
         this.realClock = Objects.requireNonNull(realClock);
         this.dispatcher = Objects.requireNonNull(dispatcher);
         this.engine = Objects.requireNonNull(engine);
-        this.progress = Objects.requireNonNull(progress);
         this.cpu = Objects.requireNonNull(cpu);
         this.memory = Objects.requireNonNull(memory);
         this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
@@ -156,11 +154,14 @@ public final class MultiprocessRuntime {
         }
         memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
         memory.validatePcbAllocation(resource.kernel(), pcb);
+        if (!cpu.snapshot().equals(pcb.cpuContext())) {
+            throw new IllegalStateException("CPU context differs from canonical PCB");
+        }
         tickCounter.validateCanAdvance();
         var tickStart = realClock.instant();
         // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
         var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
-        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, resident.allocation());
+        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, resident.allocation());
         pcb.replaceCpuContext(cpu.snapshot());
         pcb.replaceAccounting(accounted);
         pcbSynchronizer.sync(pcb);
@@ -215,13 +216,10 @@ public final class MultiprocessRuntime {
         return result;
     }
 
-    /** Impide transferir al owner del CPU o continuar con progreso activo sin owner. */
+    /** Impide transferir al owner del CPU. */
     private void rejectOwner(int pid) {
         if (dispatcher.owner().filter(p -> p.processId() == pid).isPresent()) {
             throw new IllegalStateException("CPU owner cannot be swapped");
-        }
-        if (!progress.isIdle() && dispatcher.owner().isEmpty()) {
-            throw new IllegalStateException("Active instruction has no CPU owner");
         }
     }
 
@@ -231,7 +229,7 @@ public final class MultiprocessRuntime {
     /** Valida estructura y determina disponibilidad global sin contar historial como workload activo. */
     public RuntimeStatus status() {
         validateStructure();
-        if (started && dispatcher.owner().isEmpty() && progress.isIdle() && table.size() == 0
+        if (started && dispatcher.owner().isEmpty() && table.size() == 0
                 && resources.entries().isEmpty() && ready.entries().isEmpty() && suspended.entries().isEmpty()
                 && input.pending().isEmpty() && jobs.entries().stream().noneMatch(j -> j.state() == JobState.PENDING)) {
             return RuntimeStatus.FINISHED;
@@ -252,7 +250,7 @@ public final class MultiprocessRuntime {
         var suspendedPids = suspended.entries();
         var owner = dispatcher.owner().orElse(null);
         if (!pids.equals(resources.entries().keySet()) || !pids.containsAll(readyPids)
-                || !pids.containsAll(suspendedPids) || (!progress.isIdle() && owner == null)) {
+                || !pids.containsAll(suspendedPids)) {
             throw new IllegalStateException("Inconsistent active process structures");
         }
         var pending = new HashSet<Integer>();

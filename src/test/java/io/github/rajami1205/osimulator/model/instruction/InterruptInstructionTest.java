@@ -12,7 +12,7 @@ class InterruptInstructionTest {
         for(var vector:InterruptVector.values()) {
             var instruction=new InterruptInstruction(vector);
             assertEquals(Opcode.INT,instruction.opcode()); assertEquals(List.of(vector),instruction.operands());
-            assertSame(vector.executionWeight(),instruction.executionWeight()); assertEquals(vector == InterruptVector.FILESYSTEM ? 5 : 2,instruction.executionWeight().ticks());
+
             assertThrows(UnsupportedOperationException.class,()->instruction.operands().clear());
             assertThrows(IllegalArgumentException.class,()->new MovInstruction(RegisterName.AX,vector));
         }

@@ -27,7 +27,7 @@ class ControlFlowStackModelTest {
         for (int i=0;i<instructions.size();i++) {
             var instruction=instructions.get(i);
             assertEquals(opcodes.get(i),instruction.opcode());
-            assertEquals(i<4?2:i==4?3:1,instruction.executionWeight().ticks());
+
             assertEquals(operands.get(i),instruction.operands());
             assertThrows(UnsupportedOperationException.class,()->instruction.operands().clear());
         }

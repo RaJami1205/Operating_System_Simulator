@@ -3,6 +3,16 @@ package io.github.rajami1205.osimulator.model.instruction;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.instruction.exception.InvalidImmediateValueException;
 import io.github.rajami1205.osimulator.model.instruction.operand.*;
+import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.application.program.ProgramLoader;
+import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
+import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
+import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
+import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
+import io.github.rajami1205.osimulator.model.execution.TickResult;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,20 +48,56 @@ class InstructionMetadataTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, -1, Integer.MIN_VALUE})
-    void weightRejectsNonPositiveTicks(int ticks) {
-        assertThrows(IllegalArgumentException.class, () -> new ExecutionWeight(ticks));
-    }
-
-    @ParameterizedTest
-    @ValueSource(ints = {1, 2, 3, Integer.MAX_VALUE})
-    void weightAcceptsPositiveTicks(int ticks) {
-        assertEquals(ticks, new ExecutionWeight(ticks).ticks());
-        assertEquals(new ExecutionWeight(ticks), new ExecutionWeight(ticks));
+    @EnumSource(Opcode.class)
+    void everyOpcodeCompletesItsInstructionInOneTick(Opcode opcode) {
+        Instruction instruction = switch (opcode) {
+            case MOV -> new MovInstruction(RegisterName.AX, 7);
+            case LOAD -> new LoadInstruction(RegisterName.AX);
+            case STORE -> new StoreInstruction(RegisterName.AX);
+            case ADD -> new AddInstruction(RegisterName.AX);
+            case SUB -> new SubInstruction(RegisterName.AX);
+            case INC -> new IncInstruction();
+            case DEC -> new DecInstruction();
+            case SWAP -> new SwapInstruction(RegisterName.AX, RegisterName.BX);
+            case CMP -> new CmpInstruction(RegisterName.AX, RegisterName.BX);
+            case JMP -> new JmpInstruction(new BranchDisplacement(0));
+            case JE -> new JeInstruction(new BranchDisplacement(0));
+            case JNE -> new JneInstruction(new BranchDisplacement(0));
+            case PARAM -> new ParamInstruction(List.of(new ImmediateOperand(7)));
+            case PUSH -> new PushInstruction(RegisterName.AX);
+            case POP -> new PopInstruction(RegisterName.AX);
+            case INT -> new InterruptInstruction(InterruptVector.TERMINATE);
+        };
+        var memory = new MainMemory(
+                new MemoryConfiguration(128, 32));
+        var loaded = new ProgramLoader()
+                .loadWithAllocation(memory, 1, List.of(instruction));
+        var cpu = new CpuRegisters<Instruction>();
+        loaded.pcb().stack().push(7);
+        var result = new ExecutionEngine().executeTick(
+                new SimulatedFileSystem(
+                        new SecondaryStorage(128, 64)),
+                new ScreenDevice(),
+                new KeyboardDevice(),
+                memory, cpu, loaded.pcb(), loaded.userAllocation());
+        assertEquals(opcode, cpu.instructionRegister().orElseThrow().opcode());
+        boolean loops = opcode == Opcode.JMP || opcode == Opcode.JNE;
+        assertEquals(loops ? TickResult.INSTRUCTION_COMPLETED
+                : TickResult.PROGRAM_FINISHED, result);
+        assertEquals(loops || opcode == Opcode.INT ? 4096 : 4097, loaded.pcb().programCounter());
     }
 
     @Test
-    void exposesOfficialWeightsAndOrderedImmutableViewsWithoutChangingRecordEquality() {
+    void instructionOperandsRemainImmutableAfterSourceMutation() {
+        var values = new java.util.ArrayList<>(List.of(new ImmediateOperand(1), new ImmediateOperand(2)));
+        var instruction = new ParamInstruction(values);
+        values.clear();
+        assertEquals(List.of(new ImmediateOperand(1), new ImmediateOperand(2)), instruction.operands());
+        assertThrows(UnsupportedOperationException.class, () -> instruction.operands().clear());
+    }
+
+    @Test
+    void exposesOrderedImmutableViewsWithoutChangingRecordEquality() {
         List<Instruction> instructions = List.of(new MovInstruction(RegisterName.AX, -5),
                 new LoadInstruction(RegisterName.BX), new StoreInstruction(RegisterName.CX),
                 new AddInstruction(RegisterName.DX), new SubInstruction(RegisterName.AX));
@@ -62,10 +108,8 @@ class InstructionMetadataTest {
                 List.of(new RegisterOperand(RegisterName.AX), new ImmediateOperand(-5)),
                 List.of(new RegisterOperand(RegisterName.BX)), List.of(new RegisterOperand(RegisterName.CX)),
                 List.of(new RegisterOperand(RegisterName.DX)), List.of(new RegisterOperand(RegisterName.AX)));
-        int[] weights = {1, 2, 2, 3, 3};
         for (int index = 0; index < instructions.size(); index++) {
             var instruction = instructions.get(index);
-            assertEquals(weights[index], instruction.executionWeight().ticks());
             assertEquals(expected.get(index), instruction.operands());
             assertThrows(UnsupportedOperationException.class, () -> instruction.operands().clear());
             assertThrows(UnsupportedOperationException.class, () -> instruction.operands().set(0, new ImmediateOperand(0)));

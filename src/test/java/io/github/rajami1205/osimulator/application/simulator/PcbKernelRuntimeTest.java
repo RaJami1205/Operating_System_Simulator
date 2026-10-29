@@ -46,17 +46,14 @@ class PcbKernelRuntimeTest {
         }
     }
 
-    @Test void successfulWeightedTicksPublishContextStackFlagsAndAccountingWithoutEarlyEffects() {
+    @Test void successfulInstructionTicksPublishCompleteContextStackFlagsAndAccounting() {
         simulator.initialize(SimulatorConfiguration.defaults());
         submit("p","MOV AX, 7","ADD AX","CMP AX, AX","PARAM 1, 2, 3","PUSH AX","POP BX","INT 09H","INC");
         simulator.start();simulator.step();assertPublished(1);
         assertEquals(new PcbValue.Number(7),value(1,PcbField.AX));
-        for(int i=0;i<2;i++) {
-            simulator.step();assertPublished(1);
-            assertEquals(new PcbValue.Number(4097),value(1,PcbField.PC));
-            assertEquals(new PcbValue.Number(0),value(1,PcbField.AC));
-        }
-        simulator.step();assertPublished(1);assertEquals(new PcbValue.Number(7),value(1,PcbField.AC));
+        simulator.step();assertPublished(1);
+        assertEquals(new PcbValue.Number(4098),value(1,PcbField.PC));
+        assertEquals(new PcbValue.Number(7),value(1,PcbField.AC));
         for(int i=0;i<30 && !simulator.waitingForInput();i++) {simulator.step();assertPublished(1);}
         assertTrue(simulator.waitingForInput());
         assertEquals(new PcbValue.Flag(true),value(1,PcbField.EQUAL));
@@ -78,7 +75,7 @@ class PcbKernelRuntimeTest {
         assertEquals(1,field("processTable",ProcessTable.class).size());
         for(int i=0;i<16;i++) simulator.step();
         assertEquals(4112,pcb(1).programCounter());
-        for(int i=0;i<10 && pcb(1).programCounter()==4112;i++) {simulator.step();assertPublished(1);}
+        simulator.step();assertPublished(1);
         assertEquals(new PcbValue.Number(4108),value(1,PcbField.PC));
         assertEquals(4108,simulator.snapshot().cpu().orElseThrow().programCounter());
     }
@@ -86,7 +83,7 @@ class PcbKernelRuntimeTest {
     @Test void contextSwitchKeyboardAndRelocationKeepKernelIdentityAndCapturedValues() {
         simulator.initialize(SimulatorConfiguration.defaults());
         submit("input","MOV AX, 9","INT 09H","INC");submit("other","ADD AX","INC");simulator.start();
-        for(int i=0;i<3;i++) simulator.step();
+        for(int i=0;i<2;i++) simulator.step();
         var kernel=resource(1).kernel();var context=pcb(1).cpuContext();assertPublished(1);
         simulator.step();assertPublished(2);
         assertEquals(context,pcb(1).cpuContext());
@@ -106,13 +103,13 @@ class PcbKernelRuntimeTest {
         submit("files",source.toArray(String[]::new));simulator.start();
         var instructions=new AsmParser().parse(source);
         for(int index=0;index<instructions.size()-1;index++) {
-            for(int tick=0;tick<instructions.get(index).executionWeight().ticks();tick++) {simulator.step();assertPublished(1);}
+            simulator.step();assertPublished(1);
             if(index==4) assertEquals(new PcbValue.Names(List.of("notes")),value(1,PcbField.OPEN_FILES));
             if(index==6) assertEquals(new PcbValue.Names(List.of()),value(1,PcbField.OPEN_FILES));
         }
         simulator.reset();simulator.initialize(SimulatorConfiguration.defaults());
         submit("overflow","PARAM 1, 2, 3","PARAM 4, 5, 6","INC");simulator.start();
-        for(int tick=0;tick<5;tick++) simulator.step();
+        simulator.step();
         assertPublished(1);
         var memory=field("memory",MainMemory.class);
         var before=java.util.stream.IntStream.range(0,28).mapToObj(memory::cell).toList();

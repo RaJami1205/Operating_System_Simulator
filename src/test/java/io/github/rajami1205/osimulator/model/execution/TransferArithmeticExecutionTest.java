@@ -34,14 +34,13 @@ class TransferArithmeticExecutionTest {
         var memory = new MainMemory(new MemoryConfiguration(128, 32));
         var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
         var pcb = pcbLoaded.pcb();
-        var progress = new ExecutionProgress();
         var flags = cpu.conditionFlags();
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, pcbLoaded.userAllocation()));
         assertEquals(4097, cpu.programCounter());
         assertEquals(4097, pcb.programCounter());
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
         assertEquals(flags, cpu.conditionFlags());
-        assertTrue(progress.isIdle());
+
     }
 
     @Test
@@ -108,14 +107,13 @@ class TransferArithmeticExecutionTest {
             var memory = new MainMemory(new MemoryConfiguration(128, 32));
             var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
         var pcb = pcbLoaded.pcb();
-            var progress = new ExecutionProgress();
             cpu.loadInstructionRegister(instruction);
             var before = cpu.snapshot();
-            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, pcbLoaded.userAllocation()));
             assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
             assertEquals(before.withProgramCounter(4096), cpu.snapshot());
             assertEquals(4096, pcb.programCounter());
-            assertTrue(progress.isIdle());
+
         }
     }
 }

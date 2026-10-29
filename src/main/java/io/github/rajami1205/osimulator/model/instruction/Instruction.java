@@ -23,9 +23,4 @@ public sealed interface Instruction
     /** Vista derivada, ordenada e inmutable de los operandos semánticos. */
     List<InstructionOperand> operands();
 
-    /**
-     * Expone el peso oficial en CPU ticks; ExecutionEngine conserva el progreso y aplica la semántica al
-     * completarlo.
-     */
-    ExecutionWeight executionWeight();
 }

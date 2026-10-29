@@ -44,8 +44,8 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackOverf
 import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnderflowException;
 
 /**
- * Aplica instrucciones semánticas sobre el CPU activo. Consume un tick por llamada y publica efectos sólo
- * al completar el peso; no conserva estado de sesión propio.
+ * Aplica instrucciones semánticas sobre el CPU activo. Completa una instrucción por llamada;
+ * no conserva estado de sesión propio.
  */
 public final class ExecutionEngine {
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
@@ -58,8 +58,7 @@ public final class ExecutionEngine {
     private record WaitForKeyboard() implements SemanticOutcome { }
 
     /**
-     * Consume como máximo un tick usando la allocation USER canónica; aplica efectos sólo al completar el
-     * peso y detecta PC terminal antes del fetch.
+     * Completa una instrucción usando la allocation USER canónica; detecta PC terminal antes del fetch.
      */
     public TickResult executeTick(
             SimulatedFileSystem filesystem,
@@ -68,19 +67,16 @@ public final class ExecutionEngine {
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
-            ExecutionProgress progress,
             MemoryAllocation allocation
     ) {
         Objects.requireNonNull(memory, "memory must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
         Objects.requireNonNull(pcb, "pcb must not be null");
-        Objects.requireNonNull(progress, "progress must not be null");
 
         Objects.requireNonNull(filesystem, "filesystem must not be null");
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(keyboard, "keyboard must not be null");
         validateExecutableState(pcb);
-        progress.validateContext(memory, cpu, pcb, allocation);
 
         int currentProgramCounter = pcb.programCounter();
         try {
@@ -96,54 +92,37 @@ public final class ExecutionEngine {
         if (!pcb.hasExecutableProgramCounter()) {
             throw new ExecutionEngineException("Logical PC outside executable code");
         }
-        if (progress.isIdle()) {
-            Instruction instruction;
-            try {
-                var physical = memory.translateInstructionAddress(allocation, pcb.logicalCodeRange(),
-                        new LogicalAddress(currentProgramCounter));
-                instruction = memory.readInstruction(allocation, physical.value());
-            } catch (MemoryProtectionException exception) {
-                throw new ExecutionEngineException("Unable to fetch process instruction", exception);
-            }
-
-            cpu.setProgramCounter(currentProgramCounter);
-            cpu.loadInstructionRegister(instruction);
-            if (pcb.state() == ProcessState.READY) {
-                pcb.changeState(ProcessState.RUNNING);
-            }
-            progress.begin(memory, cpu, pcb, instruction, allocation);
-        }
-
-        if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
-        SemanticOutcome outcome;
+        Instruction instruction;
         try {
-            outcome = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter, screen, keyboard, filesystem);
-        } catch (RuntimeException | Error failure) {
-            progress.clear();
-            throw failure;
+            var physical = memory.translateInstructionAddress(allocation, pcb.logicalCodeRange(),
+                    new LogicalAddress(currentProgramCounter));
+            instruction = memory.readInstruction(allocation, physical.value());
+        } catch (MemoryProtectionException exception) {
+            throw new ExecutionEngineException("Unable to fetch process instruction", exception);
         }
+        cpu.setProgramCounter(currentProgramCounter);
+        cpu.loadInstructionRegister(instruction);
+        if (pcb.state() == ProcessState.READY) pcb.changeState(ProcessState.RUNNING);
+        var outcome = executeInstruction(instruction, cpu, pcb, currentProgramCounter, screen, keyboard, filesystem);
 
         return switch (outcome) {
-            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextLogicalPc());
+            case Continue next -> publishNextPc(cpu, pcb, next.nextLogicalPc());
             case Terminate ignored -> {
-                progress.clear();
                 pcb.changeState(ProcessState.TERMINATED);
                 yield TickResult.PROGRAM_FINISHED;
             }
             case WaitForKeyboard ignored -> {
-                progress.clear();
                 pcb.changeState(ProcessState.BLOCKED);
                 yield TickResult.WAITING_FOR_INPUT;
             }
         };
     }
 
-    /** Publica el próximo PC en CPU/PCB, limpia progreso y marca TERMINATED si alcanza Limit. */
+    /** Publica el próximo PC en CPU/PCB y marca TERMINATED si alcanza Limit. */
     private TickResult publishNextPc(CpuRegisters<Instruction> cpu, ProcessControlBlock pcb,
-            ExecutionProgress progress, int nextProgramCounter) {
+            int nextProgramCounter) {
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
-        progress.clear();
         if (pcb.hasTerminalProgramCounter()) {
             pcb.changeState(ProcessState.TERMINATED);
             return TickResult.PROGRAM_FINISHED;
@@ -151,7 +130,7 @@ public final class ExecutionEngine {
         return TickResult.INSTRUCTION_COMPLETED;
     }
 
-    /** Rechaza estados distintos de READY/RUNNING antes de consumir progreso. */
+    /** Rechaza estados distintos de READY/RUNNING antes de ejecutar. */
     private void validateExecutableState(ProcessControlBlock pcb) {
         if (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.RUNNING) {
             throw new ExecutionEngineException(

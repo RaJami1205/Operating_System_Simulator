@@ -3,7 +3,6 @@ package io.github.rajami1205.osimulator.application.process;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
 import io.github.rajami1205.osimulator.model.cpu.*;
 import io.github.rajami1205.osimulator.model.instruction.*;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.job.*;
 import io.github.rajami1205.osimulator.model.memory.*;
 import io.github.rajami1205.osimulator.model.process.*;
@@ -25,8 +24,7 @@ class ProcessCompletionServiceTest {
     private final JobList jobs=new JobList();
     private final CpuRegisters<Instruction> cpu=new CpuRegisters<>();
     private final Dispatcher dispatcher=new Dispatcher(cpu,table,ready,registry,memory);
-    private final KeyboardCompletionService input=new KeyboardCompletionService(new KeyboardDevice(),table,registry,ready,suspended,memory);
-    private final ProcessCompletionService completion=new ProcessCompletionService(memory,storage,table,registry,ready,suspended,input,dispatcher,java.time.Clock.fixed(java.time.Instant.parse("2026-10-01T12:00:00Z"), java.time.ZoneOffset.UTC));
+    private final ProcessCompletionService completion=new ProcessCompletionService(memory,storage,table,registry,ready,suspended,dispatcher,java.time.Clock.fixed(java.time.Instant.parse("2026-10-01T12:00:00Z"), java.time.ZoneOffset.UTC));
     private final ProcessAdmissionService admission=new ProcessAdmissionService(jobs,storage,memory,table,new ProgramLoader(),ready,registry);
     private ProcessControlBlock add(int pid) {
         storage.storeProgram("p"+pid,List.of(new IncInstruction(),new IncInstruction()));
@@ -84,11 +82,11 @@ class ProcessCompletionServiceTest {
         dispatcher.release();completion.complete(1);assertEquals(0,table.size());
     }
     @Test void suspendedCleanupReleasesSwapWithoutReadingStaleUserBounds() {
-        var pcb=add(1);ready.remove(1);pcb.changeState(ProcessState.BLOCKED);input.register(pcb);
+        var pcb=add(1);ready.remove(1);pcb.changeState(ProcessState.BLOCKED);
         new ProcessSwapService(memory,storage,table,registry,ready).swapOut(1);
         var resource=registry.find(1).orElseThrow();var disk=((UserImageResidence.Suspended)resource.residence()).allocation();
         pcb.changeState(ProcessState.TERMINATED);completion.complete(1);
-        assertTrue(input.pending().isEmpty());assertTrue(table.entries().isEmpty());
+        assertTrue(table.entries().isEmpty());
         assertThrows(RuntimeException.class,()->storage.releaseSwap(disk));
         assertEquals(64,storage.allocateSwap(64).size());
         assertInstanceOf(EmptyContent.class,memory.read(resource.address().address()));

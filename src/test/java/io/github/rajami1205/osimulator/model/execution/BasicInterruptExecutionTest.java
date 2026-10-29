@@ -18,14 +18,13 @@ class BasicInterruptExecutionTest {
     private final ExecutionEngine engine = new ExecutionEngine();
     private final MainMemory memory = new MainMemory(new MemoryConfiguration(128,32));
     private final CpuRegisters<Instruction> cpu = new CpuRegisters<>();
-    private final KeyboardDevice keyboard = new KeyboardDevice();
     private final ScreenDevice screen = new ScreenDevice();
     private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
     private ProcessControlBlock pcb;
     private io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
     private InterruptInstruction interrupt(InterruptVector vector) { return new InterruptInstruction(vector); }
     private void load(Instruction... instructions) { var loaded = new ProgramLoader().loadWithAllocation(memory,1,List.of(instructions)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
-    private TickResult tick() { return engine.executeTick(filesystem, screen,keyboard,memory,cpu,pcb,allocation); }
+    private TickResult tick() { return engine.executeTick(filesystem, screen,memory,cpu,pcb,allocation); }
     private void pc(int expected) { assertEquals(4096 + expected,cpu.programCounter()); assertEquals(4096 + expected,pcb.programCounter()); }
 
     @Test void screenAppendsOncePerTickInOrderAndCanFinish() {
@@ -45,26 +44,5 @@ class BasicInterruptExecutionTest {
 
         assertThrows(ExecutionEngineException.class,this::tick);
         assertEquals(1,cpu.accumulator());
-    }
-    @Test void prequeuedInputCompletesInOneTickInFifoOrder() {
-        load(interrupt(InterruptVector.KEYBOARD),interrupt(InterruptVector.KEYBOARD));
-        keyboard.submit(0); keyboard.submit(255); cpu.writeRegister(RegisterName.DX,42);
-        assertEquals(TickResult.INSTRUCTION_COMPLETED,tick()); pc(1);
-        assertEquals(0,cpu.readRegister(RegisterName.DX)); assertEquals(ProcessState.RUNNING,pcb.state());
-
-        assertEquals(TickResult.PROGRAM_FINISHED,tick()); pc(2);
-        assertEquals(255,cpu.readRegister(RegisterName.DX)); assertFalse(keyboard.hasInput());
-    }
-    @Test void int09BlocksInOneTickWithoutChangingPcOrDx() {
-        var input=interrupt(InterruptVector.KEYBOARD);
-        load(input,new IncInstruction());cpu.writeRegister(RegisterName.DX,77);
-        assertEquals(TickResult.WAITING_FOR_INPUT,tick());
-        assertEquals(ProcessState.BLOCKED,pcb.state());
-        assertSame(input,cpu.instructionRegister().orElseThrow());pc(0);
-        assertEquals(77,cpu.readRegister(RegisterName.DX));
-        keyboard.submit(255);
-        assertThrows(ExecutionEngineException.class,this::tick);
-        assertTrue(keyboard.hasInput());pc(0);
-        assertEquals(77,cpu.readRegister(RegisterName.DX));
     }
 }

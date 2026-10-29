@@ -4,7 +4,6 @@ import java.util.Arrays;
 
 /** Vectores de servicios simulados soportados. */
 public enum InterruptVector implements InstructionOperand {
-    KEYBOARD("09H"),
     SCREEN("10H"),
     TERMINATE("20H"),
     FILESYSTEM("21H");

@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class InterruptInstructionTest {
     @Test void supportedTypedVectorsOwnTheirMetadataAndCannotBeMovSources() {
-        assertEquals(List.of("09H","10H","20H","21H"),java.util.Arrays.stream(InterruptVector.values()).map(InterruptVector::canonicalText).toList());
+        assertEquals(List.of("10H","20H","21H"),java.util.Arrays.stream(InterruptVector.values()).map(InterruptVector::canonicalText).toList());
         for(var vector:InterruptVector.values()) {
             var instruction=new InterruptInstruction(vector);
             assertEquals(Opcode.INT,instruction.opcode()); assertEquals(List.of(vector),instruction.operands());
@@ -19,6 +19,8 @@ class InterruptInstructionTest {
         assertThrows(NullPointerException.class,()->new InterruptInstruction(null));
         assertThrows(IllegalArgumentException.class,()->InterruptVector.parse("22H"));
         assertThrows(IllegalArgumentException.class,()->new MovInstruction(RegisterName.AX,new BranchDisplacement(0)));
-        assertEquals(InterruptVector.KEYBOARD,InterruptVector.parse("09h"));
+        assertThrows(IllegalArgumentException.class,()->InterruptVector.parse("09H"));
+        assertThrows(IllegalArgumentException.class,()->InterruptVector.parse("09h"));
+        assertArrayEquals(new InterruptVector[]{InterruptVector.SCREEN, InterruptVector.TERMINATE, InterruptVector.FILESYSTEM}, InterruptVector.values());
     }
 }

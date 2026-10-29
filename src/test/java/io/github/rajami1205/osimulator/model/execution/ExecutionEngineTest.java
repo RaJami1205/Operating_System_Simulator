@@ -2,7 +2,6 @@ package io.github.rajami1205.osimulator.model.execution;
 
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 
@@ -43,7 +42,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 class ExecutionEngineTest {
     private final ScreenDevice screen = new ScreenDevice();
     private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
-    private final KeyboardDevice keyboard = new KeyboardDevice();
 
     private static final int USER_START_ADDRESS = 32;
     // Retain original handles supplied by each fixture; never reconstruct allocation identities.
@@ -759,7 +757,7 @@ class ExecutionEngineTest {
 
     // Semantic regression helper: completes an instruction through the public tick API only.
     private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
-        engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, allocations.get(memory));
+        engine.executeTick(filesystem, screen, memory, cpu, pcb, allocations.get(memory));
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {

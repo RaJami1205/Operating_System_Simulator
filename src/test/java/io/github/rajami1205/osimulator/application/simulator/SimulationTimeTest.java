@@ -6,7 +6,6 @@ import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.execution.*;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.testing.ControlledClock;
@@ -47,7 +46,7 @@ class SimulationTimeTest {
     private SimulatorSnapshot withTime(SimulatorSnapshot value, OptionalLong seconds) {
         return new SimulatorSnapshot(value.simulatorState(), value.cpu(), value.currentInstruction(), value.process(),
                 value.program(), value.memory(), value.runtimeStatus(), value.ownerPid(), value.configuration(),
-                value.jobs(), value.processes(), value.readyQueue(), value.suspendedReadyQueue(), value.pendingKeyboardRequests(),
+                value.jobs(), value.processes(), value.readyQueue(), value.suspendedReadyQueue(),
                 value.completedProcesses(), value.storage(), value.screenOutput(), value.cpuTicks(),
                 value.nextInstructionPhysicalAddress(), value.addressTranslationError(), seconds);
     }
@@ -77,39 +76,39 @@ class SimulationTimeTest {
         simulator.initialize(SimulatorConfiguration.defaults()); assertEquals(0, time());
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void inputAtStepBoundaryIsFreeWhetherItFinishesOrEnablesExecution(boolean terminal) throws Exception {
-        if (terminal) init("INT 09H"); else init("INT 09H", "INC");
-        assertEquals(TickResult.WAITING_FOR_INPUT,
-                assertInstanceOf(RuntimeStepResult.Executed.class, simulator.step()).tickResult());
-        assertEquals(1, time());
-        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_INPUT), simulator.step());
-        assertEquals(2, time()); assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());
-        field("keyboard", KeyboardDevice.class).submit(42);
-        var result = simulator.step();
-        assertEquals(terminal ? 2 : 3, time());
-        assertEquals(terminal ? 1 : 2, simulator.snapshot().cpuTicks().orElseThrow());
-        assertEquals(RuntimeStatus.FINISHED, result.status());
-        if (terminal) assertInstanceOf(RuntimeStepResult.Idle.class, result);
-        else assertInstanceOf(RuntimeStepResult.Executed.class, result);
-        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED), field("runtime", MultiprocessRuntime.class).step());
-        assertEquals(terminal ? 2 : 3, time());
-        var seconds = SimulationClock.class.getDeclaredField("seconds");
-        seconds.setAccessible(true); seconds.setLong(field("simulationClock", SimulationClock.class), Long.MAX_VALUE);
-        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED), field("runtime", MultiprocessRuntime.class).step());
-        assertEquals(Long.MAX_VALUE, time());
+    private void initCapacityWait() {
+        simulator.initialize(new SimulatorConfiguration(
+                new io.github.rajami1205.osimulator.model.memory.MemoryConfiguration(256, 255), 512, 64));
+        simulator.submitProgram(new ProgramImage("p", new AsmParser().parse(List.of("INC", "INC"))));
+        simulator.start();
     }
 
-    @Test void externalInputCompletionAndResumeConsumeNoTime() {
-        init("INT 09H"); simulator.step();
-        simulator.pause(); simulator.submitKeyboardInput(7); assertEquals(1, time());
-        simulator.resume(); assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
-        assertEquals(1, time());
+    @Test void capacityIdleAdvancesOnlyGlobalTimeAndPauseIsFree() {
+        initCapacityWait();
+        var before = simulator.snapshot();
+        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_CAPACITY), simulator.step());
+        assertEquals(1,time()); assertEquals(0,simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(before.cpu(),simulator.snapshot().cpu());
+        assertEquals(before.memory(),simulator.snapshot().memory());
+        simulator.pause(); realClock.advance(Duration.ofHours(2)); simulator.resume();
+        assertEquals(1,time()); assertEquals(0,simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(0,before.simulationTimeSeconds().orElseThrow());
+    }
+
+    @Test void finishedIdleRemainsFreeEvenAtMaximumTime() throws Exception {
+        init("INC"); simulator.step();
+        var runtime = field("runtime", MultiprocessRuntime.class);
+        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED),runtime.step());
+        assertEquals(1,time());
+        var seconds = SimulationClock.class.getDeclaredField("seconds");
+        seconds.setAccessible(true); seconds.setLong(field("simulationClock",SimulationClock.class),Long.MAX_VALUE);
+        assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED),runtime.step());
+        assertEquals(Long.MAX_VALUE,time()); assertEquals(1,simulator.snapshot().cpuTicks().orElseThrow());
     }
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void overflowPreventsCpuOrIdleIntervalEffects(boolean idle) throws Exception {
-        if (idle) { init("INT 09H"); simulator.step(); }
+        if (idle) initCapacityWait();
         else init("INC");
         var clock = field("simulationClock", SimulationClock.class);
         var seconds = SimulationClock.class.getDeclaredField("seconds");

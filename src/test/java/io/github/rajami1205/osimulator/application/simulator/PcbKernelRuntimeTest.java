@@ -48,21 +48,19 @@ class PcbKernelRuntimeTest {
 
     @Test void successfulInstructionTicksPublishCompleteContextStackFlagsAndAccounting() {
         simulator.initialize(SimulatorConfiguration.defaults());
-        submit("p","MOV AX, 7","ADD AX","CMP AX, AX","PARAM 1, 2, 3","PUSH AX","POP BX","INT 09H","INC");
+        submit("p","MOV AX, 7","ADD AX","CMP AX, AX","PARAM 1, 2, 3","PUSH AX","POP BX","MOV DX, 42","INC");
         simulator.start();simulator.step();assertPublished(1);
         assertEquals(new PcbValue.Number(7),value(1,PcbField.AX));
         simulator.step();assertPublished(1);
         assertEquals(new PcbValue.Number(4098),value(1,PcbField.PC));
         assertEquals(new PcbValue.Number(7),value(1,PcbField.AC));
-        for(int i=0;i<30 && !simulator.waitingForInput();i++) {simulator.step();assertPublished(1);}
-        assertTrue(simulator.waitingForInput());
+        for(int i=0;i<5;i++) {simulator.step();assertPublished(1);}
         assertEquals(new PcbValue.Flag(true),value(1,PcbField.EQUAL));
         assertEquals(new PcbValue.Number(7),value(1,PcbField.BX));
         assertEquals(new PcbValue.Number(2),value(1,PcbField.STACK_TOP));
         assertEquals(PcbValue.Empty.INSTANCE,value(1,PcbField.STACK_3));
         assertEquals(new PcbValue.Number(pcb(1).accounting().cpuTicks()),value(1,PcbField.CPU_TICKS));
         assertInstanceOf(PcbValue.Timestamp.class,value(1,PcbField.START));
-        simulator.submitKeyboardInput(42);assertPublished(1);
         assertEquals(42,pcb(1).cpuContext().dx());
         assertEquals(new PcbValue.Number(4103),value(1,PcbField.PC));
     }
@@ -80,21 +78,20 @@ class PcbKernelRuntimeTest {
         assertEquals(4108,simulator.snapshot().cpu().orElseThrow().programCounter());
     }
 
-    @Test void contextSwitchKeyboardAndRelocationKeepKernelIdentityAndCapturedValues() {
+    @Test void contextSwitchAndReadyRelocationKeepKernelIdentityAndCapturedValues() {
         simulator.initialize(SimulatorConfiguration.defaults());
-        submit("input","MOV AX, 9","INT 09H","INC");submit("other","ADD AX","INC");simulator.start();
-        for(int i=0;i<2;i++) simulator.step();
-        var kernel=resource(1).kernel();var context=pcb(1).cpuContext();assertPublished(1);
-        simulator.step();assertPublished(2);
-        assertEquals(context,pcb(1).cpuContext());
-        simulator.swapOut(1);assertPublished(1);
-        assertEquals(PcbValue.Empty.INSTANCE,value(1,PcbField.BASE));
-        simulator.submitKeyboardInput(25);assertPublished(1);assertPublished(2);
+        submit("first","MOV AX, 9","INC"); submit("other","MOV DX, 25","ADD AX","INC");
+        simulator.start(); simulator.step();
+        var kernel=resource(2).kernel(); var context=pcb(1).cpuContext(); assertPublished(1);
+        simulator.swapOut(2); assertPublished(2);
+        assertEquals(PcbValue.Empty.INSTANCE,value(2,PcbField.BASE));
         field("memory",MainMemory.class).allocateUser(3);
-        simulator.swapIn(1);assertPublished(1);
-        assertEquals(kernel,resource(1).kernel());
-        assertEquals(pcb(1).logicalCodeRange().base().value()+2,pcb(1).programCounter());
-        assertEquals(25,pcb(1).cpuContext().dx());
+        simulator.swapIn(2); assertPublished(2);
+        assertEquals(kernel,resource(2).kernel()); assertEquals(context,pcb(1).cpuContext());
+        assertEquals(4096,pcb(2).programCounter());
+        simulator.step(); simulator.step(); assertPublished(2);
+        assertEquals(4097,pcb(2).programCounter()); assertEquals(25,pcb(2).cpuContext().dx());
+        assertEquals(context.ax(),simulator.completedProcesses().getFirst().finalContext().ax());
     }
     @Test void fileOperationsPublishOpenNamesAndFailureDoesNotPublishPartialStackImage() {
         simulator.initialize(SimulatorConfiguration.defaults());

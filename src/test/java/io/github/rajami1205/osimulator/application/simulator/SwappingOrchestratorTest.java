@@ -35,18 +35,19 @@ class SwappingOrchestratorTest {
         assertThrows(IllegalArgumentException.class,()->simulator.swapIn(1));
         admit(1,64);assertEquals(new SwapResult.Completed(),simulator.swapOut(1));simulator.swapIn(1);
     }
-    @Test void activeOwnerCannotSwapButDetachedKeyboardWaitCan() {
-        initialize();simulator.loadProgram(new AsmParser().parse(List.of("INC","INT 09H","INC")));
+    @Test void activeOwnerCannotSwapButReadyProcessCan() {
+        initialize(); simulator.loadProgram(new AsmParser().parse(List.of("INC","INC")));
+        simulator.loadProgram(new AsmParser().parse(List.of("MOV DX, 25","INC")));
         assertThrows(IllegalArgumentException.class,()->simulator.swapOut(1));
-        simulator.start();simulator.step();
+        simulator.start(); simulator.step();
         assertThrows(IllegalStateException.class,()->simulator.swapOut(1));
-        simulator.pause();assertThrows(IllegalStateException.class,()->simulator.swapOut(1));simulator.resume();
-        simulator.step();assertTrue(simulator.waitingForInput());
-        assertEquals(new SwapResult.Completed(),simulator.swapOut(1));
-        assertEquals(1,simulator.pendingKeyboardRequests().size());
-        simulator.pause();simulator.submitKeyboardInput(25);simulator.resume();
-        assertFalse(simulator.waitingForInput());
-        simulator.step();assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
-        assertEquals(25,simulator.completedProcesses().getFirst().finalContext().dx());
+        simulator.pause(); assertThrows(IllegalStateException.class,()->simulator.swapOut(1));
+        assertEquals(new SwapResult.Completed(),simulator.swapOut(2));
+        simulator.resume(); simulator.step();
+        assertEquals(List.of(2),simulator.snapshot().readyQueue());
+        simulator.step(); simulator.step();
+        assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
+        assertEquals(25,simulator.completedProcesses().getLast().finalContext().dx());
+        assertEquals(4,simulator.snapshot().cpuTicks().orElseThrow());
     }
 }

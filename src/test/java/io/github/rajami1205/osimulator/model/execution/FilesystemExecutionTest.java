@@ -22,11 +22,10 @@ class FilesystemExecutionTest {
     private final CpuRegisters<Instruction> cpu=new CpuRegisters<>();
     private final ExecutionEngine engine=new ExecutionEngine();
     private final ScreenDevice screen=new ScreenDevice();
-    private final KeyboardDevice keyboard=new KeyboardDevice();
     private ProcessControlBlock pcb;
     private io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
     private void load(Instruction instruction) { var loaded = new ProgramLoader().loadWithAllocation(memory,1,List.of(instruction)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
-    private TickResult tick() { return engine.executeTick(filesystem,screen,keyboard,memory,cpu,pcb,allocation); }
+    private TickResult tick() { return engine.executeTick(filesystem,screen,memory,cpu,pcb,allocation); }
     private void setupService(FileService service) {
         load(new InterruptInstruction(InterruptVector.FILESYSTEM));
         cpu.writeAh(service.code());cpu.writeDx(new TextRegisterValue("file"));
@@ -76,10 +75,10 @@ class FilesystemExecutionTest {
             assertEquals(pcb.logicalCodeRange().base().value(),pcb.programCounter());
         }
     }
-    @Test void numericWritesReplaceTextIncludingKeyboardStoreAndPop() {
+    @Test void numericWritesReplaceTextIncludingStoreAndPop() {
         for(var instruction:List.<Instruction>of(new MovInstruction(RegisterName.DX,4),new StoreInstruction(RegisterName.DX),
-                new PopInstruction(RegisterName.DX),new InterruptInstruction(InterruptVector.KEYBOARD))) {
-            load(instruction);cpu.writeDx(new TextRegisterValue("file"));cpu.writeAccumulator(4);pcb.stack().push(4);keyboard.submit(4);
+                new PopInstruction(RegisterName.DX))) {
+            load(instruction);cpu.writeDx(new TextRegisterValue("file"));cpu.writeAccumulator(4);pcb.stack().push(4);
             assertEquals(TickResult.PROGRAM_FINISHED,tick());
             assertEquals(4,cpu.readRegister(RegisterName.DX));
         }

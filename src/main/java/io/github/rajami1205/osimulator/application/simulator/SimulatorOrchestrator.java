@@ -7,10 +7,8 @@ import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.AdmissionResult;
 import io.github.rajami1205.osimulator.application.process.Dispatcher;
-import io.github.rajami1205.osimulator.application.process.KeyboardCompletionService;
 import io.github.rajami1205.osimulator.application.process.ProcessCompletionService;
 import io.github.rajami1205.osimulator.application.process.CompletedProcessRecord;
-import io.github.rajami1205.osimulator.application.process.PendingKeyboardRequest;
 import io.github.rajami1205.osimulator.model.scheduling.SuspendedReadyQueue;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
@@ -33,7 +31,6 @@ import io.github.rajami1205.osimulator.model.memory.MemoryContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import java.util.List;
 import java.time.Clock;
@@ -70,9 +67,7 @@ public final class SimulatorOrchestrator {
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
     private ScreenDevice screen;
-    private KeyboardDevice keyboard;
     private Dispatcher dispatcher;
-    private KeyboardCompletionService keyboardCompletion;
     private ProcessCompletionService processCompletion;
     private MultiprocessRuntime runtime;
     private long compatibilitySequence;
@@ -110,7 +105,6 @@ public final class SimulatorOrchestrator {
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         ScreenDevice newScreen = new ScreenDevice();
-        KeyboardDevice newKeyboard = new KeyboardDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
@@ -129,7 +123,6 @@ public final class SimulatorOrchestrator {
         tickCounter = new CpuTickCounter();
         simulationClock = new SimulationClock();
         screen = newScreen;
-        keyboard = newKeyboard;
         secondaryStorage = newStorage;
         filesystem = new SimulatedFileSystem(newStorage);
         jobList = newJobs;
@@ -143,11 +136,10 @@ public final class SimulatorOrchestrator {
         processScheduler = newProcessScheduler;
         var suspended = new SuspendedReadyQueue();
         dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources, memory);
-        keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended, memory);
         processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
-                readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
+                readyQueue, suspended, dispatcher, realClock);
         runtime = new MultiprocessRuntime(dispatcher, executionEngine, cpu, memory, filesystem,
-                screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
+                screen, processCompletion, processSwapService, jobScheduler,
                 jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, simulationClock, realClock);
         this.configuration = configuration;
     }
@@ -202,7 +194,6 @@ public final class SimulatorOrchestrator {
             try { runtime.retryAdmissionAfterRelease(); }
             catch (RuntimeException failure) { throw runtimeFailure(failure); }
         }
-        completePendingKeyboardInput();
         return result;
     }
 
@@ -217,7 +208,6 @@ public final class SimulatorOrchestrator {
         try { result = runtime.swapIn(processId); }
         catch (IllegalStateException | StorageException | MemoryProtectionException
                 | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
-        completePendingKeyboardInput();
         return result;
     }
 
@@ -308,43 +298,8 @@ public final class SimulatorOrchestrator {
         return processCompletion == null ? List.of() : processCompletion.completed();
     }
 
-    /** Expone solicitudes FIFO inmutables sin entregar el dispositivo ni PCBs a Presentation. */
-    public List<PendingKeyboardRequest> pendingKeyboardRequests() {
-        return keyboardCompletion == null ? List.of() : keyboardCompletion.pending();
-    }
-
     /** Devuelve salidas numéricas inmutables o una lista vacía cuando no hay sesión. */
     public List<Integer> screenOutput() { return screen == null ? List.of() : screen.outputs(); }
-
-    /** Indica espera global de input, no simplemente la existencia de un proceso BLOCKED. */
-    public boolean waitingForInput() { return runtimeStatus() == RuntimeStatus.WAITING_FOR_INPUT; }
-
-    /**
-     * Valida lifecycle activo y encola input; completa solicitudes sólo en RUNNING, conservando la cola
-     * durante Pause.
-     */
-    public void submitKeyboardInput(int value) {
-        var state = lifecycle.state();
-        if (state != SimulatorState.INITIALIZED && state != SimulatorState.PROGRAM_LOADED
-                && state != SimulatorState.RUNNING && state != SimulatorState.PAUSED) {
-            throw new IllegalStateException("Keyboard input requires an active session");
-        }
-        keyboard.submit(value);
-        completePendingKeyboardInput();
-    }
-
-    /**
-     * Drena eventos sólo en RUNNING, sin ticks de CPU, y actualiza FINISHED o ERROR global cuando
-     * corresponda.
-     */
-    private void completePendingKeyboardInput() {
-        if (lifecycle.state() == SimulatorState.RUNNING) {
-            try {
-                runtime.drainInput();
-                finishIfComplete(runtime.status());
-            } catch (RuntimeException failure) { throw runtimeFailure(failure); }
-        }
-    }
 
     /** Pausa la sesión sin modificar el estado del proceso. */
     public void pause() {
@@ -354,7 +309,10 @@ public final class SimulatorOrchestrator {
     /** Devuelve la sesión pausada al estado RUNNING. */
     public void resume() {
         lifecycle.resumeExecution();
-        completePendingKeyboardInput();
+        try {
+            runtime.settle();
+            finishIfComplete(runtime.status());
+        } catch (RuntimeException failure) { throw runtimeFailure(failure); }
     }
 
     /** Descarta los recursos de sesión y devuelve la sesión a CONFIGURING. */
@@ -374,9 +332,7 @@ public final class SimulatorOrchestrator {
         processScheduler = null;
         cpu = null;
         screen = null;
-        keyboard = null;
         dispatcher = null;
-        keyboardCompletion = null;
         processCompletion = null;
         runtime = null;
         tickCounter = null;
@@ -399,7 +355,7 @@ public final class SimulatorOrchestrator {
         var snapshot = SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
                 dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
                 jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
-                runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
+                runtime == null ? List.of() : runtime.suspendedReadyProcessIds(),
                 completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()),
                 simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()));
         if (snapshot.addressTranslationError().isPresent()) lifecycle.markError();

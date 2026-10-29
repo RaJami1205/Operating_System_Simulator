@@ -17,7 +17,6 @@ class BasicIoOrchestratorTest {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140),512,64));
         simulator.loadProgram(new AsmParser().parse(List.of(source))); simulator.start();
     }
-    private void instructionTick() { simulator.step(); }
     private void state(SimulatorState lifecycle,String process,int pc,int dx) {
         var snapshot=simulator.snapshot(); assertEquals(lifecycle,snapshot.simulatorState());
         if (process.equals("TERMINATED")) {
@@ -39,53 +38,18 @@ class BasicIoOrchestratorTest {
             } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
         }
     }
-    @Test void runningSubmissionCompletesWaitAndInvalidSubmissionDoesNotChangeRuntime() throws Exception {
-        load("INT 09H","INC"); instructionTick(); state(SimulatorState.RUNNING,"BLOCKED",0,0);
-        var before=simulator.snapshot();
-        for(int value:new int[]{-1,256}) assertThrows(IllegalArgumentException.class,()->simulator.submitKeyboardInput(value));
-        for(int i=0;i<5;i++) simulator.step();
-        var after = simulator.snapshot();
-        assertEquals(before.simulationTimeSeconds().orElseThrow() + 5, after.simulationTimeSeconds().orElseThrow());
-        for (var component : SimulatorSnapshot.class.getRecordComponents()) {
-            if (!component.getName().equals("simulationTimeSeconds")) {
-                assertEquals(component.getAccessor().invoke(before), component.getAccessor().invoke(after), component.getName());
-            }
-        }
-        assertTrue(simulator.waitingForInput());
-        simulator.submitKeyboardInput(255); state(SimulatorState.RUNNING,"READY",1,255);
-        assertFalse(simulator.waitingForInput());
-        simulator.step(); state(SimulatorState.FINISHED,"TERMINATED",2,255);
-    }
-    @Test void pausedSubmissionQueuesUntilResumeAndCanFinishThere() {
-        load("INT 09H"); instructionTick(); simulator.pause();
-        simulator.submitKeyboardInput(42); state(SimulatorState.PAUSED,"BLOCKED",0,0);
-        assertTrue(simulator.waitingForInput());
-        simulator.resume(); state(SimulatorState.FINISHED,"TERMINATED",1,42);
-        assertFalse(simulator.waitingForInput());
-    }
-    @Test void resumeWithoutInputKeepsWaitAndResetDiscardsPendingAndQueuedInput() {
-        load("INT 09H"); instructionTick(); simulator.pause(); simulator.resume();
-        state(SimulatorState.RUNNING,"BLOCKED",0,0);
-        simulator.pause(); simulator.submitKeyboardInput(99); simulator.reset();
-        assertFalse(simulator.waitingForInput()); assertTrue(simulator.screenOutput().isEmpty());
-        assertThrows(IllegalStateException.class,()->simulator.submitKeyboardInput(1));
-        load("INT 09H"); instructionTick(); state(SimulatorState.RUNNING,"BLOCKED",0,0);
-        simulator.submitKeyboardInput(0); state(SimulatorState.FINISHED,"TERMINATED",1,0);
-    }
     @Test void fifoScreenFormattingAndResetRemainSessionOwned() {
-        load("int 09h","int 10h","INT 09H","INT 10H");
-        simulator.submitKeyboardInput(0); simulator.submitKeyboardInput(255);
+        load("MOV DX, 0","int 10h","MOV DX, 255","INT 10H");
         for(int instruction=0;instruction<4;instruction++) {
             var before=simulator.snapshot();
             simulator.step();
-            String expected=instruction%2==0?"INT 09H":"INT 10H";
+            String expected=List.of("MOV DX, 0","INT 10H","MOV DX, 255","INT 10H").get(instruction);
             var snapshot=simulator.snapshot();
             if (instruction < 3) assertEquals(expected,snapshot.currentInstruction().orElseThrow().semanticInstruction());
             else assertTrue(snapshot.currentInstruction().isEmpty());
             assertEquals(Optional.of(expected),snapshot.cpu().orElseThrow().instructionRegister());
             if (instruction < 3) assertEquals(expected,snapshot.program().get(instruction).instruction());
             assertEquals(Optional.of(expected),before.memory().get(140+instruction).content());
-            assertFalse(simulator.waitingForInput());
         }
         state(SimulatorState.FINISHED,"TERMINATED",4,255);
         var saved=simulator.screenOutput(); assertEquals(List.of(0,255),saved);

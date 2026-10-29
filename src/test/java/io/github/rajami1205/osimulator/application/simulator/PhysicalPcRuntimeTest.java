@@ -68,26 +68,23 @@ class PhysicalPcRuntimeTest {
         return type.cast(field.get(simulator));
     }
 
-    @Test void blockedRelocationPreservesLogicalRequestAndPreservesHistoricalSnapshot() throws Exception {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
-        submit("input", "INT 09H", "INC");
-        simulator.start(); simulator.step();
+    @Test void readyRelocationPreservesLogicalPcAndHistoricalSnapshot() throws Exception {
+        simulator.initialize(SimulatorConfiguration.defaults());
+        submit("p", "MOV DX, 42", "INC"); simulator.start();
         var before = simulator.snapshot();
-        assertEquals(List.of(new PendingKeyboardRequest(1, 4096)), before.pendingKeyboardRequests());
         simulator.swapOut(1);
-        assertTrue(simulator.snapshot().nextInstructionPhysicalAddress().isEmpty());
-        assertEquals(4096, simulator.snapshot().processes().getFirst().savedProgramCounter());
         var memory = field("memory", MainMemory.class);
         var occupied = memory.allocateUser(38);
         simulator.swapIn(1);
-        assertEquals(List.of(new PendingKeyboardRequest(1, 4096)), simulator.pendingKeyboardRequests());
-        assertEquals(4096, simulator.snapshot().processes().getFirst().savedProgramCounter());
-        assertEquals(4096, before.pendingKeyboardRequests().getFirst().interruptLogicalPc());
-        simulator.submitKeyboardInput(42);
-        assertEquals(4097, simulator.snapshot().processes().getFirst().savedProgramCounter());
+        assertEquals(4096,simulator.snapshot().processes().getFirst().savedProgramCounter());
+        assertEquals(Optional.of(140),before.processes().getFirst().base());
+        assertEquals(Optional.of(178),simulator.snapshot().processes().getFirst().base());
         simulator.step();
-        assertEquals(4098, simulator.completedProcesses().getFirst().finalContext().programCounter());
-        assertEquals(42, simulator.completedProcesses().getFirst().finalContext().dx());
+        assertEquals(4097,simulator.snapshot().cpu().orElseThrow().programCounter());
+        assertEquals(Optional.of(179),simulator.snapshot().nextInstructionPhysicalAddress());
+        simulator.step();
+        assertEquals(4098,simulator.completedProcesses().getFirst().finalContext().programCounter());
+        assertEquals(42,simulator.completedProcesses().getFirst().finalContext().dx());
         memory.release(occupied);
     }
 

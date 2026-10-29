@@ -11,7 +11,6 @@ import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.execution.TickResult;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -78,7 +77,6 @@ class InstructionMetadataTest {
                 new SimulatedFileSystem(
                         new SecondaryStorage(128, 64)),
                 new ScreenDevice(),
-                new KeyboardDevice(),
                 memory, cpu, loaded.pcb(), loaded.userAllocation());
         assertEquals(opcode, cpu.instructionRegister().orElseThrow().opcode());
         boolean loops = opcode == Opcode.JMP || opcode == Opcode.JNE;

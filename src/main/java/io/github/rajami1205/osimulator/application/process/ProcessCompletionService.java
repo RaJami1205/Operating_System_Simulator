@@ -26,14 +26,13 @@ public final class ProcessCompletionService {
     private final ProcessResourceRegistry resources;
     private final ReadyQueue ready;
     private final SuspendedReadyQueue suspended;
-    private final KeyboardCompletionService keyboard;
     private final Dispatcher dispatcher;
     private final List<CompletedProcessRecord> completed = new ArrayList<>();
 
     /** Recibe recursos, Dispatcher y Clock de la sesión para validar cleanup y registrar timestamps reales. */
     public ProcessCompletionService(MainMemory memory, SecondaryStorage storage, ProcessTable table,
             ProcessResourceRegistry resources, ReadyQueue ready, SuspendedReadyQueue suspended,
-            KeyboardCompletionService keyboard, Dispatcher dispatcher, Clock realClock) {
+            Dispatcher dispatcher, Clock realClock) {
         this.realClock = Objects.requireNonNull(realClock);
         this.memory = Objects.requireNonNull(memory);
         this.storage = Objects.requireNonNull(storage);
@@ -41,7 +40,6 @@ public final class ProcessCompletionService {
         this.resources = Objects.requireNonNull(resources);
         this.ready = Objects.requireNonNull(ready);
         this.suspended = Objects.requireNonNull(suspended);
-        this.keyboard = Objects.requireNonNull(keyboard);
         this.dispatcher = Objects.requireNonNull(dispatcher);
     }
 
@@ -107,7 +105,6 @@ public final class ProcessCompletionService {
         memory.release(resource.kernel());
         resources.remove(pid);
         table.remove(pid);
-        keyboard.remove(pid);
         suspended.remove(pid);
         completed.add(record);
     }

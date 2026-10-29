@@ -81,14 +81,11 @@ public final class SimulatorController {
     @FXML private Button pauseButton;
     @FXML private Button resumeButton;
     @FXML private Button resetButton;
-    @FXML private Button keyboardSendButton;
     @FXML private TextField programPathField;
-    @FXML private TextField keyboardField;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
     @FXML private ListView<String> readyList;
     @FXML private ListView<String> suspendedList;
-    @FXML private ListView<String> pendingList;
     @FXML private ListView<String> screenList;
     @FXML private TableView<ProgramEntry> programTable;
     @FXML private TableColumn<ProgramEntry, String> programAddressColumn;
@@ -244,28 +241,12 @@ public final class SimulatorController {
         command(orchestrator::resume);
         if (automaticMode && runnable()) automaticTimeline.play();
     }
-    /** Detiene Timeline, limpia selección/input y delega Reset antes de restaurar defaults visuales. */
+    /** Detiene Timeline, limpia selección y delega Reset antes de restaurar defaults visuales. */
     @FXML private void handleReset() {
         stopAutomaticExecution();
         selectedProgramPath = null; selectedProcessId = null;
-        programPathField.clear(); keyboardField.clear(); feedback = "";
+        programPathField.clear(); feedback = "";
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
-    }
-    /**
-     * Valida texto entero de entrada y lo envía al FIFO del Orchestrator, sin seleccionar PID ni bloquear
-     * el hilo.
-     */
-    @FXML private void handleKeyboardSend() {
-        if (keyboardSendButton.isDisabled()) return;
-        command(() -> {
-            String text = keyboardField.getText().trim();
-            if (text.isEmpty()) throw new IllegalArgumentException("Enter an integer from 0 to 255.");
-            final int input;
-            try { input = Integer.parseInt(text); }
-            catch (NumberFormatException invalid) { throw new IllegalArgumentException("Enter an integer from 0 to 255."); }
-            orchestrator.submitKeyboardInput(input);
-            keyboardField.clear(); feedback = "Keyboard value accepted: " + input;
-        });
     }
     /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
     @FunctionalInterface
@@ -326,7 +307,6 @@ public final class SimulatorController {
         programTable.getItems().setAll(snapshot.program()); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
         readyList.getItems().setAll(snapshot.readyQueue().stream().map(pid -> "PID " + pid).toList());
         suspendedList.getItems().setAll(snapshot.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList());
-        pendingList.getItems().setAll(snapshot.pendingKeyboardRequests().stream().map(r -> "PID " + r.processId() + " / Logical PC " + r.interruptLogicalPc()).toList());
         screenList.getItems().setAll(snapshot.screenOutput().stream().map(Object::toString).toList());
         var selected = completedTable.getSelectionModel().getSelectedItem();
         completedTable.getItems().setAll(snapshot.completedProcesses());
@@ -334,7 +314,7 @@ public final class SimulatorController {
                 .ifPresent(p -> completedTable.getSelectionModel().select(p));
         if (completedTable.getSelectionModel().getSelectedItem() == null) completedDetailArea.setText("Select a completed process");
         statusLabel.setText(feedback.isBlank() ? statusText(snapshot) : feedback + " | " + statusText(snapshot));
-        ioStatusLabel.setText(statusText(snapshot) + " | Pending input: " + snapshot.pendingKeyboardRequests().size());
+        ioStatusLabel.setText(statusText(snapshot));
         updateControls(snapshot);
     }
     /**
@@ -379,11 +359,10 @@ public final class SimulatorController {
      * negocio.
      */
     private String statusText(SimulatorSnapshot snapshot) {
-        if (snapshot.simulatorState() == SimulatorState.PAUSED) return "Paused; keyboard input is queued until Resume";
+        if (snapshot.simulatorState() == SimulatorState.PAUSED) return "Paused";
         if (snapshot.simulatorState() == SimulatorState.ERROR) return "Execution error; inspect state or Reset";
         if (snapshot.runtimeStatus().isPresent()) return switch (snapshot.runtimeStatus().orElseThrow()) {
             case RUNNABLE -> automaticMode ? "Automatic execution" : "Ready for next CPU tick";
-            case WAITING_FOR_INPUT -> "Waiting for keyboard input";
             case WAITING_FOR_CAPACITY -> "Waiting for capacity";
             case FINISHED -> "Workload finished";
         };
@@ -399,12 +378,11 @@ public final class SimulatorController {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
-        boolean keyboard = loading || state == SimulatorState.RUNNING || state == SimulatorState.PAUSED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
         loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
         stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);
-        resetButton.setDisable(false); keyboardField.setDisable(!keyboard); keyboardSendButton.setDisable(!keyboard);
+        resetButton.setDisable(false);
         mainMemorySlider.setDisable(!configuring); kernelMemorySlider.setDisable(!configuring);
         secondaryStorageSlider.setDisable(!configuring); virtualMemorySlider.setDisable(!configuring);
     }

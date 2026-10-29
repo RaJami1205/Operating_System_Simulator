@@ -185,13 +185,11 @@
                                     </TableView>
                                     <GridPane hgap="6" vgap="4">
                                         <columnConstraints>
-                                            <ColumnConstraints percentWidth="33.3"/>
-                                            <ColumnConstraints percentWidth="33.3"/>
-                                            <ColumnConstraints percentWidth="33.4"/>
+                                            <ColumnConstraints percentWidth="50"/>
+                                            <ColumnConstraints percentWidth="50"/>
                                         </columnConstraints>
                                         <Label text="Ready" styleClass="section-title"/>
                                         <Label text="Suspended Ready" wrapText="true" styleClass="section-title" GridPane.columnIndex="1"/>
-                                        <Label text="Keyboard Pending" wrapText="true" styleClass="section-title" GridPane.columnIndex="2"/>
                                         <ListView fx:id="readyList" minHeight="74" prefHeight="92" GridPane.rowIndex="1">
                                             <placeholder>
                                                 <Label text="No ready processes" wrapText="true" styleClass="empty-state"/>
@@ -200,11 +198,6 @@
                                         <ListView fx:id="suspendedList" minHeight="74" prefHeight="92" GridPane.columnIndex="1" GridPane.rowIndex="1">
                                             <placeholder>
                                                 <Label text="No suspended ready processes" wrapText="true" styleClass="empty-state"/>
-                                            </placeholder>
-                                        </ListView>
-                                        <ListView fx:id="pendingList" minHeight="74" prefHeight="92" GridPane.columnIndex="2" GridPane.rowIndex="1">
-                                            <placeholder>
-                                                <Label text="No pending input" wrapText="true" styleClass="empty-state"/>
                                             </placeholder>
                                         </ListView>
                                     </GridPane>
@@ -273,18 +266,12 @@
                             <HBox spacing="12" styleClass="dashboard-panel">
                                 <VBox spacing="6" HBox.hgrow="ALWAYS">
                                     <Label text="SIMULATED SCREEN" styleClass="panel-header"/>
+                                    <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
                                     <ListView fx:id="screenList" VBox.vgrow="ALWAYS">
                                         <placeholder>
                                             <Label text="No output" styleClass="empty-state"/>
                                         </placeholder>
                                     </ListView>
-                                </VBox>
-                                <VBox spacing="8" prefWidth="260" minWidth="200">
-                                    <Label text="SIMULATED KEYBOARD" styleClass="panel-header"/>
-                                    <TextField fx:id="keyboardField" promptText="0..255" onAction="#handleKeyboardSend" styleClass="input-field"/>
-                                    <Button fx:id="keyboardSendButton" text="Send" onAction="#handleKeyboardSend" styleClass="primary-button"/>
-                                    <Label text="FIFO input. While paused, values remain queued until Resume." wrapText="true" minHeight="-Infinity" maxWidth="Infinity" styleClass="helper-text"/>
-                                    <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
                                 </VBox>
                             </HBox>
                         </Tab>

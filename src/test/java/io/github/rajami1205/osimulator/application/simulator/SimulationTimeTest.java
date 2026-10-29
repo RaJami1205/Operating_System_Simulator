@@ -52,15 +52,14 @@ class SimulationTimeTest {
                 value.nextInstructionPhysicalAddress(), value.addressTranslationError(), seconds);
     }
 
-    @Test void weightedExecutionLifecycleAndHistoricalSnapshotsKeepIndependentUnits() {
+    @Test void uniformExecutionLifecycleAndHistoricalSnapshotsKeepIndependentUnits() {
         assertTrue(simulator.snapshot().simulationTimeSeconds().isEmpty());
         simulator.initialize(SimulatorConfiguration.defaults());
         assertEquals(0, time());
         simulator.submitProgram(new ProgramImage("p", new AsmParser().parse(List.of("ADD AX", "INC"))));
         simulator.start(); assertEquals(0, time());
         var initial = simulator.snapshot();
-        var expected = List.of(TickResult.IN_PROGRESS, TickResult.IN_PROGRESS,
-                TickResult.INSTRUCTION_COMPLETED, TickResult.PROGRAM_FINISHED);
+        var expected = List.of(TickResult.INSTRUCTION_COMPLETED, TickResult.PROGRAM_FINISHED);
         for (int i = 0; i < expected.size(); i++) {
             var result = assertInstanceOf(RuntimeStepResult.Executed.class, simulator.step());
             assertEquals(expected.get(i), result.tickResult()); assertEquals(i + 1, time());
@@ -70,10 +69,10 @@ class SimulationTimeTest {
                 assertEquals(1, time()); simulator.resume(); assertEquals(1, time());
             }
         }
-        assertEquals(4, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(2, simulator.snapshot().cpuTicks().orElseThrow());
         assertEquals(Duration.ofHours(2), simulator.completedProcesses().getFirst().accounting().elapsedTime().orElseThrow());
         assertEquals(0, initial.simulationTimeSeconds().orElseThrow());
-        assertThrows(IllegalStateException.class, simulator::step); assertEquals(4, time());
+        assertThrows(IllegalStateException.class, simulator::step); assertEquals(2, time());
         simulator.reset(); assertTrue(simulator.snapshot().simulationTimeSeconds().isEmpty());
         simulator.initialize(SimulatorConfiguration.defaults()); assertEquals(0, time());
     }
@@ -81,21 +80,20 @@ class SimulationTimeTest {
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void inputAtStepBoundaryIsFreeWhetherItFinishesOrEnablesExecution(boolean terminal) throws Exception {
         if (terminal) init("INT 09H"); else init("INT 09H", "INC");
-        simulator.step();
         assertEquals(TickResult.WAITING_FOR_INPUT,
                 assertInstanceOf(RuntimeStepResult.Executed.class, simulator.step()).tickResult());
-        assertEquals(2, time());
+        assertEquals(1, time());
         assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.WAITING_FOR_INPUT), simulator.step());
-        assertEquals(3, time()); assertEquals(2, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(2, time()); assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());
         field("keyboard", KeyboardDevice.class).submit(42);
         var result = simulator.step();
-        assertEquals(terminal ? 3 : 4, time());
-        assertEquals(terminal ? 2 : 3, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(terminal ? 2 : 3, time());
+        assertEquals(terminal ? 1 : 2, simulator.snapshot().cpuTicks().orElseThrow());
         assertEquals(RuntimeStatus.FINISHED, result.status());
         if (terminal) assertInstanceOf(RuntimeStepResult.Idle.class, result);
         else assertInstanceOf(RuntimeStepResult.Executed.class, result);
         assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED), field("runtime", MultiprocessRuntime.class).step());
-        assertEquals(terminal ? 3 : 4, time());
+        assertEquals(terminal ? 2 : 3, time());
         var seconds = SimulationClock.class.getDeclaredField("seconds");
         seconds.setAccessible(true); seconds.setLong(field("simulationClock", SimulationClock.class), Long.MAX_VALUE);
         assertEquals(new RuntimeStepResult.Idle(RuntimeStatus.FINISHED), field("runtime", MultiprocessRuntime.class).step());
@@ -103,15 +101,15 @@ class SimulationTimeTest {
     }
 
     @Test void externalInputCompletionAndResumeConsumeNoTime() {
-        init("INT 09H"); simulator.step(); simulator.step();
-        simulator.pause(); simulator.submitKeyboardInput(7); assertEquals(2, time());
+        init("INT 09H"); simulator.step();
+        simulator.pause(); simulator.submitKeyboardInput(7); assertEquals(1, time());
         simulator.resume(); assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
-        assertEquals(2, time());
+        assertEquals(1, time());
     }
 
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void overflowPreventsCpuOrIdleIntervalEffects(boolean idle) throws Exception {
-        if (idle) { init("INT 09H"); simulator.step(); simulator.step(); }
+        if (idle) { init("INT 09H"); simulator.step(); }
         else init("INC");
         var clock = field("simulationClock", SimulationClock.class);
         var seconds = SimulationClock.class.getDeclaredField("seconds");
@@ -127,8 +125,8 @@ class SimulationTimeTest {
     @Test void errorsBeforeCommitDoNotAdvanceButCleanupFailurePreservesConfirmedTime() throws Exception {
         init("POP AX"); assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(0, time());
         simulator.reset(); init("MOV AX, 32767", "LOAD AX", "ADD AX");
-        for (int i = 0; i < 5; i++) simulator.step();
-        assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(5, time());
+        for (int i = 0; i < 2; i++) simulator.step();
+        assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(2, time());
         simulator.reset(); init("INC"); pcb().setNextPcbAddress(Optional.of(new PcbAddress(9)));
         assertThrows(ExecutionEngineException.class, simulator::step);
         assertEquals(1, time()); assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());

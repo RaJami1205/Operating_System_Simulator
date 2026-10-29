@@ -26,7 +26,6 @@ import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
-import io.github.rajami1205.osimulator.model.execution.ExecutionProgress;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
@@ -70,7 +69,6 @@ public final class SimulatorOrchestrator {
     private ReadyQueue readyQueue;
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
-    private ExecutionProgress executionProgress;
     private ScreenDevice screen;
     private KeyboardDevice keyboard;
     private Dispatcher dispatcher;
@@ -111,7 +109,6 @@ public final class SimulatorOrchestrator {
         }
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
-        ExecutionProgress newProgress = new ExecutionProgress();
         ScreenDevice newScreen = new ScreenDevice();
         KeyboardDevice newKeyboard = new KeyboardDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
@@ -129,7 +126,6 @@ public final class SimulatorOrchestrator {
         lifecycle.initialize();
         memory = newMemory;
         cpu = newCpu;
-        executionProgress = newProgress;
         tickCounter = new CpuTickCounter();
         simulationClock = new SimulationClock();
         screen = newScreen;
@@ -150,7 +146,7 @@ public final class SimulatorOrchestrator {
         keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended, memory);
         processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
                 readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
-        runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,
+        runtime = new MultiprocessRuntime(dispatcher, executionEngine, cpu, memory, filesystem,
                 screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
                 jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, simulationClock, realClock);
         this.configuration = configuration;
@@ -377,7 +373,6 @@ public final class SimulatorOrchestrator {
         readyQueue = null;
         processScheduler = null;
         cpu = null;
-        executionProgress = null;
         screen = null;
         keyboard = null;
         dispatcher = null;

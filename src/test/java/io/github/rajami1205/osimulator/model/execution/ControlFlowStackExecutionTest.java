@@ -25,12 +25,11 @@ class ControlFlowStackExecutionTest {
         private final KeyboardDevice keyboard = new KeyboardDevice();
         final MainMemory memory = new MainMemory(new MemoryConfiguration(128, 32));
         final CpuRegisters<Instruction> cpu = new CpuRegisters<>();
-        final ExecutionProgress progress = new ExecutionProgress();
         final ExecutionEngine engine = new ExecutionEngine();
         final ProcessControlBlock pcb;
         final io.github.rajami1205.osimulator.model.memory.MemoryAllocation allocation;
         Session(Instruction... instructions) { var loaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instructions)); pcb = loaded.pcb(); allocation = loaded.userAllocation(); }
-        TickResult tick() { return engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, allocation); }
+        TickResult tick() { return engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, allocation); }
         void pc(int value) { pcb.setProgramCounter(value); cpu.setProgramCounter(value); }
         void assertPc(int value) { assertEquals(value, cpu.programCounter()); assertEquals(value, pcb.programCounter()); }
         void failure(Instruction instruction, Class<? extends Throwable> cause) {
@@ -43,11 +42,11 @@ class ControlFlowStackExecutionTest {
             assertEquals(flags, cpu.conditionFlags());
             assertEquals(stack, pcb.stack().values());
             assertSame(instruction, cpu.instructionRegister().orElseThrow());
-            assertTrue(progress.isIdle());
+
         }
     }
 
-    @Test void comparisonUsesActiveCpuAndOnlyChangesEqualityOnFinalTick() {
+    @Test void comparisonUsesActiveCpuAndChangesEqualityInOneTick() {
         for (boolean equal : new boolean[]{false, true}) {
             var cmp = new CmpInstruction(RegisterName.AX, RegisterName.BX);
             var s = new Session(cmp);
@@ -56,9 +55,6 @@ class ControlFlowStackExecutionTest {
             var flags = new ConditionFlags(!equal, true);
             s.cpu.writeConditionFlags(flags);
             var saved = s.pcb.cpuContext();
-            assertEquals(TickResult.IN_PROGRESS, s.tick());
-            assertEquals(flags, s.cpu.conditionFlags());
-            s.assertPc(4096);
             assertEquals(TickResult.PROGRAM_FINISHED, s.tick());
             assertEquals(new ConditionFlags(equal, true), s.cpu.conditionFlags());
             assertEquals(-32768, s.cpu.readRegister(RegisterName.AX));
@@ -74,13 +70,10 @@ class ControlFlowStackExecutionTest {
             var s = new Session(program);
             s.pc(4096 + sample[0]);
             for (int repeat = 0; repeat < (sample[1] == 0 ? 3 : 1); repeat++) {
-                assertEquals(TickResult.IN_PROGRESS, s.tick());
-                s.assertPc(4096 + sample[0]);
-                assertSame(jump, s.cpu.instructionRegister().orElseThrow());
                 assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
                 s.assertPc(4096 + sample[2]);
                 assertSame(jump, s.cpu.instructionRegister().orElseThrow());
-                assertTrue(s.progress.isIdle());
+
             }
         }
     }
@@ -94,8 +87,6 @@ class ControlFlowStackExecutionTest {
                     var s = new Session(jump, new IncInstruction(), new IncInstruction());
                     var flags = new ConditionFlags(je == taken, true);
                     s.cpu.writeConditionFlags(flags);
-                    assertEquals(TickResult.IN_PROGRESS, s.tick());
-                    s.assertPc(4096);
                     if (taken && (displacement < 0 || displacement > 2)) s.failure(jump, null);
                     else {
                         assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
@@ -106,7 +97,6 @@ class ControlFlowStackExecutionTest {
             }
         }
         var last = new Session(new JeInstruction(new BranchDisplacement(Integer.MAX_VALUE)));
-        last.tick();
         assertEquals(TickResult.PROGRAM_FINISHED, last.tick());
         last.assertPc(4097);
     }
@@ -115,20 +105,17 @@ class ControlFlowStackExecutionTest {
         for (int displacement : new int[]{-1, -2, 3, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
             var jump = new JmpInstruction(new BranchDisplacement(displacement));
             var s = new Session(jump, new IncInstruction(), new IncInstruction());
-            s.tick();
             s.failure(jump, null);
         }
     }
 
-    @Test void conditionalBackwardBranchesPublishOnlyOnSecondTick() {
+    @Test void conditionalBackwardBranchesPublishInOneTick() {
         for (boolean je : new boolean[]{true, false}) {
             Instruction jump = je ? new JeInstruction(new BranchDisplacement(-2))
                     : new JneInstruction(new BranchDisplacement(-2));
             var s = new Session(new IncInstruction(), new IncInstruction(), jump);
             s.pc(4098);
             s.cpu.writeConditionFlags(new ConditionFlags(je, true));
-            assertEquals(TickResult.IN_PROGRESS, s.tick());
-            s.assertPc(4098); assertSame(jump, s.cpu.instructionRegister().orElseThrow());
             assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
             s.assertPc(4096); assertSame(jump, s.cpu.instructionRegister().orElseThrow());
             assertEquals(new ConditionFlags(je, true), s.cpu.conditionFlags());
@@ -161,8 +148,6 @@ class ControlFlowStackExecutionTest {
         var jump = new JneInstruction(new BranchDisplacement(-4));
         var s = new Session(Collections.nCopies(49, jump).toArray(Instruction[]::new));
         s.pc(4112);
-        assertEquals(TickResult.IN_PROGRESS, s.tick()); s.assertPc(4112);
-        assertSame(jump, s.cpu.instructionRegister().orElseThrow());
         assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick()); s.assertPc(4108);
     }
 
@@ -171,13 +156,12 @@ class ControlFlowStackExecutionTest {
             var jump = new JmpInstruction(new BranchDisplacement(example[1]));
             var s = new Session(Collections.nCopies(20, jump).toArray(Instruction[]::new));
             s.pc(example[0]);
-            assertEquals(TickResult.IN_PROGRESS, s.tick()); s.assertPc(example[0]);
             assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick()); s.assertPc(example[2]);
         }
         for (int displacement : new int[]{-9,12,13}) {
             var jump = new JmpInstruction(new BranchDisplacement(displacement));
             var s = new Session(Collections.nCopies(20, jump).toArray(Instruction[]::new));
-            s.pc(4104); s.tick(); s.failure(jump, null);
+            s.pc(4104); s.failure(jump, null);
         }
         var s = new Session(Collections.nCopies(20, new IncInstruction()).toArray(Instruction[]::new));
         s.pc(4115);
@@ -214,7 +198,7 @@ class ControlFlowStackExecutionTest {
         assertEquals(42, empty.cpu.readRegister(RegisterName.BX));
     }
 
-    @Test void parametersCommitOnThirdTickAndPopInTextualOrder() {
+    @Test void parametersCommitInOneTickAndPopInTextualOrder() {
         var values = List.of(new ImmediateOperand(-32768), new ImmediateOperand(32767), new ImmediateOperand(3));
         for (int count = 1; count <= 3; count++) {
             var param = new ParamInstruction(values.subList(0, count));
@@ -222,11 +206,6 @@ class ControlFlowStackExecutionTest {
             program.add(param);
             for (int i = 0; i < count; i++) program.add(new PopInstruction(RegisterName.values()[i]));
             var s = new Session(program.toArray(Instruction[]::new));
-            for (int tick = 0; tick < 2; tick++) {
-                assertEquals(TickResult.IN_PROGRESS, s.tick());
-                assertTrue(s.pcb.stack().isEmpty());
-                s.assertPc(4096);
-            }
             assertEquals(TickResult.INSTRUCTION_COMPLETED, s.tick());
             assertEquals(values.subList(0,count).reversed().stream().map(ImmediateOperand::value).toList(), s.pcb.stack().values());
             for (int i = 0; i < count; i++) {
@@ -238,7 +217,6 @@ class ControlFlowStackExecutionTest {
         var param = new ParamInstruction(values);
         var full = new Session(param);
         full.pcb.stack().pushAll(List.of(7,8,9));
-        full.tick(); full.tick();
         full.failure(param, ProcessStackOverflowException.class);
     }
 }

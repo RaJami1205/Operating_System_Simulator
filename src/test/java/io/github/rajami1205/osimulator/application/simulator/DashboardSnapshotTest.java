@@ -34,7 +34,7 @@ class DashboardSnapshotTest {
         assertTrue(simulator.snapshot().runtimeStatus().isEmpty());
         simulator.start(); assertEquals(Optional.of(RuntimeStatus.RUNNABLE), simulator.snapshot().runtimeStatus());
         assertTrue(simulator.snapshot().ownerPid().isEmpty());
-        simulator.step(); simulator.step(); simulator.step(); simulator.step(); simulator.step();
+        simulator.step(); simulator.step(); simulator.step(); simulator.step();
         var active = simulator.snapshot(); var cpu = active.cpu().orElseThrow();
         assertEquals(Optional.of(1), active.ownerPid()); assertEquals("file.txt", cpu.dxText()); assertEquals("hello", cpu.alText());
         assertEquals(64, cpu.ah()); assertEquals(0, cpu.ax()); assertEquals(0, cpu.bx()); assertEquals(0, cpu.cx());
@@ -75,7 +75,7 @@ class DashboardSnapshotTest {
     }
     @Test void fifoScreenAndResetAreImmutableObservations() {
         initialize(); submit("one", "INT 09H", "INT 10H"); submit("two", "INT 09H", "INC"); simulator.start();
-        for (int i = 0; i < 4; i++) simulator.step();
+        for (int i = 0; i < 2; i++) simulator.step();
         var waiting = simulator.snapshot();
         assertEquals(List.of(new PendingKeyboardRequest(1,4096), new PendingKeyboardRequest(2,4096)), waiting.pendingKeyboardRequests());
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), waiting.runtimeStatus());

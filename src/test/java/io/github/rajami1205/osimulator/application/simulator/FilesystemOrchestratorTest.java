@@ -23,7 +23,7 @@ class FilesystemOrchestratorTest {
         load(program);
         var parsed=new AsmParser().parse(program);
         for(int i=0;i<parsed.size();i++) {
-            for(int tick=0;tick<parsed.get(i).executionWeight().ticks();tick++) simulator.step();
+            simulator.step();
             var snapshot=simulator.snapshot();
             assertEquals("notes.txt",snapshot.cpu().orElseThrow().dxValue().textValue());
             String expected=i==1?"MOV AH, 3CH":program.get(i);
@@ -36,10 +36,10 @@ class FilesystemOrchestratorTest {
         assertEquals(SimulatorState.FINISHED,simulator.snapshot().simulatorState());
         simulator.reset();
         load(List.of("MOV DX, \"kept\"","MOV AH, 3CH","INT 21H"));
-        for(int tick=0;tick<7;tick++) simulator.step();
+        for(int tick=0;tick<3;tick++) simulator.step();
         simulator.reset();
         load(List.of("MOV DX, \"kept\"","MOV AH, 3DH","INT 21H"));
-        for(int tick=0;tick<6;tick++) simulator.step();
+        for(int tick=0;tick<2;tick++) simulator.step();
         assertThrows(ExecutionEngineException.class,simulator::step);
         assertEquals(SimulatorState.ERROR,simulator.snapshot().simulatorState());
     }

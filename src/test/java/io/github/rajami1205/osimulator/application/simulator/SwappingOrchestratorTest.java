@@ -36,7 +36,7 @@ class SwappingOrchestratorTest {
         admit(1,64);assertEquals(new SwapResult.Completed(),simulator.swapOut(1));simulator.swapIn(1);
     }
     @Test void activeOwnerCannotSwapButDetachedKeyboardWaitCan() {
-        initialize();simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC")));
+        initialize();simulator.loadProgram(new AsmParser().parse(List.of("INC","INT 09H","INC")));
         assertThrows(IllegalArgumentException.class,()->simulator.swapOut(1));
         simulator.start();simulator.step();
         assertThrows(IllegalStateException.class,()->simulator.swapOut(1));

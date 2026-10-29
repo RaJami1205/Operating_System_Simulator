@@ -40,8 +40,6 @@ class BasicIoControllerTest {
                 // Drive actual callbacks deterministically on the FX thread, without sleeping for pacing.
                 var callback=timeline.getKeyFrames().getFirst().getOnFinished();
                 callback.handle(new javafx.event.ActionEvent());
-                assertFalse(simulator.waitingForInput());
-                callback.handle(new javafx.event.ActionEvent());
                 assertTrue(simulator.waitingForInput());
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));
@@ -83,25 +81,24 @@ class BasicIoControllerTest {
                 simulator.initialize(SimulatorConfiguration.defaults());
                 simulator.loadProgram(new AsmParser().parse(List.of("INT 09H","INC")));
                 simulator.loadProgram(new AsmParser().parse(List.of("INC")));
-                simulator.loadProgram(new AsmParser().parse(List.of("ADD AX")));
+                simulator.loadProgram(new AsmParser().parse(List.of("ADD AX","ADD AX","ADD AX")));
                 simulator.start();invoke(controller,"refresh");invoke(controller,"handleAutomatic");
-                callback.handle(new javafx.event.ActionEvent()); // INT09 1/2
+                callback.handle(new javafx.event.ActionEvent()); // INT09 blocks in one instruction tick
                 assertEquals(4096,simulator.snapshot().cpu().orElseThrow().programCounter());
-                callback.handle(new javafx.event.ActionEvent()); // P1 blocked; P2 remains READY
                 assertEquals(Animation.Status.RUNNING,timeline.getStatus());
                 assertTrue(simulator.completedProcesses().isEmpty());
                 callback.handle(new javafx.event.ActionEvent()); // P2 finishes, no P3 tick
                 assertEquals(1,simulator.completedProcesses().size());
                 assertEquals(Animation.Status.RUNNING,timeline.getStatus());
-                callback.handle(new javafx.event.ActionEvent()); // P3 ADD 1/3
+                callback.handle(new javafx.event.ActionEvent()); // P3 first ADD
                 invoke(controller,"handlePause");
                 var paused=simulator.snapshot();
                 callback.handle(new javafx.event.ActionEvent());
                 assertEquals(paused,simulator.snapshot());
                 invoke(controller,"handleResume");
-                callback.handle(new javafx.event.ActionEvent()); // ADD 2/3
+                callback.handle(new javafx.event.ActionEvent()); // P3 second ADD
                 assertEquals(1,simulator.completedProcesses().size());
-                callback.handle(new javafx.event.ActionEvent()); // ADD 3/3 -> all remaining blocked
+                callback.handle(new javafx.event.ActionEvent()); // P3 final ADD -> all remaining blocked
                 assertEquals(Animation.Status.STOPPED,timeline.getStatus());
                 assertEquals(false,field(controller,"automaticMode"));
                 simulator.submitKeyboardInput(12);invoke(controller,"refresh");

@@ -28,7 +28,7 @@ class TransferArithmeticModelTest {
                 assertEquals(expected, swap.operands());
                 assertEquals(new MovInstruction(left, new RegisterOperand(right)), mov);
                 for (Instruction instruction : List.of(mov, swap, inc, dec, new IncInstruction(), new DecInstruction())) {
-                    assertEquals(1, instruction.executionWeight().ticks());
+
                     assertTrue(instruction.getClass().isRecord());
                     assertThrows(UnsupportedOperationException.class,
                             () -> instruction.operands().add(new ImmediateOperand(0)));

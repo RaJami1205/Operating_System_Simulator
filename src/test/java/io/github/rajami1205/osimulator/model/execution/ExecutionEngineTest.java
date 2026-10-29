@@ -759,8 +759,7 @@ class ExecutionEngineTest {
 
     // Semantic regression helper: completes an instruction through the public tick API only.
     private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
-        var progress = new ExecutionProgress();
-        while (engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, allocations.get(memory)) == TickResult.IN_PROGRESS) { }
+        engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, allocations.get(memory));
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {

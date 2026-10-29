@@ -19,25 +19,24 @@ class PhysicalPcRuntimeTest {
     @Test void snapshotSeparatesLogicalContextFromNextPhysicalInstructionAndHistory() throws Exception {
         simulator.initialize(SimulatorConfiguration.defaults());
         assertTrue(simulator.snapshot().nextInstructionPhysicalAddress().isEmpty());
-        submit("weighted", "ADD AX", "INC"); simulator.start();
+        submit("uniform", "ADD AX", "INC"); simulator.start();
         assertTrue(simulator.snapshot().nextInstructionPhysicalAddress().isEmpty());
         simulator.step();
         var first = simulator.snapshot();
-        assertEquals(4096, first.cpu().orElseThrow().programCounter());
-        assertEquals(Optional.of(140), first.nextInstructionPhysicalAddress());
-        simulator.step(); simulator.step();
+        assertEquals(4097, first.cpu().orElseThrow().programCounter());
+        assertEquals(Optional.of(141), first.nextInstructionPhysicalAddress());
         assertEquals(Optional.of(141), simulator.snapshot().nextInstructionPhysicalAddress());
         assertEquals(4097, simulator.snapshot().cpu().orElseThrow().programCounter());
         simulator.step();
         assertTrue(simulator.snapshot().nextInstructionPhysicalAddress().isEmpty());
         assertEquals(4098, simulator.snapshot().completedProcesses().getFirst().finalContext().programCounter());
-        assertEquals(Optional.of(140), first.nextInstructionPhysicalAddress());
-        assertEquals(4096, first.cpu().orElseThrow().programCounter());
+        assertEquals(Optional.of(141), first.nextInstructionPhysicalAddress());
+        assertEquals(4097, first.cpu().orElseThrow().programCounter());
     }
 
     @Test void staleAllocationSnapshotReportsControlledErrorInsteadOfNonresidence() throws Exception {
         simulator.initialize(SimulatorConfiguration.defaults());
-        submit("weighted", "ADD AX"); simulator.start(); simulator.step();
+        submit("uniform", "ADD AX", "INC"); simulator.start(); simulator.step();
         var memory = field("memory", MainMemory.class);
         var resource = field("processResources", ProcessResourceRegistry.class).find(1).orElseThrow();
         var stale = ((UserImageResidence.Resident) resource.residence()).allocation();
@@ -54,7 +53,7 @@ class PhysicalPcRuntimeTest {
 
     @Test void terminalOwnerCannotProduceNextPhysicalInstruction() throws Exception {
         simulator.initialize(SimulatorConfiguration.defaults());
-        submit("weighted", "ADD AX"); simulator.start(); simulator.step();
+        submit("uniform", "ADD AX", "INC"); simulator.start(); simulator.step();
         var pcb = field("processTable", ProcessTable.class).find(1).orElseThrow();
         pcb.setProgramCounter(pcb.logicalCodeRange().endExclusive().value());
         assertTrue(simulator.snapshot().nextInstructionPhysicalAddress().isEmpty());
@@ -72,7 +71,7 @@ class PhysicalPcRuntimeTest {
     @Test void blockedRelocationPreservesLogicalRequestAndPreservesHistoricalSnapshot() throws Exception {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         submit("input", "INT 09H", "INC");
-        simulator.start(); simulator.step(); simulator.step();
+        simulator.start(); simulator.step();
         var before = simulator.snapshot();
         assertEquals(List.of(new PendingKeyboardRequest(1, 4096)), before.pendingKeyboardRequests());
         simulator.swapOut(1);
@@ -126,7 +125,7 @@ class PhysicalPcRuntimeTest {
 
     @Test void completionDoesNotLeakFinalPcIntoNextOwner() throws Exception {
         simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
-        submit("first", "INT 20H", "INC", "INC"); submit("second", "ADD AX");
+        submit("first", "INT 20H", "INC", "INC"); submit("second", "ADD AX", "INC");
         simulator.start();
         while (simulator.completedProcesses().isEmpty()) simulator.step();
         assertEquals(4096, simulator.completedProcesses().getFirst().finalContext().programCounter());
@@ -134,8 +133,8 @@ class PhysicalPcRuntimeTest {
         assertEquals(4096, next.programCounter());
         assertTrue(simulator.snapshot().memory().get(140).content().isEmpty());
         simulator.step();
-        assertEquals(4096, simulator.snapshot().cpu().orElseThrow().programCounter());
-        assertEquals(Optional.of(143), simulator.snapshot().nextInstructionPhysicalAddress());
+        assertEquals(4097, simulator.snapshot().cpu().orElseThrow().programCounter());
+        assertEquals(Optional.of(144), simulator.snapshot().nextInstructionPhysicalAddress());
     }
 
     @Test void dispatchSavesAndRestoresLogicalAddressesAcrossDistinctBases() {

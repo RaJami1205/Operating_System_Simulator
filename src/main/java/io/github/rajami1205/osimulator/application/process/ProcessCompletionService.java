@@ -91,7 +91,8 @@ public final class ProcessCompletionService {
         var previousImage = previous == null ? null
                 : PcbMemoryImage.capture(previous, next);
         var finishedAccounting = pcb.accounting().finishAt(realClock.instant());
-        var record = new CompletedProcessRecord(pid, pcb.cpuContext(), finishedAccounting);
+        var record = new CompletedProcessRecord(pid, pcb.cpuContext(), finishedAccounting,
+                pcb.logicalTimes(), pcb.instructionCount());
         if (previous != null) {
             memory.writePcbImage(resources.find(previous.processId()).orElseThrow().kernel(), previous, previousImage);
             previous.setNextPcbAddress(next);

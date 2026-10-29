@@ -41,6 +41,8 @@ public final class MultiprocessRuntime {
     private final java.time.Clock realClock;
     // Un swap-in fallido sólo se reintenta tras un cambio relevante, no en cada Step sin trabajo.
     private boolean reconsiderSwap = true;
+    private boolean reconsiderAdmission = true;
+    private long lastAdmissionTime = -1;
 
     /**
      * Recibe los servicios canónicos de sesión y separa el contador de ticks del Clock real; comienza sin
@@ -86,10 +88,15 @@ public final class MultiprocessRuntime {
         validateStructure();
     }
 
-    /** Admite en orden hasta agotar PENDING o encontrar el primer Job que debe esperar. */
+    /** Reconsidera elegibles por nueva llegada/liberación; respeta bloqueo de cabecera por capacidad. */
     private void admitWaiting() {
+        long now = simulationClock.current();
+        if (!reconsiderAdmission && jobs.entries().stream().noneMatch(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > lastAdmissionTime && job.arrivalTime() <= now)) return;
+        reconsiderAdmission = false;
+        lastAdmissionTime = now;
         while (true) {
-            var result = admission.attemptNextAdmission();
+            var result = admission.attemptNextAdmission(now);
             if (result.isEmpty() || result.orElseThrow() instanceof AdmissionResult.Waiting) return;
         }
     }
@@ -117,13 +124,17 @@ public final class MultiprocessRuntime {
         // Reconsiderar swap-in no consume tiempo; FINISHED no abre un intervalo.
         if (status() == RuntimeStatus.FINISHED) return new RuntimeStepResult.Idle(RuntimeStatus.FINISHED);
         simulationClock.validateCanAdvance();
-        if (dispatcher.owner().isEmpty()) scheduler.selectNext().ifPresent(dispatcher::dispatch);
+        admitWaiting();
+        if (dispatcher.owner().isEmpty()) scheduler.selectNext().ifPresent(
+                pid -> dispatcher.dispatch(pid, simulationClock.current()));
         if (dispatcher.owner().isEmpty()) {
             var idleStatus = status();
-            if (idleStatus == RuntimeStatus.WAITING_FOR_CAPACITY) {
+            if (idleStatus == RuntimeStatus.WAITING_FOR_CAPACITY || idleStatus == RuntimeStatus.WAITING_FOR_ARRIVAL) {
                 simulationClock.advance();
             }
-            return new RuntimeStepResult.Idle(idleStatus);
+            admitWaiting();
+            settle();
+            return new RuntimeStepResult.Idle(status());
         }
 
         var pcb = dispatcher.owner().orElseThrow();
@@ -144,6 +155,8 @@ public final class MultiprocessRuntime {
         // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
         var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
         var result = engine.executeTick(filesystem, screen, memory, cpu, pcb, resident.allocation());
+        // Valida Finish antes del commit; no lo publica si falla la sincronización posterior.
+        if (result == TickResult.PROGRAM_FINISHED) pcb.logicalTimes().finishedAt(Math.incrementExact(simulationClock.current()));
         pcb.replaceCpuContext(cpu.snapshot());
         pcb.replaceAccounting(accounted);
         pcbSynchronizer.sync(pcb);
@@ -151,11 +164,13 @@ public final class MultiprocessRuntime {
         // Commit temporal global: el cleanup posterior puede fallar sin deshacer este intervalo.
         simulationClock.advance();
         if (result == TickResult.PROGRAM_FINISHED) {
+            pcb.recordLogicalFinish(simulationClock.current());
             dispatcher.release();
             completion.complete(pcb.processId());
-            admitWaiting();
+            reconsiderAdmission = true;
             reconsiderSwap = true;
         }
+        admitWaiting();
         settle();
         return new RuntimeStepResult.Executed(pcb.processId(), result, status());
     }
@@ -177,7 +192,10 @@ public final class MultiprocessRuntime {
 
     /** Reintenta Jobs pendientes tras liberación explícita si el workload inició, incluso durante Pause. */
     void retryAdmissionAfterRelease() {
-        if (started) admitWaiting();
+        if (started) {
+            reconsiderAdmission = true;
+            admitWaiting();
+        }
     }
 
     /**
@@ -213,7 +231,17 @@ public final class MultiprocessRuntime {
             return RuntimeStatus.FINISHED;
         }
         if (dispatcher.owner().isPresent() || ready.peek().isPresent()) return RuntimeStatus.RUNNABLE;
+        if (table.size() == 0 && jobs.entries().stream().noneMatch(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() <= simulationClock.current()) && nextArrivalTime().isPresent()) {
+            return RuntimeStatus.WAITING_FOR_ARRIVAL;
+        }
         return RuntimeStatus.WAITING_FOR_CAPACITY;
+    }
+
+    /** Próximo evento futuro, incluso cuando existe además espera por capacidad. */
+    public java.util.OptionalLong nextArrivalTime() {
+        return jobs.entries().stream().filter(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > simulationClock.current()).mapToLong(Job::arrivalTime).min();
     }
 
     /**

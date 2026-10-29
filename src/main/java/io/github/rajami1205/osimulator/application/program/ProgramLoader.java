@@ -7,6 +7,7 @@ import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
+import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
 import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessConfigurationException;
 import java.util.List;
 import java.util.Objects;
@@ -32,6 +33,12 @@ public final class ProgramLoader {
     public ProgramLoadResult loadWithAllocation(
             MainMemory memory, int processId, List<Instruction> instructions
     ) {
+        return loadWithAllocation(memory, processId, instructions, LogicalProcessTimes.admitted(0, 0));
+    }
+
+    public ProgramLoadResult loadWithAllocation(MainMemory memory, int processId,
+            List<Instruction> instructions, LogicalProcessTimes logicalTimes) {
+        Objects.requireNonNull(logicalTimes);
         MainMemory nonNullMemory = Objects.requireNonNull(
                 memory,
                 "memory must not be null"
@@ -52,7 +59,7 @@ public final class ProgramLoader {
         }
         try {
             nonNullMemory.writeUserBlock(allocation, program);
-            ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size());
+            ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size(), logicalTimes);
             pcb.changeState(ProcessState.READY);
             return new ProgramLoadResult(pcb, allocation);
         } catch (RuntimeException | Error exception) {
@@ -69,13 +76,13 @@ public final class ProgramLoader {
     private ProcessControlBlock createProcessControlBlock(
             int processId,
             int programStartAddress,
-            int instructionCount
+            int instructionCount, LogicalProcessTimes logicalTimes
     ) {
         try {
             return new ProcessControlBlock(
                     processId,
                     programStartAddress,
-                    instructionCount
+                    instructionCount, logicalTimes
             );
         } catch (InvalidProcessConfigurationException exception) {
             throw new ProgramLoadException(

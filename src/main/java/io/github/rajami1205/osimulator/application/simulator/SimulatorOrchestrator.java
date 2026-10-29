@@ -151,8 +151,12 @@ public final class SimulatorOrchestrator {
 
     /** Presenta trabajo y prepara el workload sin crear todavía un proceso. */
     public Job submitProgram(ProgramImage program) {
+        return submitProgram(program, 0);
+    }
+
+    public Job submitProgram(ProgramImage program, long arrivalTime) {
         requirePreparedState("submitProgram");
-        var job = jobSubmissionService.submit(program);
+        var job = jobSubmissionService.submit(program, arrivalTime);
         if (lifecycle.state() == SimulatorState.INITIALIZED) lifecycle.markProgramLoaded();
         return job;
     }
@@ -168,7 +172,7 @@ public final class SimulatorOrchestrator {
      */
     public Optional<AdmissionResult> attemptNextAdmission() {
         requirePreparedState("attemptNextAdmission");
-        try { return jobScheduler.attemptNextAdmission(); }
+        try { return jobScheduler.attemptNextAdmission(simulationClock.current()); }
         catch (IllegalStateException | ProgramLoadException | StorageException | MemoryProtectionException
                 | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
     }

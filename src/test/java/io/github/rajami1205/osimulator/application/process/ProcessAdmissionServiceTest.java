@@ -56,6 +56,22 @@ class ProcessAdmissionServiceTest {
         jobs.add(new Job(jobId, "p" + jobId, JobState.PENDING));
     }
 
+    @Test void directAdmissionCannotBypassArrivalAndPublishesSuccessfulLogicalAdmission() {
+        storage.storeProgram("future", List.of(instruction));
+        jobs.add(new Job(1, "future", JobState.PENDING, 5));
+        assertThrows(IllegalStateException.class, () -> service.admit(1));
+        assertThrows(IllegalStateException.class, () -> service.admit(1, 4));
+        assertThrows(IllegalArgumentException.class, () -> service.admit(1, -1));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        assertTrue(queue.entries().isEmpty());
+        var kernel = memory.allocateKernel(140); var user = memory.allocateUser(96);
+        assertInstanceOf(AdmissionResult.Waiting.class, service.admit(1, 5));
+        memory.release(kernel); memory.release(user);
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1, 7));
+        assertEquals(LogicalProcessTimes.admitted(5, 7), table.find(1).orElseThrow().logicalTimes());
+        assertEquals(5, jobs.find(1).orElseThrow().arrivalTime());
+    }
+
     @Test
     void admitsCanonicalReadyPcbsWithIndependentIdsAndPhysicalKernelLinks() throws Exception {
         for (int i = 1; i <= 3; i++) {

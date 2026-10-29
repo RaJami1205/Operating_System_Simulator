@@ -8,6 +8,8 @@ import io.github.rajami1205.osimulator.model.cpu.ConditionFlags;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
+import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
+import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
 import java.util.List;
 import java.util.Objects;
@@ -37,6 +39,12 @@ public record SimulatorSnapshot(
         Optional<String> addressTranslationError,
         OptionalLong simulationTimeSeconds
 ) {
+    /** Deriva el próximo evento sólo de valores capturados, sin consultar el Runtime vivo. */
+    public OptionalLong nextArrivalTime() {
+        if (simulationTimeSeconds.isEmpty()) return OptionalLong.empty();
+        return jobs.stream().filter(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > simulationTimeSeconds.getAsLong()).mapToLong(Job::arrivalTime).min();
+    }
     /** Compatibilidad con snapshots anteriores sin observación del reloj lógico. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
@@ -168,18 +176,33 @@ public record SimulatorSnapshot(
     public record ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
             Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
             List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
-            ProcessAccounting accounting) {
+            ProcessAccounting accounting, LogicalProcessTimes logicalTimes) {
+        /** Compatibilidad con vistas de procesos admitidos al inicio de la sesión. */
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, LogicalProcessTimes.admitted(0, 0));
+        }
+        /** En memoria contigua, la longitud parseada coincide con Limit; no implica servicio efectivo. */
+        public int declaredBurst() { return limit; }
         /** Exige referencias no nulas y copia stack/open files para aislar la vista del PCB mutable. */
         public ProcessDetails {
+            Objects.requireNonNull(logicalTimes);
             Objects.requireNonNull(state); Objects.requireNonNull(residency); Objects.requireNonNull(base);
             Objects.requireNonNull(savedContext); Objects.requireNonNull(nextPcbAddress); Objects.requireNonNull(accounting);
             stack = List.copyOf(stack); openFiles = List.copyOf(openFiles);
         }
     }
     /** Contexto final y accounting de un proceso retirado, sin recursos activos. */
-    public record CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting) {
+    public record CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting,
+            LogicalProcessTimes logicalTimes, int declaredBurst) {
         /** Exige contexto y accounting no nulos para la vista histórica. */
-        public CompletedProcess { Objects.requireNonNull(finalContext); Objects.requireNonNull(accounting); }
+        public CompletedProcess {
+            Objects.requireNonNull(finalContext); Objects.requireNonNull(accounting); Objects.requireNonNull(logicalTimes);
+            if (declaredBurst <= 0) throw new IllegalArgumentException("Declared Burst must be positive");
+        }
     }
     /** Fila de SecondaryStorage con región, dirección y texto descriptivo seguro. */
     public record StorageEntry(int address, StorageRegion region, String content) {

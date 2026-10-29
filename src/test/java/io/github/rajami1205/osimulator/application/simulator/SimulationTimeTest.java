@@ -123,12 +123,14 @@ class SimulationTimeTest {
 
     @Test void errorsBeforeCommitDoNotAdvanceButCleanupFailurePreservesConfirmedTime() throws Exception {
         init("POP AX"); assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(0, time());
+        assertTrue(pcb().logicalTimes().finishTime().isEmpty());
         simulator.reset(); init("MOV AX, 32767", "LOAD AX", "ADD AX");
         for (int i = 0; i < 2; i++) simulator.step();
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(2, time());
         simulator.reset(); init("INC"); pcb().setNextPcbAddress(Optional.of(new PcbAddress(9)));
         assertThrows(ExecutionEngineException.class, simulator::step);
         assertEquals(1, time()); assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(OptionalLong.of(1), pcb().logicalTimes().finishTime());
         assertEquals(SimulatorState.ERROR, simulator.snapshot().simulatorState());
     }
 }

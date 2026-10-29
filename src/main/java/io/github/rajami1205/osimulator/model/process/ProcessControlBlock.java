@@ -23,6 +23,7 @@ public final class ProcessControlBlock {
     private final ProcessStack stack = new ProcessStack();
     private final OpenFileTable openFiles = new OpenFileTable();
     private ProcessAccounting accounting = ProcessAccounting.initial();
+    private LogicalProcessTimes logicalTimes;
     private ProcessState state = ProcessState.NEW;
     private CpuContext<Instruction> cpuContext;
     private int priority;
@@ -33,6 +34,12 @@ public final class ProcessControlBlock {
             int programStartAddress,
             int instructionCount
     ) {
+        this(processId, programStartAddress, instructionCount, LogicalProcessTimes.admitted(0, 0));
+    }
+
+    public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
+            LogicalProcessTimes logicalTimes) {
+        this.logicalTimes = Objects.requireNonNull(logicalTimes);
         validateProcessId(processId);
         this.processId = processId;
         this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
@@ -86,6 +93,13 @@ public final class ProcessControlBlock {
     public OpenFileTable openFiles() { return openFiles; }
     /** Consulta el record inmutable de timestamps reales y ticks consumidos. */
     public ProcessAccounting accounting() { return accounting; }
+    public LogicalProcessTimes logicalTimes() { return logicalTimes; }
+
+    /** Publica un evento previamente validado sin alterar snapshots anteriores. */
+    public void recordFirstDispatch(long time) { logicalTimes = logicalTimes.dispatchedAt(time); }
+
+    /** Se invoca únicamente después del commit temporal del tick terminal. */
+    public void recordLogicalFinish(long time) { logicalTimes = logicalTimes.finishedAt(time); }
     /** Consulta metadata de prioridad que FCFS no usa como criterio de selección. */
     public int priority() { return priority; }
     /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */

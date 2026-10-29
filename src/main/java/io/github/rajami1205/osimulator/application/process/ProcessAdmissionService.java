@@ -14,6 +14,7 @@ import io.github.rajami1205.osimulator.model.process.PcbAddress;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
+import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import java.util.Objects;
@@ -49,8 +50,15 @@ public final class ProcessAdmissionService {
      * capacidad ordinaria y revierte publicaciones ante fallo.
      */
     public AdmissionResult admit(int jobId) {
+        return admit(jobId, 0);
+    }
+
+    /** El coordinador suministra la frontera lógica; ninguna ruta admite llegadas futuras. */
+    public AdmissionResult admit(int jobId, long currentTime) {
+        if (currentTime < 0) throw new IllegalArgumentException("Negative admission time");
         Job job = jobs.find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
         if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
+        if (job.arrivalTime() > currentTime) throw new IllegalStateException("Job has not arrived: " + jobId);
         if (processes.isFull()) return new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED);
         if (nextProcessId > Integer.MAX_VALUE) throw new IllegalStateException("Process IDs exhausted");
         int pid = (int) nextProcessId;
@@ -74,7 +82,8 @@ public final class ProcessAdmissionService {
         boolean linkChanged = false;
         boolean enqueued = false;
         try {
-            loaded = loader.loadWithAllocation(memory, pid, program);
+            loaded = loader.loadWithAllocation(memory, pid, program,
+                    LogicalProcessTimes.admitted(job.arrivalTime(), currentTime));
             memory.materializePcb(kernel, loaded.pcb());
             var address = new PcbAddress(kernel.base());
             previous = processes.last().orElse(null);

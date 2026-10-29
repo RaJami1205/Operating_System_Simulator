@@ -82,6 +82,8 @@
                             </columnConstraints>
                             <Label text="Program file (.asm)" wrapText="true" styleClass="section-label"/>
                             <TextField fx:id="programPathField" editable="false" maxWidth="Infinity" promptText="No program selected" styleClass="input-field" GridPane.columnIndex="1"/>
+                            <Label text="Arrival (logical s)" wrapText="true" styleClass="section-label" GridPane.rowIndex="2"/>
+                            <TextField fx:id="arrivalTimeField" text="0" maxWidth="Infinity" styleClass="input-field" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
                             <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
                             <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Program" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
                         </GridPane>
@@ -181,6 +183,7 @@
                                             <TableColumn fx:id="jobIdColumn" text="Job ID" prefWidth="70"/>
                                             <TableColumn fx:id="jobNameColumn" text="Program" prefWidth="220"/>
                                             <TableColumn fx:id="jobStateColumn" text="State" prefWidth="100"/>
+                                            <TableColumn fx:id="jobArrivalColumn" text="Arrival (s)" prefWidth="110"/>
                                         </columns>
                                     </TableView>
                                     <GridPane hgap="6" vgap="4">

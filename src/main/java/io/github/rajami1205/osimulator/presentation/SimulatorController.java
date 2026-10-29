@@ -82,6 +82,7 @@ public final class SimulatorController {
     @FXML private Button resumeButton;
     @FXML private Button resetButton;
     @FXML private TextField programPathField;
+    @FXML private TextField arrivalTimeField;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
     @FXML private ListView<String> readyList;
@@ -102,6 +103,7 @@ public final class SimulatorController {
     @FXML private TableColumn<Job, String> jobIdColumn;
     @FXML private TableColumn<Job, String> jobNameColumn;
     @FXML private TableColumn<Job, String> jobStateColumn;
+    @FXML private TableColumn<Job, String> jobArrivalColumn;
     @FXML private TableView<ProcessDetails> processTable;
     @FXML private TableColumn<ProcessDetails, String> pidColumn;
     @FXML private TableColumn<ProcessDetails, String> processStateColumn;
@@ -147,7 +149,9 @@ public final class SimulatorController {
         });
         completedTable.getSelectionModel().selectedItemProperty().addListener((o, before, after) ->
                 completedDetailArea.setText(after == null ? "Select a completed process"
-                        : DashboardDetails.context(after.finalContext()) + DashboardDetails.accounting(after.accounting())));
+                        : DashboardDetails.context(after.finalContext())
+                        + DashboardDetails.logical(after.logicalTimes(), after.declaredBurst())
+                        + DashboardDetails.accounting(after.accounting())));
         refresh();
     }
     /**
@@ -166,6 +170,7 @@ public final class SimulatorController {
         column(storageContentColumn, StorageEntry::content);
         regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case VIRTUAL_MEMORY -> "virtual-memory-row"; });
         column(jobIdColumn, v -> Integer.toString(v.jobId())); column(jobNameColumn, Job::programName); column(jobStateColumn, v -> v.state().name());
+        column(jobArrivalColumn, v -> Long.toString(v.arrivalTime()));
         column(pidColumn, v -> Integer.toString(v.processId())); column(processStateColumn, v -> v.state().name());
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
         column(baseColumn, v -> v.base().map(Object::toString).orElse("\u2014")); column(limitColumn, v -> Integer.toString(v.limit()));
@@ -197,39 +202,48 @@ public final class SimulatorController {
     @FXML private void handleLoadProgram() {
         command(() -> {
             if (selectedProgramPath == null) throw new IllegalStateException("Select an ASM program first.");
+            long arrival = parseArrivalTime(arrivalTimeField.getText());
             var instructions = programImporter.importProgram(selectedProgramPath);
             var name = selectedProgramPath.getFileName().toString();
-            orchestrator.submitProgram(new ProgramImage(name, instructions));
+            orchestrator.submitProgram(new ProgramImage(name, instructions), arrival);
             feedback = "Submitted " + name + ". Workload ready; load another program or Start.";
         });
+    }
+    /** Parsing entero exacto; evita redondeos y efectos de carga ante entradas inválidas. */
+    static long parseArrivalTime(String text) {
+        final long arrival;
+        try { arrival = Long.parseLong(text.strip()); }
+        catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Arrival Time must be an integer from 0 to " + Long.MAX_VALUE + ".", failure);
+        }
+        if (arrival < 0) throw new IllegalArgumentException("Arrival Time cannot be negative.");
+        return arrival;
     }
     /** Solicita Start al Orchestrator a través de la frontera común de errores y refresh. */
     @FXML private void handleStart() { command(orchestrator::start); }
     /** Ejecuta la misma ruta de un tick usada por Automatic. */
     @FXML private void handleStep() { executeSingleStep(); }
-    /** Activa Timeline sólo si el snapshot está RUNNABLE y no existe ejecución automática activa. */
+    /** Activa Timeline si hay trabajo ejecutable o una llegada futura pendiente. */
     @FXML private void handleAutomatic() {
         if (!runnable() || automaticMode) return;
         automaticMode = true;
         refresh();
         automaticTimeline.playFromStart();
     }
-    /** Consulta si el último snapshot permite ticks: lifecycle RUNNING y runtime RUNNABLE. */
+    /** Una llegada futura justifica IDLE automático, incluso si también falta capacidad. */
     private boolean runnable() {
-        return view.simulatorState() == SimulatorState.RUNNING && view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE;
+        return view.simulatorState() == SimulatorState.RUNNING
+                && (view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE || view.nextArrivalTime().isPresent());
     }
-    /** Manual permite confirmar intervalos IDLE; Automatic sigue exigiendo trabajo ejecutable. */
+    /** Manual permite confirmar intervalos IDLE aunque no exista un próximo evento. */
     private boolean canStep() {
         return view.simulatorState() == SimulatorState.RUNNING
                 && view.runtimeStatus().filter(status -> status != RuntimeStatus.FINISHED).isPresent();
     }
-    /** Solicita un intervalo válido; Manual admite esperas y Automatic se detiene fuera de RUNNABLE. */
+    /** Manual y Automatic usan el mismo Step; render decide continuidad desde el nuevo snapshot. */
     private void executeSingleStep() {
         if (!canStep() || (automaticMode && !runnable())) { stopAutomaticExecution(); refresh(); return; }
-        command(() -> {
-            var result = orchestrator.step();
-            if (result.status() != RuntimeStatus.RUNNABLE) stopAutomaticExecution();
-        });
+        command(orchestrator::step);
     }
     /** Pausa Timeline y delega Pause de sesión sin alterar estados de procesos desde JavaFX. */
     @FXML private void handlePause() {
@@ -246,6 +260,7 @@ public final class SimulatorController {
         stopAutomaticExecution();
         selectedProgramPath = null; selectedProcessId = null;
         programPathField.clear(); feedback = "";
+        arrivalTimeField.setText("0");
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
     }
     /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
@@ -282,19 +297,20 @@ public final class SimulatorController {
     }
     /**
      * Actualiza paneles desde el snapshot y conserva selecciones; detiene Timeline al terminar, fallar o
-     * esperar recursos/input.
+     * esperar recursos sin llegadas futuras.
      */
     private void render(SimulatorSnapshot snapshot) {
         view = snapshot;
         if (snapshot.simulatorState() == SimulatorState.ERROR || snapshot.simulatorState() == SimulatorState.FINISHED
-                || (snapshot.simulatorState() == SimulatorState.RUNNING && snapshot.runtimeStatus().orElse(null) != RuntimeStatus.RUNNABLE)) {
+                || (snapshot.simulatorState() == SimulatorState.RUNNING && !runnable())) {
             stopAutomaticExecution();
         }
         cpuTicksLabel.setText(snapshot.cpuTicks().isPresent() ? Long.toString(snapshot.cpuTicks().getAsLong()) : "\u2014");
         simulatorStateLabel.setText(snapshot.simulatorState().name());
         runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014")
                 + "\nSimulation Time: " + (snapshot.simulationTimeSeconds().isPresent()
-                ? snapshot.simulationTimeSeconds().getAsLong() + " s" : "\u2014"));
+                ? snapshot.simulationTimeSeconds().getAsLong() + " s" : "\u2014")
+                + (snapshot.nextArrivalTime().isPresent() ? "\nNext Arrival: " + snapshot.nextArrivalTime().getAsLong() + " s" : ""));
         ownerValueLabel.setText(snapshot.ownerPid().map(pid -> "PID " + pid).orElse("Idle"));
         cpuOwnerLabel.setText(snapshot.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers"));
         renderCpu(snapshot);
@@ -364,6 +380,7 @@ public final class SimulatorController {
         if (snapshot.runtimeStatus().isPresent()) return switch (snapshot.runtimeStatus().orElseThrow()) {
             case RUNNABLE -> automaticMode ? "Automatic execution" : "Ready for next CPU tick";
             case WAITING_FOR_CAPACITY -> "Waiting for capacity";
+            case WAITING_FOR_ARRIVAL -> "Waiting for arrival";
             case FINISHED -> "Workload finished";
         };
         return switch (snapshot.simulatorState()) {
@@ -379,6 +396,7 @@ public final class SimulatorController {
         boolean configuring = state == SimulatorState.CONFIGURING;
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
+        arrivalTimeField.setDisable(!loading);
         loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
         stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);

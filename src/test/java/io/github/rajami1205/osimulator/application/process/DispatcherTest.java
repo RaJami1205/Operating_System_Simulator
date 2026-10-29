@@ -10,6 +10,17 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DispatcherTest {
+    @Test void logicalDispatchIsPublishedOnlyOnSuccessAndSurvivesRedispatch() {
+        var pcb = add(1);
+        assertThrows(IllegalArgumentException.class, () -> dispatcher.dispatch(1, -1));
+        assertTrue(pcb.logicalTimes().firstDispatchTime().isEmpty());
+        assertEquals(ProcessState.READY, pcb.state()); assertTrue(dispatcher.owner().isEmpty());
+        dispatcher.dispatch(1, 3);
+        assertEquals(OptionalLong.of(3), pcb.logicalTimes().firstDispatchTime());
+        pcb.changeState(ProcessState.BLOCKED); dispatcher.release();
+        pcb.changeState(ProcessState.READY); ready.enqueue(1); dispatcher.dispatch(1, 7);
+        assertEquals(OptionalLong.of(3), pcb.logicalTimes().firstDispatchTime());
+    }
     private final CpuRegisters<Instruction> cpu = new CpuRegisters<>();
     private final MainMemory memory = new MainMemory(new MemoryConfiguration(160,64));
     private final ProcessTable table = new ProcessTable();

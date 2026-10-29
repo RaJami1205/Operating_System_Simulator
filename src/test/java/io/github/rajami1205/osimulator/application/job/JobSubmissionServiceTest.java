@@ -11,6 +11,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class JobSubmissionServiceTest {
+    @Test void arrivalValidationPrecedesStorageAndMetadataSurvivesAdmission() {
+        assertThrows(IllegalArgumentException.class, () -> service.submit(program("future"), -1));
+        assertTrue(storage.entries().isEmpty()); assertTrue(jobs.entries().isEmpty());
+        var submitted = service.submit(program("future"), Long.MAX_VALUE);
+        assertEquals(1, submitted.jobId());
+        jobs.markAdmitted(submitted.jobId());
+        assertEquals(Long.MAX_VALUE, jobs.find(1).orElseThrow().arrivalTime());
+        assertEquals(JobState.PENDING, submitted.state());
+    }
     private final SecondaryStorage storage = new SecondaryStorage(128, 64);
     private final JobList jobs = new JobList();
     private final JobSubmissionService service = new JobSubmissionService(storage, jobs);

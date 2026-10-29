@@ -28,6 +28,59 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void arrivalInputUsesExactLongParsingAndRejectsInvalidValues() {
+        assertEquals(0, SimulatorController.parseArrivalTime("0"));
+        assertEquals(Long.MAX_VALUE, SimulatorController.parseArrivalTime("9223372036854775807"));
+        for (String text : List.of("-1", "", "1.5", "NaN", "9223372036854775808")) {
+            assertTrue(assertThrows(IllegalArgumentException.class,
+                    () -> SimulatorController.parseArrivalTime(text)).getMessage().contains("Arrival Time"));
+        }
+    }
+
+    @Test void automaticFollowsFutureArrivalsAndStopsWhenOnlyCapacityRemains() throws Exception { onFx(() -> {
+        for (boolean capacity : List.of(false, true)) {
+            var f = new Fixture();
+            if (capacity) f.widget("kernelMemorySlider", Slider.class).setValue(255);
+            f.action("handleInitialize");
+            if (capacity) f.load("large.asm", "INC", "INC");
+            f.widget("arrivalTimeField", TextField.class).setText("2"); f.load("future.asm", "INC");
+            assertEquals(2, f.simulator.jobs().getLast().arrivalTime());
+            f.action("handleStart"); f.enabled("arrivalTimeField", false); f.enabled("automaticButton", true);
+            f.action("handleAutomatic");
+            var timeline = (Timeline) get(f.controller, "automaticTimeline");
+            try {
+                assertEquals(javafx.animation.Animation.Status.RUNNING, timeline.getStatus());
+                assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Next Arrival: 2 s"));
+                timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                f.action("handlePause"); f.action("handleResume");
+                assertEquals(javafx.animation.Animation.Status.RUNNING, timeline.getStatus());
+                timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                assertEquals(0, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(capacity ? javafx.animation.Animation.Status.STOPPED : javafx.animation.Animation.Status.RUNNING,
+                        timeline.getStatus());
+                if (!capacity) {
+                    timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                    assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                    assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
+                    f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
+                    assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Declared Burst (parsed instructions): 1"));
+                }
+                f.action("handleReset"); assertEquals("0", f.widget("arrivalTimeField", TextField.class).getText());
+            } finally { timeline.stop(); }
+        }
+    }); }
+
+    @Test void invalidArrivalDoesNotPublishProgramAndAllowsCorrection() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        f.widget("arrivalTimeField", TextField.class).setText("9223372036854775808");
+        f.load("invalid-arrival.asm", "INC");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Arrival Time must be an integer"));
+        f.closeAlerts(); f.widget("arrivalTimeField", TextField.class).setText("0"); f.action("handleLoadProgram");
+        assertEquals(1, f.simulator.jobs().size());
+    }); }
     @Test void manualIdleAdvancesTimeWhileAutomaticStopsAndRefreshIsFree() throws Exception { onFx(() -> {
         var f = new Fixture(); f.widget("kernelMemorySlider",Slider.class).setValue(255);
         f.action("handleInitialize");
@@ -132,7 +185,7 @@ class DashboardControllerTest {
                 columns++;
             }
         }
-        assertEquals(22, columns);
+        assertEquals(23, columns);
     }
     @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
         var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());
@@ -158,11 +211,12 @@ class DashboardControllerTest {
         var initial = f.simulator.snapshot();
         var cpu = initial.cpu().orElseThrow();
         var accounting = io.github.rajami1205.osimulator.model.process.ProcessAccounting.initial();
+        var times = io.github.rajami1205.osimulator.model.process.LogicalProcessTimes.admitted(0, 0);
         // Read-model fixture: admission order is 9 then 2; completion history is 8 then 1.
         var processes = List.of(9, 2).stream().map(pid -> new ProcessDetails(pid,
                 io.github.rajami1205.osimulator.model.process.ProcessState.READY, 0, Residency.RESIDENT,
-                Optional.of(32), 1, 0, cpu, List.of(), List.of(), 0, Optional.empty(), accounting)).toList();
-        var completed = List.of(new CompletedProcess(8, cpu, accounting), new CompletedProcess(1, cpu, accounting));
+                Optional.of(32), 1, 0, cpu, List.of(), List.of(), 0, Optional.empty(), accounting, times)).toList();
+        var completed = List.of(new CompletedProcess(8, cpu, accounting, times, 1), new CompletedProcess(1, cpu, accounting, times, 1));
         var snapshot = new SimulatorSnapshot(initial.simulatorState(), initial.cpu(), initial.currentInstruction(),
                 initial.process(), initial.program(), initial.memory(), initial.runtimeStatus(), initial.ownerPid(),
                 initial.configuration(), initial.jobs(), processes, initial.readyQueue(), initial.suspendedReadyQueue(),

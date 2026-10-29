@@ -28,9 +28,14 @@ public final class JobSubmissionService {
      * creado y conserva el diagnóstico de rollback.
      */
     public Job submit(ProgramImage program) {
+        return submit(program, 0);
+    }
+
+    /** Valida Arrival antes de publicar el programa o reservar almacenamiento. */
+    public Job submit(ProgramImage program, long arrivalTime) {
         Objects.requireNonNull(program, "program must not be null");
         if (nextJobId > Integer.MAX_VALUE) throw new IllegalStateException("Job IDs exhausted");
-        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING);
+        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING, arrivalTime);
         if (jobs.find(job.jobId()).isPresent()) throw new IllegalStateException("Next Job ID is already in use");
         // Un fallo aquí no autoriza eliminar un programa que ya existía.
         storage.storeProgram(program.logicalName(), program.instructions());

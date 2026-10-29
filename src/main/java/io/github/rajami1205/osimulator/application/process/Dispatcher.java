@@ -43,6 +43,10 @@ public final class Dispatcher {
      * consume ticks.
      */
     public void dispatch(int pid) {
+        dispatch(pid, 0);
+    }
+
+    public void dispatch(int pid, long currentTime) {
         if (owner != null) throw new IllegalStateException("CPU already owned");
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Unknown selected process"));
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
@@ -56,11 +60,14 @@ public final class Dispatcher {
         }
         memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
         memory.validatePcbAllocation(resource.kernel(), pcb);
+        // Prevalida el evento antes de restaurar CPU; sólo se publica tras sincronización exitosa.
+        pcb.logicalTimes().dispatchedAt(currentTime);
         cpu.restore(pcb.cpuContext());
         ready.poll();
         pcb.changeState(ProcessState.RUNNING);
         owner = pcb;
         pcbSynchronizer.sync(pcb);
+        pcb.recordFirstDispatch(currentTime);
     }
 
     /**

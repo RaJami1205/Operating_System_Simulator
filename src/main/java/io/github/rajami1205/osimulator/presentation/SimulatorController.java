@@ -36,6 +36,9 @@ public final class SimulatorController {
     private Integer selectedProcessId;
     private SimulatorSnapshot view;
     private boolean renderingSelection;
+    private boolean renderingCpuSelection;
+    @FXML private ComboBox<Integer> cpuCountBox;
+    @FXML private ComboBox<Integer> cpuSelector;
     private String feedback = "";
     @FXML private Label cpuTicksLabel;
     @FXML private TableColumn<CompletedProcess, String> completedCpuTicksColumn;
@@ -127,6 +130,12 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
+        cpuCountBox.setValue(1);
+        cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
+        cpuSelector.valueProperty().addListener((o, before, after) -> {
+            if (!renderingCpuSelection && view != null) render(view);
+        });
         mainMemorySlider.setMin(SimulatorConfiguration.MIN_MAIN_MEMORY);
         kernelMemorySlider.setMin(SimulatorConfiguration.MIN_KERNEL_MEMORY);
         configureSlider(mainMemorySlider, mainMemoryValue, mainMemoryRange);
@@ -184,7 +193,7 @@ public final class SimulatorController {
     @FXML private void handleInitialize() {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
-                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider))));
+                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue())));
     }
     /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
@@ -302,28 +311,38 @@ public final class SimulatorController {
      */
     private void render(SimulatorSnapshot snapshot) {
         view = snapshot;
+        renderingCpuSelection = true;
+        var selectedCpu = cpuSelector.getValue();
+        try {
+            cpuSelector.getItems().setAll(snapshot.cpus().stream().map(c -> c.id().value()).toList());
+            cpuSelector.setValue(cpuSelector.getItems().contains(selectedCpu) ? selectedCpu
+                    : cpuSelector.getItems().isEmpty() ? null : cpuSelector.getItems().getFirst());
+        } finally { renderingCpuSelection = false; }
+        var local = snapshot.cpus().stream().filter(c -> Objects.equals(cpuSelector.getValue(), c.id().value())).findFirst();
         if (snapshot.simulatorState() == SimulatorState.ERROR || snapshot.simulatorState() == SimulatorState.FINISHED
                 || (snapshot.simulatorState() == SimulatorState.RUNNING && !runnable())) {
             stopAutomaticExecution();
         }
-        cpuTicksLabel.setText(snapshot.cpuTicks().isPresent() ? Long.toString(snapshot.cpuTicks().getAsLong()) : "\u2014");
+        cpuTicksLabel.setText(local.map(c -> Long.toString(c.cpuTicks())).orElse("\u2014"));
         simulatorStateLabel.setText(snapshot.simulatorState().name());
         runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014")
                 + "\nSimulation Time: " + (snapshot.simulationTimeSeconds().isPresent()
                 ? snapshot.simulationTimeSeconds().getAsLong() + " s" : "\u2014")
                 + (snapshot.nextArrivalTime().isPresent() ? "\nNext Arrival: " + snapshot.nextArrivalTime().getAsLong() + " s" : ""));
-        ownerValueLabel.setText(snapshot.ownerPid().map(pid -> "PID " + pid).orElse("Idle"));
-        cpuOwnerLabel.setText(snapshot.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers"));
-        renderCpu(snapshot);
-        currentInstructionLabel.setText(snapshot.currentInstruction().map(InstructionSnapshot::semanticInstruction).orElse("\u2014"));
-        opcodeValueLabel.setText(snapshot.currentInstruction().map(InstructionSnapshot::opcode).orElse("\u2014"));
-        value(operandValueLabel, snapshot.currentInstruction().map(InstructionSnapshot::operand).orElse("\u2014"));
+        ownerValueLabel.setText(local.map(c -> "CPU " + c.id().value() + ": "
+                + c.ownerPid().map(pid -> "PID " + pid).orElse("Idle")).orElse("Idle"));
+        cpuOwnerLabel.setText(local.map(c -> "CPU " + c.id().value() + " · "
+                + c.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers")).orElse("Idle"));
+        renderCpu(local);
+        currentInstructionLabel.setText(local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::semanticInstruction).orElse("\u2014"));
+        opcodeValueLabel.setText(local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::opcode).orElse("\u2014"));
+        value(operandValueLabel, local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::operand).orElse("\u2014"));
         executionStatusLabel.setText(statusText(snapshot));
         jobsTable.getItems().setAll(snapshot.jobs());
         renderProcesses(snapshot);
-        programTable.getItems().setAll(snapshot.program()); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
-        readyList.getItems().setAll(snapshot.readyQueue().stream().map(pid -> "PID " + pid).toList());
-        suspendedList.getItems().setAll(snapshot.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList());
+        programTable.getItems().setAll(local.map(CpuView::program).orElse(List.of())); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
+        readyList.getItems().setAll(local.map(CpuView::readyQueue).orElse(List.of()).stream().map(pid -> "PID " + pid).toList());
+        suspendedList.getItems().setAll(local.map(CpuView::suspendedReadyQueue).orElse(List.of()).stream().map(pid -> "PID " + pid).toList());
         screenList.getItems().setAll(snapshot.screenOutput().stream().map(Object::toString).toList());
         var selected = completedTable.getSelectionModel().getSelectedItem();
         completedTable.getItems().setAll(snapshot.completedProcesses());
@@ -354,12 +373,12 @@ public final class SimulatorController {
                 .findFirst().map(DashboardDetails::process).orElse("Select a process"));
     }
     /** Muestra registros del CPU activo y tooltips, sin confundirlos con el contexto guardado del PCB. */
-    private void renderCpu(SimulatorSnapshot snapshot) {
-        var cpu = snapshot.cpu();
-        value(pcValueLabel, snapshot.addressTranslationError().isPresent() ? "ERROR"
-                : snapshot.nextInstructionPhysicalAddress().map(Object::toString).orElse("\u2014"));
+    private void renderCpu(java.util.Optional<CpuView> local) {
+        var cpu = local.map(CpuView::cpu);
+        value(pcValueLabel, local.flatMap(CpuView::addressTranslationError).isPresent() ? "ERROR"
+                : local.flatMap(CpuView::nextInstructionPhysicalAddress).map(Object::toString).orElse("\u2014"));
         cpuOwnerLabel.setText(cpuOwnerLabel.getText() + "\nLogical PC: "
-                + snapshot.ownerPid().flatMap(pid -> cpu).map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
+                + local.flatMap(CpuView::ownerPid).flatMap(pid -> cpu).map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
         value(irValueLabel, cpu.flatMap(CpuSnapshot::instructionRegister).orElse("\u2014"));
         value(acValueLabel, cpu.map(v -> Integer.toString(v.accumulator())).orElse("\u2014"));
         value(axValueLabel, cpu.map(v -> Integer.toString(v.ax())).orElse("\u2014"));
@@ -395,6 +414,8 @@ public final class SimulatorController {
     private void updateControls(SimulatorSnapshot snapshot) {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
+        cpuCountBox.setDisable(!configuring);
+        cpuSelector.setDisable(snapshot.cpus().isEmpty());
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
         arrivalTimeField.setDisable(!loading);
@@ -433,6 +454,8 @@ public final class SimulatorController {
 
     /** Restituye los defaults del modelo en los cuatro sliders y recalcula límites dependientes. */
     private void restoreConfigurationDefaults() {
+        cpuCountBox.setValue(1);
+        updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
         secondaryStorageSlider.setValue(defaults.secondaryStoragePositions());
@@ -440,6 +463,14 @@ public final class SimulatorController {
         updateDependentRange(virtualMemorySlider, secondaryStorageSlider);
         kernelMemorySlider.setValue(defaults.mainMemory().kernelReservedPositions());
         virtualMemorySlider.setValue(defaults.virtualMemoryPositions());
+    }
+
+    private void updateCpuMemoryLimits() {
+        int kernelMinimum = SimulatorConfiguration.MIN_KERNEL_MEMORY * cpuCountBox.getValue();
+        // Ampliar Main y el máximo Kernel antes de subir su mínimo evita rangos transitoriamente inválidos.
+        mainMemorySlider.setMin(Math.max(SimulatorConfiguration.MIN_MAIN_MEMORY, kernelMinimum + 1));
+        updateDependentRange(kernelMemorySlider, mainMemorySlider);
+        kernelMemorySlider.setMin(kernelMinimum);
     }
 
     /** Presenta un Alert con el diagnóstico controlado, sin mostrar stack traces al usuario. */

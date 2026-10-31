@@ -38,14 +38,16 @@ class SimulatorOrchestratorTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(ints = {2, 3, 4, 5})
-    void rejectsMultiCpuBeforeInitializingAndAllowsSingleCpuRetry(int cpus) {
-        var before = simulator.snapshot();
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2, 3, 4, 5})
+    void initializesConfiguredTopologyAndResetAllowsSingleCpu(int cpus) {
         var configuration = new SimulatorConfiguration(new MemoryConfiguration(1024, 700), 512, 64, cpus);
-        var failure = assertThrows(IllegalArgumentException.class, () -> simulator.initialize(configuration));
-        assertTrue(failure.getMessage().contains("Multi-CPU execution is not implemented"));
-        assertEquals(before, simulator.snapshot());
-        assertTrue(simulator.configuration().isEmpty());
+        simulator.initialize(configuration);
+        assertEquals(cpus, simulator.snapshot().cpus().size());
+        assertEquals(configuration, simulator.configuration().orElseThrow());
+        assertEquals(0, simulator.snapshot().simulationTimeSeconds().orElseThrow());
+        assertTrue(simulator.snapshot().cpus().stream().allMatch(cpu -> cpu.ownerPid().isEmpty() && cpu.cpuTicks() == 0));
+        simulator.reset();
+        assertTrue(simulator.snapshot().cpus().isEmpty());
         simulator.initialize(SimulatorConfiguration.defaults());
         assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
         assertEquals(1, simulator.configuration().orElseThrow().cpuCount());

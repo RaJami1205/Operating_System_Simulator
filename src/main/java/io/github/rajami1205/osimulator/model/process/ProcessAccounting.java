@@ -25,16 +25,17 @@ public record ProcessAccounting(OptionalInt cpuId, Optional<Instant> startTime,
     }
 
     /**
-     * Prepara CPU 0, inicio del primer intento y un tick adicional; rechaza overflow y ticks tras finish.
+     * Prepara CPU ejecutora, inicio del primer intento y un tick adicional; rechaza migración y overflow.
      * El runtime publica el record sólo si el engine retorna exitosamente.
      */
     public ProcessAccounting recordSuccessfulCpuTick(int executingCpuId, Instant tickStart) {
         Objects.requireNonNull(tickStart, "tickStart must not be null");
-        if (executingCpuId != 0 || (cpuId.isPresent() && cpuId.getAsInt() != 0)) {
-            throw new IllegalArgumentException("Only canonical CPU 0 is supported");
+        if (executingCpuId < 0 || executingCpuId >= io.github.rajami1205.osimulator.model.cpu.CpuId.MAX_CPU_COUNT
+                || (cpuId.isPresent() && cpuId.getAsInt() != executingCpuId)) {
+            throw new IllegalArgumentException("Invalid CPU or attempted CPU migration");
         }
         if (finishTime.isPresent()) throw new IllegalStateException("Completed accounting cannot consume CPU");
-        return new ProcessAccounting(OptionalInt.of(0), startTime.isPresent() ? startTime : Optional.of(tickStart),
+        return new ProcessAccounting(OptionalInt.of(executingCpuId), startTime.isPresent() ? startTime : Optional.of(tickStart),
                 Math.incrementExact(cpuTicks), Optional.empty());
     }
 

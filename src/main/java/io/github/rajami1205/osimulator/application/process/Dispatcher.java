@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.application.process;
 
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
@@ -20,16 +21,24 @@ public final class Dispatcher {
     private ProcessControlBlock owner;
     private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
+    private final CpuId cpuId;
 
     /** Recibe CPU, tabla, cola y recursos de la misma sesión; comienza sin owner. */
     public Dispatcher(CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
             ProcessResourceRegistry resources, MainMemory memory) {
+        this(CpuId.ZERO, cpu, table, ready, resources, memory);
+    }
+
+    public Dispatcher(CpuId cpuId, CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
+            ProcessResourceRegistry resources, MainMemory memory) {
+        this.cpuId = Objects.requireNonNull(cpuId);
         this.memory = Objects.requireNonNull(memory);
         this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.cpu = Objects.requireNonNull(cpu);
         this.table = Objects.requireNonNull(table);
         this.ready = Objects.requireNonNull(ready);
         this.resources = Objects.requireNonNull(resources);
+        ready.requireBinding(cpuId, table);
     }
 
     /**
@@ -51,6 +60,7 @@ public final class Dispatcher {
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Unknown selected process"));
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
         if (!ready.peek().equals(Optional.of(pid)) || pcb.state() != ProcessState.READY
+                || !pcb.cpuAffinity().equals(cpuId)
                 || !(resource.residence() instanceof UserImageResidence.Resident resident)
                 || resident.allocation().base() != pcb.memoryBounds().base()
                 || resident.allocation().size() != pcb.instructionCount()

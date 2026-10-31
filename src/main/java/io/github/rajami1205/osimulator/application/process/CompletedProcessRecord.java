@@ -5,16 +5,22 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
 import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /** Historial inmutable de contexto final y accounting; no conserva PCB ni handles de recursos activos. */
 public record CompletedProcessRecord(int processId, CpuContext<Instruction> finalContext, ProcessAccounting accounting,
-        LogicalProcessTimes logicalTimes, int declaredBurst) {
+        LogicalProcessTimes logicalTimes, int declaredBurst, CpuId cpuAffinity) {
+    public CompletedProcessRecord(int processId, CpuContext<Instruction> finalContext, ProcessAccounting accounting,
+            LogicalProcessTimes logicalTimes, int declaredBurst) {
+        this(processId, finalContext, accounting, logicalTimes, declaredBurst, CpuId.ZERO);
+    }
     /** Exige PID positivo, contexto final y accounting no nulos, sin retener recursos mutables. */
     public CompletedProcessRecord {
         if (processId <= 0) throw new IllegalArgumentException("PID must be positive");
         Objects.requireNonNull(finalContext);
         Objects.requireNonNull(accounting);
         Objects.requireNonNull(logicalTimes);
+        Objects.requireNonNull(cpuAffinity);
         if (declaredBurst <= 0) throw new IllegalArgumentException("Declared Burst must be positive");
     }
 }

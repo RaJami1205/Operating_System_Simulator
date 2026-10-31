@@ -13,6 +13,8 @@ import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.HashSet;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Coordina Step, completion y disponibilidad global sobre un CPU. Delega ownership al Dispatcher
@@ -43,6 +45,25 @@ public final class MultiprocessRuntime {
     private boolean reconsiderSwap = true;
     private boolean reconsiderAdmission = true;
     private long lastAdmissionTime = -1;
+
+    /** F07 sólo conecta CPU 0; una topología mayor requiere el coordinador de F08. */
+    public MultiprocessRuntime(CpuTopology topology, ExecutionEngine engine, MainMemory memory,
+            SimulatedFileSystem filesystem, ScreenDevice screen, ProcessCompletionService completion,
+            ProcessSwapService swap, JobScheduler admission, JobList jobs, ProcessTable table,
+            ProcessResourceRegistry resources, SimulationClock simulationClock, java.time.Clock realClock) {
+        this(singleNode(topology).dispatcher(), engine, singleNode(topology).registers(), memory, filesystem,
+                screen, completion, swap, admission, jobs, table, resources,
+                singleNode(topology).readyQueue(), singleNode(topology).suspendedReadyQueue(),
+                singleNode(topology).scheduler(), singleNode(topology).tickCounter(), simulationClock, realClock);
+        topology.requireSharedResources(table, memory, resources);
+    }
+
+    private static io.github.rajami1205.osimulator.application.cpu.CpuNode singleNode(CpuTopology topology) {
+        if (Objects.requireNonNull(topology).nodes().size() != 1) {
+            throw new IllegalArgumentException("Multi-CPU execution requires a coordinator");
+        }
+        return topology.node(CpuId.ZERO);
+    }
 
     /**
      * Recibe los servicios canónicos de sesión y separa el contador de ticks del Clock real; comienza sin
@@ -184,7 +205,9 @@ public final class MultiprocessRuntime {
         if (suspended.entries().contains(pid)) throw new IllegalStateException("Already queued suspended process");
         var result = swap.swapOut(pid);
         if (result instanceof SwapResult.Completed) {
-            if (table.find(pid).orElseThrow().state() == ProcessState.READY_SUSPENDED) suspended.enqueue(pid);
+            // La ruta con topología ya publicó la cola local; el constructor legacy sigue delegando aquí.
+            if (table.find(pid).orElseThrow().state() == ProcessState.READY_SUSPENDED
+                    && !suspended.entries().contains(pid)) suspended.enqueue(pid);
             reconsiderSwap = true;
         }
         return result;
@@ -259,6 +282,7 @@ public final class MultiprocessRuntime {
             throw new IllegalStateException("Inconsistent active process structures");
         }
         for (var pcb : table.entries()) {
+            if (!pcb.cpuAffinity().equals(CpuId.ZERO)) throw new IllegalStateException("Single-CPU runtime requires CPU 0 affinity");
             int pid = pcb.processId();
             var state = pcb.state();
             if (state == ProcessState.BLOCKED || state == ProcessState.BLOCKED_SUSPENDED) {

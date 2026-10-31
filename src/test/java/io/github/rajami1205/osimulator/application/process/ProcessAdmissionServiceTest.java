@@ -22,21 +22,24 @@ class ProcessAdmissionServiceTest {
         var memory = new MainMemory(configuration.mainMemory());
         var table = new ProcessTable(configuration.maxProcesses());
         var registry = new ProcessResourceRegistry();
-        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var topology = new io.github.rajami1205.osimulator.application.cpu.CpuTopology(5, table, memory, registry);
+        var service = new ProcessAdmissionService(topology, jobs, storage, memory, table, new ProgramLoader(), registry);
         for (int pid = 1; pid <= 26; pid++) submit(pid, 1);
         for (int pid = 1; pid <= 25; pid++) {
             assertEquals(new AdmissionResult.Admitted(pid), service.admit(pid));
             var pcb = table.find(pid).orElseThrow();
+            assertEquals((pid - 1) % 5, pcb.cpuAffinity().value());
             var resource = registry.find(pid).orElseThrow();
             assertEquals(PcbField.PCB_SIZE, resource.kernel().size());
             memory.validatePcbAllocation(resource.kernel(), pcb);
             if (pid > 1) assertEquals(Optional.of(resource.address()), table.find(pid - 1).orElseThrow().nextPcbAddress());
         }
-        var beforeQueue = queue.entries();
+        var beforeQueue = topology.nodes().stream().map(node -> node.readyQueue().entries()).toList();
+        for (var node : topology.nodes()) assertEquals(5, table.countForCpu(node.id()));
         var beforeResources = registry.entries();
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED), service.admit(26));
         assertEquals(JobState.PENDING, jobs.find(26).orElseThrow().state());
-        assertEquals(beforeQueue, queue.entries());
+        assertEquals(beforeQueue, topology.nodes().stream().map(node -> node.readyQueue().entries()).toList());
         assertEquals(beforeResources, registry.entries());
         assertTrue(memory.isEmpty(725));
         assertTrue(table.find(25).orElseThrow().nextPcbAddress().isEmpty());

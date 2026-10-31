@@ -8,7 +8,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.time.Instant;
 import static io.github.rajami1205.osimulator.model.memory.PcbField.*;
 
@@ -61,7 +60,8 @@ public final class PcbMemoryImage {
         values[BASE.offset()] = !resident ? PcbValue.Empty.INSTANCE : number(pcb.memoryBounds().base());
         values[LIMIT.offset()] = number(pcb.instructionCount());
         values[PRIORITY.offset()] = number(pcb.priority());
-        values[CPU_ID.offset()] = optional(accounting.cpuId());
+        // CPU_ID representa afinidad desde admission, no la observación histórica de ejecución.
+        values[CPU_ID.offset()] = number(pcb.cpuAffinity().value());
         values[START.offset()] = timestamp(accounting.startTime());
         values[CPU_TICKS.offset()] = number(accounting.cpuTicks());
         values[FINISH.offset()] = timestamp(accounting.finishTime());
@@ -75,7 +75,6 @@ public final class PcbMemoryImage {
     }
 
     private static PcbValue number(long value) { return new PcbValue.Number(value); }
-    private static PcbValue optional(OptionalInt value) { return value.isPresent() ? number(value.getAsInt()) : PcbValue.Empty.INSTANCE; }
     private static PcbValue timestamp(Optional<Instant> value) {
         return value.<PcbValue>map(PcbValue.Timestamp::new).orElse(PcbValue.Empty.INSTANCE);
     }

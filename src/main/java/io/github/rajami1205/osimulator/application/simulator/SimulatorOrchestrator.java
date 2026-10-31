@@ -9,7 +9,6 @@ import io.github.rajami1205.osimulator.application.process.AdmissionResult;
 import io.github.rajami1205.osimulator.application.process.Dispatcher;
 import io.github.rajami1205.osimulator.application.process.ProcessCompletionService;
 import io.github.rajami1205.osimulator.application.process.CompletedProcessRecord;
-import io.github.rajami1205.osimulator.model.scheduling.SuspendedReadyQueue;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
 import io.github.rajami1205.osimulator.application.process.SwapResult;
@@ -18,7 +17,6 @@ import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.execution.SimulationClock;
 import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
-import io.github.rajami1205.osimulator.model.scheduling.FcfsProcessScheduler;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
@@ -44,6 +42,8 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddre
 import java.util.OptionalLong;
 import java.util.Objects;
 import java.util.Optional;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Facade de Application entre Presentation y la sesión multiproceso. Compone servicios, controla lifecycle
@@ -66,6 +66,7 @@ public final class SimulatorOrchestrator {
     private ReadyQueue readyQueue;
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
+    private CpuTopology cpuTopology;
     private ScreenDevice screen;
     private Dispatcher dispatcher;
     private ProcessCompletionService processCompletion;
@@ -103,24 +104,26 @@ public final class SimulatorOrchestrator {
             throw new IllegalArgumentException("Multi-CPU execution is not implemented; initialize with one CPU");
         }
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
-        CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
         ScreenDevice newScreen = new ScreenDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
         JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
         ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
-        ReadyQueue newReadyQueue = new ReadyQueue();
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
-        ProcessSwapService newSwap = new ProcessSwapService(newMemory, newStorage, newProcesses, newResources, newReadyQueue);
+        CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources);
+        var node = newTopology.node(CpuId.ZERO);
+        ReadyQueue newReadyQueue = node.readyQueue();
+        ProcessSwapService newSwap = new ProcessSwapService(newTopology, newMemory, newStorage, newProcesses, newResources);
         ProcessAdmissionService newAdmission = new ProcessAdmissionService(
-                newJobs, newStorage, newMemory, newProcesses, programLoader, newReadyQueue, newResources);
+                newTopology, newJobs, newStorage, newMemory, newProcesses, programLoader, newResources);
         JobScheduler newScheduler = new JobScheduler(newJobs, newAdmission);
-        ProcessScheduler newProcessScheduler = new FcfsProcessScheduler(newReadyQueue, newProcesses);
+        ProcessScheduler newProcessScheduler = node.scheduler();
         lifecycle.initialize();
         memory = newMemory;
-        cpu = newCpu;
-        tickCounter = new CpuTickCounter();
+        cpuTopology = newTopology;
+        cpu = node.registers();
+        tickCounter = node.tickCounter();
         simulationClock = new SimulationClock();
         screen = newScreen;
         secondaryStorage = newStorage;
@@ -134,13 +137,11 @@ public final class SimulatorOrchestrator {
         jobScheduler = newScheduler;
         readyQueue = newReadyQueue;
         processScheduler = newProcessScheduler;
-        var suspended = new SuspendedReadyQueue();
-        dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources, memory);
-        processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
-                readyQueue, suspended, dispatcher, realClock);
-        runtime = new MultiprocessRuntime(dispatcher, executionEngine, cpu, memory, filesystem,
-                screen, processCompletion, processSwapService, jobScheduler,
-                jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, simulationClock, realClock);
+        dispatcher = node.dispatcher();
+        processCompletion = new ProcessCompletionService(cpuTopology, memory, secondaryStorage, processTable, processResources, realClock);
+        runtime = new MultiprocessRuntime(cpuTopology, executionEngine, memory, filesystem,
+                screen, processCompletion, processSwapService, jobScheduler, jobList, processTable,
+                processResources, simulationClock, realClock);
         this.configuration = configuration;
     }
 
@@ -335,6 +336,7 @@ public final class SimulatorOrchestrator {
         readyQueue = null;
         processScheduler = null;
         cpu = null;
+        cpuTopology = null;
         screen = null;
         dispatcher = null;
         processCompletion = null;

@@ -75,7 +75,7 @@ final class SimulatorSnapshotMapper {
         return new SimulatorSnapshot(state, cpuView, instruction, active, program, memoryRows(memory), status,
                 owner.map(ProcessControlBlock::processId), Optional.ofNullable(configuration), jobs, processes,
                 ready, suspended, completed.stream().map(value -> new CompletedProcess(
-                        value.processId(), context(value.finalContext()), value.accounting(), value.logicalTimes(), value.declaredBurst())).toList(),
+                        value.processId(), context(value.finalContext()), value.accounting(), value.logicalTimes(), value.declaredBurst(), value.cpuAffinity())).toList(),
                 storageRows(storage), screen, cpuTicks, nextPhysical, translationError, simulationTimeSeconds);
     }
 
@@ -93,7 +93,7 @@ final class SimulatorSnapshotMapper {
         return new ProcessDetails(pcb.processId(), pcb.state(), pcb.programCounter(),
                 base.isPresent() ? Residency.RESIDENT : Residency.SUSPENDED, base, pcb.instructionCount(),
                 pcb.priority(), context(pcb.cpuContext()), pcb.stack().values(), pcb.openFiles().files().stream().sorted().toList(),
-                resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting(), pcb.logicalTimes());
+                resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting(), pcb.logicalTimes(), pcb.cpuAffinity());
     }
 
     /** Describe instrucciones y PCBs de forma segura; EmptyContent se representa como ausencia de texto. */

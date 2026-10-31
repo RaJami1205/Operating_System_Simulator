@@ -51,6 +51,7 @@ final class DashboardDetails {
     /** Compone el detalle de PCB guardado, residencia, recursos y accounting del snapshot seleccionado. */
     static String process(ProcessDetails value) {
         return "PID " + value.processId() + " | " + value.state() + " | " + value.residency()
+                + "\nCPU Affinity: " + value.cpuAffinity().value()
                 + "\nBase: " + value.base().map(Object::toString).orElse("\u2014") + "   Limit: " + value.limit()
                 + "   Priority: " + value.priority() + "\nKernel PCB: " + value.kernelAddress()
                 + "   Next PCB: " + value.nextPcbAddress().map(Object::toString).orElse("\u2014")

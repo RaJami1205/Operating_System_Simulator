@@ -150,6 +150,7 @@ public final class SimulatorController {
         completedTable.getSelectionModel().selectedItemProperty().addListener((o, before, after) ->
                 completedDetailArea.setText(after == null ? "Select a completed process"
                         : DashboardDetails.context(after.finalContext())
+                        + "\nCPU Affinity: " + after.cpuAffinity().value()
                         + DashboardDetails.logical(after.logicalTimes(), after.declaredBurst())
                         + DashboardDetails.accounting(after.accounting())));
         refresh();

@@ -25,7 +25,9 @@ class PcbMemoryImageTest {
         assertEquals(new PcbValue.Register(new TextRegisterValue("text")), value(image,PcbField.DX));
         assertEquals(new PcbValue.Number(0), value(image,PcbField.STACK_TOP));
         assertEquals(new PcbValue.Number(7), value(image,PcbField.STACK_0));
-        for (var field : List.of(PcbField.IR,PcbField.CPU_ID,PcbField.START,PcbField.FINISH,PcbField.NEXT_PCB,PcbField.STACK_1,PcbField.STACK_4))
+        assertEquals(new PcbValue.Number(0), value(image, PcbField.CPU_ID));
+        assertTrue(pcb.accounting().cpuId().isEmpty());
+        for (var field : List.of(PcbField.IR,PcbField.START,PcbField.FINISH,PcbField.NEXT_PCB,PcbField.STACK_1,PcbField.STACK_4))
             assertEquals(PcbValue.Empty.INSTANCE,value(image,field));
         assertThrows(UnsupportedOperationException.class,()->image.cells().clear());
         assertThrows(UnsupportedOperationException.class,()->((PcbValue.Names)value(image,PcbField.OPEN_FILES)).values().clear());

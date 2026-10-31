@@ -35,6 +35,10 @@
                     <Label text="SIMULATOR CONTROL" styleClass="panel-header"/>
                     <VBox spacing="10.0" styleClass="control-section">
                         <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="CPU count" styleClass="configuration-label"/>
+                            <ComboBox fx:id="cpuCountBox" prefWidth="80"/>
+                        </HBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
                                 <Label text="Main Memory" styleClass="configuration-label"/>
@@ -110,6 +114,10 @@
                     <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="dashboard-scroll" minWidth="200">
                         <VBox spacing="8" styleClass="dashboard-panel">
                             <Label text="CPU / CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>
+                            <HBox alignment="CENTER_LEFT" spacing="8">
+                                <Label text="View CPU" styleClass="section-label"/>
+                                <ComboBox fx:id="cpuSelector" prefWidth="80"/>
+                            </HBox>
                             <Label fx:id="cpuOwnerLabel" text="Idle" styleClass="helper-text"/>
                         <VBox spacing="5" styleClass="instruction-panel">
                                 <Label text="CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>

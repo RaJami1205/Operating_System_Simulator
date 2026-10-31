@@ -65,7 +65,8 @@ public final class Dispatcher {
                 || resident.allocation().base() != pcb.memoryBounds().base()
                 || resident.allocation().size() != pcb.instructionCount()
                 || !pcb.hasExecutableProgramCounter()
-                || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING)) {
+                || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING
+                    && p.cpuAffinity().equals(cpuId))) {
             throw new IllegalStateException("Invalid dispatch candidate or CPU ownership");
         }
         memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());

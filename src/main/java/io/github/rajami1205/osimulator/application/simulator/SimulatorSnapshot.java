@@ -38,8 +38,39 @@ public record SimulatorSnapshot(
         OptionalLong cpuTicks,
         Optional<Integer> nextInstructionPhysicalAddress,
         Optional<String> addressTranslationError,
-        OptionalLong simulationTimeSeconds
+        OptionalLong simulationTimeSeconds,
+        List<CpuView> cpus,
+        List<RuntimeStepResult.CpuResult> lastCpuResults
 ) {
+    /** Campos singulares legacy: vista explícita CPU0, nunca agregados globales. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds, List.of(), List.of());
+    }
+
+    /** Observación coherente de un nodo; PC en registros es lógico, dirección física es derivada. */
+    public record CpuView(CpuId id, CpuSnapshot cpu, Optional<Integer> ownerPid,
+            Optional<InstructionSnapshot> currentInstruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, long cpuTicks, List<Integer> readyQueue,
+            List<Integer> suspendedReadyQueue, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError) {
+        public CpuView {
+            Objects.requireNonNull(id); Objects.requireNonNull(cpu); Objects.requireNonNull(ownerPid);
+            Objects.requireNonNull(currentInstruction); Objects.requireNonNull(process);
+            Objects.requireNonNull(nextInstructionPhysicalAddress); Objects.requireNonNull(addressTranslationError);
+            program = List.copyOf(program); readyQueue = List.copyOf(readyQueue);
+            suspendedReadyQueue = List.copyOf(suspendedReadyQueue);
+            if (cpuTicks < 0) throw new IllegalArgumentException("Negative CPU ticks");
+        }
+    }
     /** Deriva el próximo evento sólo de valores capturados, sin consultar el Runtime vivo. */
     public OptionalLong nextArrivalTime() {
         if (simulationTimeSeconds.isEmpty()) return OptionalLong.empty();
@@ -68,6 +99,8 @@ public record SimulatorSnapshot(
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
+        cpus = List.copyOf(cpus);
+        lastCpuResults = List.copyOf(lastCpuResults);
         Objects.requireNonNull(simulatorState, "simulatorState must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
         Objects.requireNonNull(currentInstruction, "currentInstruction must not be null");

@@ -100,9 +100,6 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
-        if (configuration.cpuCount() != 1) {
-            throw new IllegalArgumentException("Multi-CPU execution is not implemented; initialize with one CPU");
-        }
         MainMemory newMemory = new MainMemory(configuration.mainMemory());
         ScreenDevice newScreen = new ScreenDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
@@ -180,8 +177,13 @@ public final class SimulatorOrchestrator {
 
     /** Consulta el próximo candidato sin consumir READY ni activar la CPU. */
     public Optional<Integer> selectNextReadyProcess() {
+        return selectNextReadyProcess(CpuId.ZERO);
+    }
+
+    /** Consulta FCFS local sin dispatch; el overload sin ID representa CPU0. */
+    public Optional<Integer> selectNextReadyProcess(CpuId cpuId) {
         requirePreparedState("selectNextReadyProcess");
-        return processScheduler.selectNext();
+        return cpuTopology.node(cpuId).scheduler().selectNext();
     }
 
     /**
@@ -224,7 +226,7 @@ public final class SimulatorOrchestrator {
         var pcb = processTable.find(pid).orElseThrow(() -> new IllegalArgumentException("Unknown process: " + pid));
         boolean eligible = out ? pcb.state() == ProcessState.READY || pcb.state() == ProcessState.BLOCKED
                 : pcb.state() == ProcessState.READY_SUSPENDED || pcb.state() == ProcessState.BLOCKED_SUSPENDED;
-        if (!eligible || dispatcher.owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
+        if (!eligible || cpuTopology.node(pcb.cpuAffinity()).dispatcher().owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
     }
 
     /** Exige sesión preparada, RUNNING o PAUSED para permitir transferencias explícitas. */
@@ -264,7 +266,7 @@ public final class SimulatorOrchestrator {
     }
 
     /**
-     * Desde RUNNING ejecuta como máximo un tick a través del runtime y finaliza lifecycle sólo al agotar
+     * Desde RUNNING ejecuta como máximo un tick por CPU y finaliza lifecycle sólo al agotar
      * todo el workload.
      */
     public RuntimeStepResult step() {
@@ -358,13 +360,11 @@ public final class SimulatorOrchestrator {
             try { status = Optional.of(runtime.status()); }
             catch (RuntimeException failure) { lifecycle.markError(); }
         }
-        var snapshot = SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
-                dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
-                jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
-                runtime == null ? List.of() : runtime.suspendedReadyProcessIds(),
-                completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()),
-                simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()));
-        if (snapshot.addressTranslationError().isPresent()) lifecycle.markError();
+        var snapshot = SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpuTopology,
+                memory, secondaryStorage, jobs(), processTable, processResources, completedProcesses(), screenOutput(),
+                simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()),
+                runtime == null ? List.of() : runtime.lastCpuResults());
+        if (snapshot.simulatorState() == SimulatorState.ERROR) lifecycle.markError();
         return snapshot;
     }
 

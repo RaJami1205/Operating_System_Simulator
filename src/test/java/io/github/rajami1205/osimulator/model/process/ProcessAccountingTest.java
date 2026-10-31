@@ -6,6 +6,18 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessAccountingTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, 1, 2, 3, 4})
+    void acceptsFixedCpuAndRejectsMigration(int id) {
+        var first = ProcessAccounting.initial().recordSuccessfulCpuTick(id, START);
+        var second = first.recordSuccessfulCpuTick(id, START.plusSeconds(2));
+        assertEquals(OptionalInt.of(id), second.cpuId());
+        assertEquals(2, second.cpuTicks());
+        assertEquals(Optional.of(START), second.startTime());
+        assertThrows(IllegalArgumentException.class, () -> second.recordSuccessfulCpuTick((id + 1) % 5, START));
+        assertThrows(IllegalArgumentException.class, () -> ProcessAccounting.initial().recordSuccessfulCpuTick(-1, START));
+        assertThrows(IllegalArgumentException.class, () -> ProcessAccounting.initial().recordSuccessfulCpuTick(5, START));
+    }
     private static final Instant START = Instant.parse("2026-10-01T12:00:00Z");
     @Test void firstInstantLaterTicksAndSingleFinishAreImmutable() {
         var initial = ProcessAccounting.initial();

@@ -1,6 +1,8 @@
 package io.github.rajami1205.osimulator.application.simulator;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
+import io.github.rajami1205.osimulator.application.cpu.CpuNode;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
 import io.github.rajami1205.osimulator.application.process.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
@@ -25,23 +27,40 @@ final class SimulatorSnapshotMapper {
      * antes de Initialize.
      */
     static SimulatorSnapshot map(SimulatorState state, Optional<RuntimeStatus> status,
-            SimulatorConfiguration configuration, CpuRegisters<Instruction> cpu, Optional<ProcessControlBlock> owner,
+            SimulatorConfiguration configuration, CpuTopology topology,
             MainMemory memory, SecondaryStorage storage, List<Job> jobs, ProcessTable table,
-            ProcessResourceRegistry resources, List<Integer> ready, List<Integer> suspended,
-            List<CompletedProcessRecord> completed, List<Integer> screen,
-            OptionalLong cpuTicks, OptionalLong simulationTimeSeconds) {
-        var cpuView = cpu == null ? Optional.<CpuSnapshot>empty() : Optional.of(context(cpu.snapshot()));
-        var instruction = owner.isEmpty() || cpu == null ? Optional.<InstructionSnapshot>empty()
-                : cpu.instructionRegister().map(SemanticFormatter::instructionSnapshot);
+            ProcessResourceRegistry resources, List<CompletedProcessRecord> completed, List<Integer> screen,
+            OptionalLong simulationTimeSeconds, List<RuntimeStepResult.CpuResult> lastCpuResults) {
+        var cpus = topology == null ? List.<CpuView>of() : topology.nodes().stream()
+                .map(node -> cpuView(node, memory, resources)).toList();
+        var zero = cpus.isEmpty() ? Optional.<CpuView>empty() : Optional.of(cpus.getFirst());
+        var translationError = cpus.stream().flatMap(value -> value.addressTranslationError().stream()).findFirst();
+        if (translationError.isPresent()) { state = SimulatorState.ERROR; status = Optional.empty(); }
         var processes = new ArrayList<ProcessDetails>();
         if (table != null) {
             for (var pcb : table.entries()) {
                 var resource = resources.find(pcb.processId());
-                // Una invariant fallida del registry no debe impedir inspeccionar el estado ERROR.
                 if (resource.isEmpty() && state == SimulatorState.ERROR) continue;
                 processes.add(process(pcb, resource.orElseThrow()));
             }
         }
+        return new SimulatorSnapshot(state, zero.map(CpuView::cpu), zero.flatMap(CpuView::currentInstruction),
+                zero.flatMap(CpuView::process), zero.map(CpuView::program).orElse(List.of()), memoryRows(memory), status,
+                zero.flatMap(CpuView::ownerPid), Optional.ofNullable(configuration), jobs, processes,
+                zero.map(CpuView::readyQueue).orElse(List.of()), zero.map(CpuView::suspendedReadyQueue).orElse(List.of()),
+                completed.stream().map(value -> new CompletedProcess(value.processId(), context(value.finalContext()),
+                        value.accounting(), value.logicalTimes(), value.declaredBurst(), value.cpuAffinity())).toList(),
+                storageRows(storage), screen, zero.isEmpty() ? OptionalLong.empty() : OptionalLong.of(zero.orElseThrow().cpuTicks()),
+                zero.flatMap(CpuView::nextInstructionPhysicalAddress), zero.flatMap(CpuView::addressTranslationError),
+                simulationTimeSeconds, cpus, lastCpuResults);
+    }
+
+    private static CpuView cpuView(CpuNode node,
+            MainMemory memory, ProcessResourceRegistry resources) {
+        var cpu = node.registers();
+        var owner = node.dispatcher().owner();
+        var instruction = owner.isEmpty() ? Optional.<InstructionSnapshot>empty()
+                : cpu.instructionRegister().map(SemanticFormatter::instructionSnapshot);
         Optional<ProcessSnapshot> active = Optional.empty();
         Optional<Integer> nextPhysical = Optional.empty();
         Optional<String> translationError = Optional.empty();
@@ -64,19 +83,16 @@ final class SimulatorSnapshotMapper {
                         program.add(new ProgramEntry(base + i, SemanticFormatter.semanticText(image.get(i))));
                     }
                 } catch (RuntimeException failure) {
-                    state = SimulatorState.ERROR;
-                    status = Optional.empty();
                     nextPhysical = Optional.empty();
                     translationError = Optional.of("Invalid instruction allocation/address");
                     // Conserva la inspección del CPU y las celdas físicas aunque la allocation activa sea inválida.
                 }
             }
         }
-        return new SimulatorSnapshot(state, cpuView, instruction, active, program, memoryRows(memory), status,
-                owner.map(ProcessControlBlock::processId), Optional.ofNullable(configuration), jobs, processes,
-                ready, suspended, completed.stream().map(value -> new CompletedProcess(
-                        value.processId(), context(value.finalContext()), value.accounting(), value.logicalTimes(), value.declaredBurst(), value.cpuAffinity())).toList(),
-                storageRows(storage), screen, cpuTicks, nextPhysical, translationError, simulationTimeSeconds);
+
+        return new CpuView(node.id(), context(cpu.snapshot()), owner.map(ProcessControlBlock::processId),
+                instruction, active, program, node.tickCounter().current(), node.readyQueue().entries(),
+                node.suspendedReadyQueue().entries(), nextPhysical, translationError);
     }
 
     /** Copia registros/flags y formatea IR sin retener CpuRegisters ni ejecutar instrucciones. */

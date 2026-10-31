@@ -28,6 +28,65 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void cpuCountAdjustsMemoryRangesAndResetRestoresDefaults() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+        for (int n : List.of(5, 2, 4, 1, 3)) {
+            count.setValue(n);
+            var main = f.widget("mainMemorySlider", Slider.class);
+            var kernel = f.widget("kernelMemorySlider", Slider.class);
+            assertEquals(Math.max(256, 140 * n + 1), main.getMin());
+            assertEquals(1024, main.getMax()); assertEquals(140 * n, kernel.getMin());
+            assertEquals(main.getValue() - 1, kernel.getMax());
+            assertTrue(kernel.getValue() >= kernel.getMin());
+            f.action("handleInitialize");
+            assertEquals(n, f.simulator.snapshot().cpus().size());
+            f.enabled("cpuCountBox", false);
+            f.action("handleReset");
+            assertEquals(1, count.getValue()); assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        }
+    }); }
+
+    @Test void selectorDisplaysEntireLocalCpuAndManualMatchesAutomatic() throws Exception { onFx(() -> {
+        List<SimulatorSnapshot.CpuView> manual = null;
+        for (boolean automatic : List.of(false, true)) {
+            var f = new Fixture();
+            @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+            count.setValue(2); f.widget("mainMemorySlider", Slider.class).setValue(1024);
+            f.action("handleInitialize");
+            f.load("zero.asm", "MOV AX, 11", "LOAD AX");
+            f.load("one.asm", "MOV AX, 22", "LOAD AX");
+            f.load("next-zero.asm", "INC"); f.load("next-one.asm", "INC");
+            f.action("handleStart");
+            var timeline = (Timeline) get(f.controller, "automaticTimeline");
+            try {
+                if (automatic) {
+                    f.action("handleAutomatic");
+                    timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                } else f.action("handleStep");
+                var snapshot = f.simulator.snapshot();
+                assertEquals(1, snapshot.simulationTimeSeconds().orElseThrow());
+                if (automatic) assertEquals(manual, snapshot.cpus()); else manual = snapshot.cpus();
+                @SuppressWarnings("unchecked") var selector = (ComboBox<Integer>) f.widget("cpuSelector", ComboBox.class);
+                for (int id : List.of(1, 0, 1)) {
+                    selector.setValue(id);
+                    var cpu = snapshot.cpus().get(id);
+                    assertEquals(Integer.toString(cpu.cpu().ax()), f.widget("axValueLabel", Label.class).getText());
+                    assertEquals(cpu.nextInstructionPhysicalAddress().orElseThrow().toString(), f.widget("pcValueLabel", Label.class).getText());
+                    assertEquals(cpu.cpu().instructionRegister().orElseThrow(), f.widget("irValueLabel", Label.class).getText());
+                    assertEquals(cpu.currentInstruction().orElseThrow().semanticInstruction(), f.widget("currentInstructionLabel", Label.class).getText());
+                    assertEquals("1", f.widget("cpuTicksLabel", Label.class).getText());
+                    assertEquals(cpu.program(), f.widget("programTable", TableView.class).getItems());
+                    assertEquals(cpu.readyQueue().stream().map(pid -> "PID " + pid).toList(), f.widget("readyList", ListView.class).getItems());
+                    assertEquals(cpu.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList(), f.widget("suspendedList", ListView.class).getItems());
+                    assertTrue(f.widget("ownerValueLabel", Label.class).getText().contains("CPU " + id + ": PID " + (id + 1)));
+                    assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: " + cpu.cpu().programCounter()));
+                    assertEquals(snapshot, f.simulator.snapshot());
+                }
+            } finally { timeline.stop(); }
+        }
+    }); }
+
     @Test void arrivalInputUsesExactLongParsingAndRejectsInvalidValues() {
         assertEquals(0, SimulatorController.parseArrivalTime("0"));
         assertEquals(Long.MAX_VALUE, SimulatorController.parseArrivalTime("9223372036854775807"));
@@ -303,7 +362,7 @@ class DashboardControllerTest {
         f.action("handlePause"); f.action("handleResume"); f.action("handleStep");
         assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
         for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton")) f.enabled(name, false);
-        f.enabled("resetButton", true); assertEquals("Idle", f.widget("ownerValueLabel", Label.class).getText());
+        f.enabled("resetButton", true); assertEquals("CPU 0: Idle", f.widget("ownerValueLabel", Label.class).getText());
         assertEquals("—", f.widget("currentInstructionLabel", Label.class).getText());
         f.action("handleReset");
         for (String name : List.of("jobsTable", "processTable", "memoryTable", "storageTable", "completedTable", "programTable")) assertTrue(f.widget(name, TableView.class).getItems().isEmpty());

@@ -150,8 +150,10 @@ class CpuTopologyTest {
         assertEquals(before, f.image()); assertEquals(ProcessState.READY, pcb.state());
         assertEquals(List.of(2), f.node(1).readyQueue().entries());
         f.node(0).dispatcher().dispatch(1);
+        f.node(1).dispatcher().dispatch(2);
+        assertSame(pcb, f.node(1).dispatcher().owner().orElseThrow());
+        assertEquals(1, f.node(0).dispatcher().owner().orElseThrow().processId());
         assertThrows(IllegalStateException.class, () -> f.node(1).dispatcher().dispatch(2));
-        assertTrue(f.node(1).dispatcher().owner().isEmpty());
     }
 
     @Test void affinityKernelAndLogicalTimesSurviveSwapAndCompletionWithoutFakeExecution() {
@@ -206,9 +208,9 @@ class CpuTopologyTest {
         assertEquals(new CpuId(1), f.table.find(2).orElseThrow().cpuAffinity());
     }
 
-    @Test void runtimeRejectsMultipleNodesBeforeConstructingAnExecutionSession() {
+    @Test void multiCpuRuntimeStillRequiresSharedServices() {
         var f = new Fixture(2);
-        assertThrows(IllegalArgumentException.class, () -> new MultiprocessRuntime(f.topology,
+        assertThrows(NullPointerException.class, () -> new MultiprocessRuntime(f.topology,
                 null, f.memory, null, null, f.completion, f.swap, null, f.jobs, f.table, f.resources, null, null));
     }
 

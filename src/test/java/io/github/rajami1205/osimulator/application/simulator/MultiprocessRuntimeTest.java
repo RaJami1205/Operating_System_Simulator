@@ -34,7 +34,8 @@ class MultiprocessRuntimeTest {
     private Dispatcher dispatcher() { return field(simulator,"dispatcher",Dispatcher.class); }
     private MainMemory memory() { return field(simulator,"memory",MainMemory.class); }
     private SecondaryStorage storage() { return field(simulator,"secondaryStorage",SecondaryStorage.class); }
-    private SuspendedReadyQueue suspended() { return field(field(simulator,"runtime",MultiprocessRuntime.class),"suspended",SuspendedReadyQueue.class); }
+    private SuspendedReadyQueue suspended() { return field(simulator,"cpuTopology",
+            io.github.rajami1205.osimulator.application.cpu.CpuTopology.class).node(CpuId.ZERO).suspendedReadyQueue(); }
     private ProcessControlBlock pcb(int pid) { return table().find(pid).orElseThrow(); }
     private void tick(int pid,TickResult tick,RuntimeStatus status) {
         assertEquals(new RuntimeStepResult.Executed(pid,tick,status),simulator.step());

@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * PCBs canónicos admitidos, incluidos suspended, en orden de admisión y con capacidad por instancia. No sustituye
@@ -28,6 +29,9 @@ public final class ProcessTable {
         Objects.requireNonNull(pcb, "pcb must not be null");
         if (processes.containsKey(pcb.processId())) throw new IllegalArgumentException("Duplicate PID: " + pcb.processId());
         if (isFull()) throw new IllegalStateException("Resident process capacity reached");
+        if (countForCpu(pcb.cpuAffinity()) >= MAX_ADMITTED_PROCESSES) {
+            throw new IllegalStateException("CPU admitted process capacity reached");
+        }
         processes.put(pcb.processId(), pcb);
     }
 
@@ -41,6 +45,12 @@ public final class ProcessTable {
     public List<ProcessControlBlock> entries() { return List.copyOf(processes.values()); }
     /** Cuenta PCBs admitidos, incluidos los suspended hasta su retirada. */
     public int size() { return processes.size(); }
+    /** Cuenta todos los PCB publicados, incluidos suspended y TERMINATED pendientes de cleanup. */
+    public long countForCpu(CpuId cpuId) {
+        Objects.requireNonNull(cpuId);
+        return processes.values().stream().filter(pcb -> pcb.cpuAffinity().equals(cpuId)).count();
+    }
+    public int capacity() { return capacity; }
     /** Indica si se alcanzó el cupo configurado; no considera la cantidad de Jobs. */
     public boolean isFull() { return size() >= capacity; }
     /** Devuelve el último PCB en orden de admisión para mantener la cadena Kernel. */

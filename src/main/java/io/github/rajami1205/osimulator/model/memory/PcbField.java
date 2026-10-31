@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.process.ProcessStack;
 /**
  * Única autoridad de offsets del bloque PCB; el orden forma parte del contrato físico.
  * PC es lógico, BASE y NEXT_PCB son direcciones físicas, LIMIT es longitud del programa.
+ * CPU_ID es afinidad fija desde admission; START/FINISH siguen siendo timestamps reales.
  */
 public enum PcbField {
     PID, STATE, PC, IR, AC, AX, BX, CX, DX, AH, AL, EQUAL, OVERFLOW,

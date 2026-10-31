@@ -7,6 +7,8 @@ import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.*;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageAllocationException;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Transfiere imágenes completas entre USER y VIRTUAL_MEMORY sin paging ni selección automática de víctimas. Conserva
@@ -19,16 +21,30 @@ public final class ProcessSwapService {
     private final ProcessTable processes;
     private final ProcessResourceRegistry resources;
     private final ReadyQueue queue;
+    private final CpuTopology topology;
 
     /** Asocia memoria, storage, PCBs, registry y ReadyQueue no nulos de una misma sesión. */
     public ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
             ProcessResourceRegistry resources, ReadyQueue queue) {
+        this(memory, storage, processes, resources, queue, null);
+    }
+
+    public ProcessSwapService(CpuTopology topology, MainMemory memory, SecondaryStorage storage,
+            ProcessTable processes, ProcessResourceRegistry resources) {
+        this(memory, storage, processes, resources, Objects.requireNonNull(topology).node(CpuId.ZERO).readyQueue(), topology);
+    }
+
+    private ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
+            ProcessResourceRegistry resources, ReadyQueue queue, CpuTopology topology) {
+        this.topology = topology;
+        if (topology != null) topology.requireSharedResources(processes, memory, resources);
         this.memory = Objects.requireNonNull(memory);
         this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.storage = Objects.requireNonNull(storage);
         this.processes = Objects.requireNonNull(processes);
         this.resources = Objects.requireNonNull(resources);
         this.queue = Objects.requireNonNull(queue);
+        queue.requireBinding(CpuId.ZERO, processes);
     }
 
     /**
@@ -37,6 +53,7 @@ public final class ProcessSwapService {
      */
     public SwapResult swapOut(int processId) {
         var pcb = process(processId);
+        var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
         if (!(original.residence() instanceof UserImageResidence.Resident resident)
                 || (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.BLOCKED)) {
@@ -69,6 +86,7 @@ public final class ProcessSwapService {
         resources.replace(processId, original, replacement);
         pcb.changeState(ready ? ProcessState.READY_SUSPENDED : ProcessState.BLOCKED_SUSPENDED);
         if (ready) queue.remove(processId);
+        if (ready && topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().enqueue(processId);
         pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
     }
@@ -79,6 +97,7 @@ public final class ProcessSwapService {
      */
     public SwapResult swapIn(int processId) {
         var pcb = process(processId);
+        var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
         if (!(original.residence() instanceof UserImageResidence.Suspended suspended)
                 || (pcb.state() != ProcessState.READY_SUSPENDED && pcb.state() != ProcessState.BLOCKED_SUSPENDED)) {
@@ -112,6 +131,7 @@ public final class ProcessSwapService {
         resources.replace(processId, original, replacement);
         storage.releaseSwap(swap);
         pcb.changeState(ready ? ProcessState.READY : ProcessState.BLOCKED);
+        if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().remove(processId);
         if (ready) queue.enqueue(processId);
         pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
@@ -131,7 +151,18 @@ public final class ProcessSwapService {
 
     /** Exige la membresía READY esperada para la transición, sin corregir silenciosamente la cola. */
     private void validateQueue(int pid, boolean expected) {
-        if (queue.entries().contains(pid) != expected) throw new IllegalStateException("Inconsistent READY membership");
+        var pcb = process(pid);
+        if (queueFor(pcb).entries().contains(pid) != expected) throw new IllegalStateException("Inconsistent READY membership");
+        if (topology != null && topology.node(pcb.cpuAffinity()).suspendedReadyQueue().entries().contains(pid)
+                != (pcb.state() == ProcessState.READY_SUSPENDED)) {
+            throw new IllegalStateException("Inconsistent suspended READY membership");
+        }
+    }
+
+    private ReadyQueue queueFor(ProcessControlBlock pcb) {
+        if (topology != null) return topology.node(pcb.cpuAffinity()).readyQueue();
+        if (!pcb.cpuAffinity().equals(CpuId.ZERO)) throw new IllegalStateException("Legacy swap service requires CPU 0 affinity");
+        return queue;
     }
 
     /** Revalida identidad de PCB/recursos y membresía READY antes de publicar la transferencia. */

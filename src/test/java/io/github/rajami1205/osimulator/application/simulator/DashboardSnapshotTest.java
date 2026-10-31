@@ -134,10 +134,30 @@ class DashboardSnapshotTest {
     }
     @Test void errorSnapshotDoesNotRepeatFailedRuntimeValidation() throws Exception {
         initialize(); submit("one", "INC"); simulator.start();
-        field(simulator, "readyQueue", ReadyQueue.class).enqueue(999);
+        var queue = field(simulator, "readyQueue", ReadyQueue.class);
+        assertThrows(IllegalStateException.class, () -> queue.enqueue(999));
+        // La cola local ahora impide esta corrupción por API; se inyecta para probar la frontera ERROR.
+        @SuppressWarnings("unchecked")
+        var corrupted = (Set<Integer>) field(queue, "processes", Set.class);
+        corrupted.add(999);
         var error = assertDoesNotThrow(simulator::snapshot);
         assertEquals(SimulatorState.ERROR, error.simulatorState()); assertTrue(error.runtimeStatus().isEmpty());
         assertEquals(256, error.memory().size()); assertEquals(512, error.storage().size());
         assertEquals(error, assertDoesNotThrow(simulator::snapshot));
+    }
+
+    @Test void affinityIsVisibleBeforeExecutionAndRemainsInImmutableHistoryAfterReset() {
+        initialize(); submit("one", "INC"); simulator.start();
+        var before = simulator.snapshot();
+        assertEquals(CpuId.ZERO, before.processes().getFirst().cpuAffinity());
+        assertTrue(before.processes().getFirst().accounting().cpuId().isEmpty());
+        simulator.step(); var done = simulator.snapshot();
+        assertEquals(CpuId.ZERO, done.completedProcesses().getFirst().cpuAffinity());
+        assertEquals(OptionalInt.of(0), done.completedProcesses().getFirst().accounting().cpuId());
+        simulator.reset();
+        assertEquals(CpuId.ZERO, before.processes().getFirst().cpuAffinity());
+        assertTrue(before.processes().getFirst().accounting().cpuId().isEmpty());
+        assertEquals(CpuId.ZERO, done.completedProcesses().getFirst().cpuAffinity());
+        assertTrue(simulator.snapshot().processes().isEmpty());
     }
 }

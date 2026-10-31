@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.cpu.RegisterValue;
 import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.ConditionFlags;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
@@ -176,7 +177,14 @@ public record SimulatorSnapshot(
     public record ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
             Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
             List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
-            ProcessAccounting accounting, LogicalProcessTimes logicalTimes) {
+            ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting, LogicalProcessTimes logicalTimes) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, logicalTimes, CpuId.ZERO);
+        }
         /** Compatibilidad con vistas de procesos admitidos al inicio de la sesión. */
         public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
                 Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
@@ -189,6 +197,7 @@ public record SimulatorSnapshot(
         public int declaredBurst() { return limit; }
         /** Exige referencias no nulas y copia stack/open files para aislar la vista del PCB mutable. */
         public ProcessDetails {
+            Objects.requireNonNull(cpuAffinity);
             Objects.requireNonNull(logicalTimes);
             Objects.requireNonNull(state); Objects.requireNonNull(residency); Objects.requireNonNull(base);
             Objects.requireNonNull(savedContext); Objects.requireNonNull(nextPcbAddress); Objects.requireNonNull(accounting);
@@ -197,9 +206,14 @@ public record SimulatorSnapshot(
     }
     /** Contexto final y accounting de un proceso retirado, sin recursos activos. */
     public record CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting,
-            LogicalProcessTimes logicalTimes, int declaredBurst) {
+            LogicalProcessTimes logicalTimes, int declaredBurst, CpuId cpuAffinity) {
+        public CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting,
+                LogicalProcessTimes logicalTimes, int declaredBurst) {
+            this(processId, finalContext, accounting, logicalTimes, declaredBurst, CpuId.ZERO);
+        }
         /** Exige contexto y accounting no nulos para la vista histórica. */
         public CompletedProcess {
+            Objects.requireNonNull(cpuAffinity);
             Objects.requireNonNull(finalContext); Objects.requireNonNull(accounting); Objects.requireNonNull(logicalTimes);
             if (declaredBurst <= 0) throw new IllegalArgumentException("Declared Burst must be positive");
         }

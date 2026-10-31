@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessPro
 import java.util.Objects;
 import java.util.Optional;
 import io.github.rajami1205.osimulator.model.cpu.CpuContext;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
 import io.github.rajami1205.osimulator.model.memory.LogicalCodeRange;
@@ -18,6 +19,7 @@ public final class ProcessControlBlock {
     public static final int LOGICAL_CODE_BASE = 4096;
 
     private final int processId;
+    private final CpuId cpuAffinity;
     private final LogicalCodeRange logicalCodeRange;
     private ProcessMemoryBounds memoryBounds;
     private final ProcessStack stack = new ProcessStack();
@@ -39,6 +41,13 @@ public final class ProcessControlBlock {
 
     public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
             LogicalProcessTimes logicalTimes) {
+        this(processId, programStartAddress, instructionCount, logicalTimes, CpuId.ZERO);
+    }
+
+    /** Fija afinidad antes de publicar recursos; nunca cambia por dispatch o swapping. */
+    public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
+            LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        this.cpuAffinity = Objects.requireNonNull(cpuAffinity);
         this.logicalTimes = Objects.requireNonNull(logicalTimes);
         validateProcessId(processId);
         this.processId = processId;
@@ -94,6 +103,7 @@ public final class ProcessControlBlock {
     /** Consulta el record inmutable de timestamps reales y ticks consumidos. */
     public ProcessAccounting accounting() { return accounting; }
     public LogicalProcessTimes logicalTimes() { return logicalTimes; }
+    public CpuId cpuAffinity() { return cpuAffinity; }
 
     /** Publica un evento previamente validado sin alterar snapshots anteriores. */
     public void recordFirstDispatch(long time) { logicalTimes = logicalTimes.dispatchedAt(time); }

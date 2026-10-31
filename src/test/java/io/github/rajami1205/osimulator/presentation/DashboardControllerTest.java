@@ -331,7 +331,10 @@ class DashboardControllerTest {
         f.enabled("stepButton", true); f.enabled("pauseButton", true);
         f.action("handleStep"); assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
         assertEquals(0, f.simulator.snapshot().cpuTicks().orElseThrow());
-        var queue = get(f.simulator, "readyQueue"); queue.getClass().getMethod("enqueue", int.class).invoke(queue, 999);
+        // Inyección de corrupción: la API de colas locales ya rechaza PID desconocidos.
+        var queue = get(f.simulator, "readyQueue");
+        @SuppressWarnings("unchecked") var corrupted = (Set<Integer>) get(queue, "processes");
+        corrupted.add(999);
         f.action("refresh"); assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
         f.closeAlerts(); f.action("refresh"); assertTrue(Window.getWindows().isEmpty());
         for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton")) f.enabled(name, false);

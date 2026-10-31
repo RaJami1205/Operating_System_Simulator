@@ -4,6 +4,7 @@ import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import java.util.Objects;
 import java.util.Optional;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Selecciona la cabeza READY sin consumirla ni hacer dispatch; no usa priority y reporta inconsistencias
@@ -12,11 +13,18 @@ import java.util.Optional;
 public final class FcfsProcessScheduler implements ProcessScheduler {
     private final ReadyQueue readyQueue;
     private final ProcessTable processes;
+    private final CpuId cpuId;
 
     /** Recibe ReadyQueue y ProcessTable canónicos no nulos para validar el candidato sin consumirlo. */
     public FcfsProcessScheduler(ReadyQueue readyQueue, ProcessTable processes) {
+        this(CpuId.ZERO, readyQueue, processes);
+    }
+
+    public FcfsProcessScheduler(CpuId cpuId, ReadyQueue readyQueue, ProcessTable processes) {
+        this.cpuId = Objects.requireNonNull(cpuId);
         this.readyQueue = Objects.requireNonNull(readyQueue, "readyQueue must not be null");
         this.processes = Objects.requireNonNull(processes, "processes must not be null");
+        readyQueue.requireBinding(cpuId, processes);
     }
 
     /**
@@ -28,7 +36,7 @@ public final class FcfsProcessScheduler implements ProcessScheduler {
         return readyQueue.peek().map(pid -> {
             var pcb = processes.find(pid).orElseThrow(
                     () -> new IllegalStateException("Queued PID is not resident: " + pid));
-            if (pcb.state() != ProcessState.READY) {
+            if (pcb.state() != ProcessState.READY || !pcb.cpuAffinity().equals(cpuId)) {
                 throw new IllegalStateException("Queued PID is not READY: " + pid);
             }
             return pid;

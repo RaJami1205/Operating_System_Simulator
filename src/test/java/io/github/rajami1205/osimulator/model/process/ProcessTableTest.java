@@ -9,7 +9,8 @@ class ProcessTableTest {
     void configurableCapacityIncludesSuspendedProcessesAndReleasesSlots(int capacity) {
         var table = new ProcessTable(capacity);
         for (int pid = 1; pid <= capacity; pid++) {
-            var pcb = new ProcessControlBlock(pid, 140, 1);
+            var pcb = new ProcessControlBlock(pid, 140, 1, LogicalProcessTimes.admitted(0, 0),
+                    new io.github.rajami1205.osimulator.model.cpu.CpuId((pid - 1) / 5));
             pcb.changeState(pid % 2 == 0 ? ProcessState.READY_SUSPENDED : ProcessState.BLOCKED_SUSPENDED);
             table.register(pcb);
         }

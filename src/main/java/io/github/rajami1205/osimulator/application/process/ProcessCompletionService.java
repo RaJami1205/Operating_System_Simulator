@@ -13,6 +13,8 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Centraliza cleanup e historial de procesos terminados. Prevalida recursos y enlaces antes de registrar
@@ -27,12 +29,27 @@ public final class ProcessCompletionService {
     private final ReadyQueue ready;
     private final SuspendedReadyQueue suspended;
     private final Dispatcher dispatcher;
+    private final CpuTopology topology;
     private final List<CompletedProcessRecord> completed = new ArrayList<>();
 
     /** Recibe recursos, Dispatcher y Clock de la sesión para validar cleanup y registrar timestamps reales. */
     public ProcessCompletionService(MainMemory memory, SecondaryStorage storage, ProcessTable table,
             ProcessResourceRegistry resources, ReadyQueue ready, SuspendedReadyQueue suspended,
             Dispatcher dispatcher, Clock realClock) {
+        this(memory, storage, table, resources, ready, suspended, dispatcher, realClock, null);
+    }
+
+    public ProcessCompletionService(CpuTopology topology, MainMemory memory, SecondaryStorage storage,
+            ProcessTable table, ProcessResourceRegistry resources, Clock realClock) {
+        this(memory, storage, table, resources, Objects.requireNonNull(topology).node(CpuId.ZERO).readyQueue(),
+                topology.node(CpuId.ZERO).suspendedReadyQueue(), topology.node(CpuId.ZERO).dispatcher(), realClock, topology);
+    }
+
+    private ProcessCompletionService(MainMemory memory, SecondaryStorage storage, ProcessTable table,
+            ProcessResourceRegistry resources, ReadyQueue ready, SuspendedReadyQueue suspended,
+            Dispatcher dispatcher, Clock realClock, CpuTopology topology) {
+        this.topology = topology;
+        if (topology != null) topology.requireSharedResources(table, memory, resources);
         this.realClock = Objects.requireNonNull(realClock);
         this.memory = Objects.requireNonNull(memory);
         this.storage = Objects.requireNonNull(storage);
@@ -41,6 +58,8 @@ public final class ProcessCompletionService {
         this.ready = Objects.requireNonNull(ready);
         this.suspended = Objects.requireNonNull(suspended);
         this.dispatcher = Objects.requireNonNull(dispatcher);
+        ready.requireBinding(CpuId.ZERO, table);
+        suspended.requireBinding(CpuId.ZERO, table);
     }
 
     /** Devuelve copia inmutable del historial en orden de completion, sin conservar PCBs vivos. */
@@ -52,6 +71,13 @@ public final class ProcessCompletionService {
      */
     public void complete(int pid) {
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Missing terminated PCB"));
+        if (topology == null && !pcb.cpuAffinity().equals(CpuId.ZERO)) {
+            throw new IllegalStateException("Legacy completion service requires CPU 0 affinity");
+        }
+        var node = topology == null ? null : topology.node(pcb.cpuAffinity());
+        var ready = node == null ? this.ready : node.readyQueue();
+        var suspended = node == null ? this.suspended : node.suspendedReadyQueue();
+        var dispatcher = node == null ? this.dispatcher : node.dispatcher();
         if (pcb.state() != ProcessState.TERMINATED || dispatcher.owner().orElse(null) == pcb
                 || ready.entries().contains(pid)) {
             throw new IllegalStateException("Process must terminate and leave CPU/READY before cleanup");
@@ -92,7 +118,7 @@ public final class ProcessCompletionService {
                 : PcbMemoryImage.capture(previous, next);
         var finishedAccounting = pcb.accounting().finishAt(realClock.instant());
         var record = new CompletedProcessRecord(pid, pcb.cpuContext(), finishedAccounting,
-                pcb.logicalTimes(), pcb.instructionCount());
+                pcb.logicalTimes(), pcb.instructionCount(), pcb.cpuAffinity());
         if (previous != null) {
             memory.writePcbImage(resources.find(previous.processId()).orElseThrow().kernel(), previous, previousImage);
             previous.setNextPcbAddress(next);
@@ -105,8 +131,8 @@ public final class ProcessCompletionService {
         }
         memory.release(resource.kernel());
         resources.remove(pid);
-        table.remove(pid);
         suspended.remove(pid);
+        table.remove(pid);
         completed.add(record);
     }
     /** Un enlace corrupto en la representación no autoriza limpieza ni reparación silenciosa. */

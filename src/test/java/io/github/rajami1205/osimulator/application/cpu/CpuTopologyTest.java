@@ -21,6 +21,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CpuTopologyTest {
+    @Test void schedulerApiUsesInterfaceAndExplicitPolicyRejectsNull() throws Exception {
+        assertEquals(ProcessScheduler.class, CpuNode.class.getMethod("scheduler").getReturnType());
+        var f = new Fixture(2);
+        assertThrows(NullPointerException.class, () -> new CpuNode(CpuId.ZERO, f.table, f.memory, f.resources, null));
+        assertThrows(NullPointerException.class, () -> new CpuTopology(2, f.table, f.memory, f.resources, null));
+        var explicit = new CpuTopology(2, f.table, f.memory, f.resources, SchedulingPolicyId.FCFS);
+        assertNotSame(explicit.node(CpuId.ZERO).scheduler(), explicit.node(new CpuId(1)).scheduler());
+    }
     private static final class Fixture {
         final ProcessTable table;
         final MainMemory memory;

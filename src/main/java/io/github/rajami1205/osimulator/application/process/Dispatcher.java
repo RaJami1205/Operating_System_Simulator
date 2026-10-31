@@ -48,7 +48,7 @@ public final class Dispatcher {
     public Optional<ProcessControlBlock> owner() { return Optional.ofNullable(owner); }
 
     /**
-     * Valida cabeza READY, bounds y handles USER/Kernel antes de restaurar contexto y marcar RUNNING; no
+     * Valida candidato READY local, bounds y handles USER/Kernel antes de restaurar contexto y marcar RUNNING; no
      * consume ticks.
      */
     public void dispatch(int pid) {
@@ -59,7 +59,7 @@ public final class Dispatcher {
         if (owner != null) throw new IllegalStateException("CPU already owned");
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Unknown selected process"));
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
-        if (!ready.peek().equals(Optional.of(pid)) || pcb.state() != ProcessState.READY
+        if (!ready.entries().contains(pid) || pcb.state() != ProcessState.READY
                 || !pcb.cpuAffinity().equals(cpuId)
                 || !(resource.residence() instanceof UserImageResidence.Resident resident)
                 || resident.allocation().base() != pcb.memoryBounds().base()
@@ -73,11 +73,20 @@ public final class Dispatcher {
         memory.validatePcbAllocation(resource.kernel(), pcb);
         // Prevalida el evento antes de restaurar CPU; sólo se publica tras sincronización exitosa.
         pcb.logicalTimes().dispatchedAt(currentTime);
-        cpu.restore(pcb.cpuContext());
-        ready.poll();
-        pcb.changeState(ProcessState.RUNNING);
+        var previousCpu = cpu.snapshot();
+        try {
+            cpu.restore(pcb.cpuContext());
+            pcb.changeState(ProcessState.RUNNING);
+            pcbSynchronizer.sync(pcb);
+        } catch (RuntimeException failure) {
+            // writePcbImage es atómico; READY aún conserva el candidato en su posición original.
+            pcb.changeState(ProcessState.READY);
+            cpu.restore(previousCpu);
+            throw failure;
+        }
+        // Sin callbacks ni concurrencia: membresía/afinidad y timestamp ya fueron prevalidados.
+        ready.remove(pid);
         owner = pcb;
-        pcbSynchronizer.sync(pcb);
         pcb.recordFirstDispatch(currentTime);
     }
 

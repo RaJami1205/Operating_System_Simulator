@@ -4,6 +4,7 @@ import io.github.rajami1205.osimulator.application.process.ProcessResourceRegist
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import java.util.*;
 import java.util.stream.IntStream;
 
@@ -13,7 +14,12 @@ public final class CpuTopology {
     private final ProcessTable processes;
 
     public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources) {
-        this(createNodes(cpuCount, processes, memory, resources));
+        this(cpuCount, processes, memory, resources, SchedulingPolicyId.FCFS);
+    }
+
+    public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy) {
+        this(createNodes(cpuCount, processes, memory, resources, policy));
     }
 
     public CpuTopology(List<CpuNode> nodes) {
@@ -34,9 +40,11 @@ public final class CpuTopology {
         processes.entries().forEach(pcb -> node(pcb.cpuAffinity()));
     }
 
-    private static List<CpuNode> createNodes(int count, ProcessTable table, MainMemory memory, ProcessResourceRegistry resources) {
+    private static List<CpuNode> createNodes(int count, ProcessTable table, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy) {
         validateCount(count);
-        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources)).toList();
+        Objects.requireNonNull(policy, "policy must not be null");
+        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources, policy)).toList();
     }
 
     private static void validateCount(int count) {

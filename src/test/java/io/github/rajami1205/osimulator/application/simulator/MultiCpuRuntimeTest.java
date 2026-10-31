@@ -21,6 +21,34 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MultiCpuRuntimeTest {
+    @ParameterizedTest @ValueSource(ints = {1, 2, 3, 4, 5})
+    void explicitFcfsMatchesHistoricalConfigurationForEntireWorkload(int count) {
+        var legacy = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());
+        var explicit = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());
+        var memory = new MemoryConfiguration(1024, count * 140);
+        legacy.initialize(new SimulatorConfiguration(memory, 2048, 256, count));
+        explicit.initialize(new SimulatorConfiguration(memory, 2048, 256, count,
+                io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS));
+        for (var run : List.of(legacy, explicit)) {
+            for (int i = 0; i < count * 2; i++) {
+                run.submitProgram(new ProgramImage("p" + i, new AsmParser().parse(List.of("MOV AX, " + i, "INC"))), i < count ? 0 : 3);
+            }
+            run.start();
+        }
+        var initial = explicit.snapshot();
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS,
+                initial.configuration().orElseThrow().schedulingPolicy());
+        for (int step = 0; step < 5; step++) {
+            assertEquals(legacy.snapshot(), explicit.snapshot());
+            assertEquals(legacy.step(), explicit.step());
+        }
+        assertEquals(legacy.snapshot(), explicit.snapshot());
+        assertEquals(SimulatorState.FINISHED, explicit.snapshot().simulatorState());
+        explicit.reset();
+        assertTrue(explicit.snapshot().configuration().isEmpty());
+        assertEquals(0, initial.simulationTimeSeconds().orElseThrow());
+        assertEquals(count, initial.configuration().orElseThrow().cpuCount());
+    }
     private final ControlledClock realClock = new ControlledClock();
     private final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), realClock);
     private void init(int cpus) {

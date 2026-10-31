@@ -1,12 +1,24 @@
 package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @Test void historicalConstructorsAndExplicitPolicyAreEquivalent() {
+        var memory = new MemoryConfiguration(256, 140);
+        var explicit = new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS);
+        assertEquals(SimulatorConfiguration.defaults(), explicit);
+        assertEquals(new SimulatorConfiguration(memory, 512, 64), explicit);
+        assertEquals(new SimulatorConfiguration(memory, 512, 64, 1), explicit);
+        assertEquals(SchedulingPolicyId.FCFS, explicit.schedulingPolicy());
+        assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, null));
+        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS), java.util.List.of(SchedulingPolicyId.values()));
+        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("RR"));
+    }
     @ParameterizedTest
     @CsvSource({"1,5,140", "2,10,280", "3,15,420", "4,20,560", "5,25,700"})
     void validatesCapacityAndExactKernelBoundary(int cpus, int capacity, int kernel) {

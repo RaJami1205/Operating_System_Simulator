@@ -4,13 +4,15 @@ import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import java.util.Objects;
 import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 
 /** Configuración inmutable de la máquina; las capacidades no crean subsistemas. */
 public record SimulatorConfiguration(
         MemoryConfiguration mainMemory,
         int secondaryStoragePositions,
         int virtualMemoryPositions,
-        int cpuCount
+        int cpuCount,
+        SchedulingPolicyId schedulingPolicy
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -25,11 +27,18 @@ public record SimulatorConfiguration(
         this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, MIN_CPU_COUNT);
     }
 
+    /** Compatibilidad de capacidad configurable con FCFS predeterminado. */
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, SchedulingPolicyId.FCFS);
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
      */
     public SimulatorConfiguration {
+        Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {
             throw new IllegalArgumentException("CPU count must be between 1 and 5");

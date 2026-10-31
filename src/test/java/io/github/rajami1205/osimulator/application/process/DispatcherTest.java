@@ -22,7 +22,7 @@ class DispatcherTest {
         assertEquals(OptionalLong.of(3), pcb.logicalTimes().firstDispatchTime());
     }
     private final CpuRegisters<Instruction> cpu = new CpuRegisters<>();
-    private final MainMemory memory = new MainMemory(new MemoryConfiguration(160,64));
+    private final MainMemory memory = new MainMemory(new MemoryConfiguration(224,96));
     private final ProcessTable table = new ProcessTable();
     private final ReadyQueue ready = new ReadyQueue();
     private final ProcessResourceRegistry resources = new ProcessResourceRegistry();
@@ -58,7 +58,9 @@ class DispatcherTest {
     }
     @Test void rejectedCandidatesPreserveHeadCpuAndOwnership() {
         var p1=add(1);add(2);var before=cpu.snapshot();
+        ready.remove(2);
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(2));
+        ready.enqueue(2);
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(99));
         p1.setProgramCounter(4099);assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));
         p1.setProgramCounter(4096);p1.changeState(ProcessState.READY_SUSPENDED);
@@ -67,5 +69,51 @@ class DispatcherTest {
         assertThrows(IllegalStateException.class,()->dispatcher.dispatch(1));
         assertEquals(List.of(1,2),ready.entries());assertEquals(before,cpu.snapshot());
         assertTrue(dispatcher.owner().isEmpty());
+    }
+
+    @Test void dispatchesMiddleReadyCandidateWithoutReorderingOthers() {
+        var first = add(1); var middle = add(2); var last = add(3);
+        middle.replaceCpuContext(middle.cpuContext().withDx(new TextRegisterValue("selected")));
+        dispatcher.dispatch(2, 7);
+        assertEquals(List.of(1, 3), ready.entries());
+        assertSame(middle, dispatcher.owner().orElseThrow());
+        assertEquals(middle.cpuContext(), cpu.snapshot());
+        assertEquals(ProcessState.READY, first.state()); assertEquals(ProcessState.READY, last.state());
+        assertEquals(OptionalLong.of(7), middle.logicalTimes().firstDispatchTime());
+        var kernel = resources.find(2).orElseThrow().kernel();
+        assertEquals(new PcbValue.State(ProcessState.RUNNING),
+                ((PcbContent) memory.read(kernel.base() + PcbField.STATE.offset())).value());
+        assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(1, 7));
+        assertEquals(List.of(1, 3), ready.entries());
+    }
+
+    @Test void lateImageFailureRestoresCpuAndStateWithoutLosingQueuePosition() throws Exception {
+        add(1); var middle = add(2); add(3);
+        cpu.writeAccumulator(47);
+        var before = cpu.snapshot(); var context = middle.cpuContext(); var times = middle.logicalTimes();
+        var cells = java.util.stream.IntStream.range(0, memory.size()).mapToObj(memory::read).toList();
+        // La captura de imagen ocurre después de restaurar CPU y marcar RUNNING.
+        var link = ProcessControlBlock.class.getDeclaredField("nextPcbAddress"); link.setAccessible(true);
+        link.set(middle, null);
+        assertThrows(NullPointerException.class, () -> dispatcher.dispatch(2, 4));
+        assertEquals(List.of(1, 2, 3), ready.entries()); assertTrue(dispatcher.owner().isEmpty());
+        assertEquals(before, cpu.snapshot()); assertSame(context, middle.cpuContext());
+        assertSame(times, middle.logicalTimes()); assertEquals(ProcessState.READY, middle.state());
+        assertEquals(cells, java.util.stream.IntStream.range(0, memory.size()).mapToObj(memory::read).toList());
+        middle.setNextPcbAddress(Optional.empty());
+        dispatcher.dispatch(2, 4);
+        assertEquals(List.of(1, 3), ready.entries()); assertSame(middle, dispatcher.owner().orElseThrow());
+    }
+
+    @Test void staleResidentHandleRejectsNonHeadWithoutMutation() {
+        add(1); var second = add(2);
+        var resident = (UserImageResidence.Resident) resources.find(2).orElseThrow().residence();
+        memory.release(resident.allocation());
+        var before = cpu.snapshot();
+        assertThrows(io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException.class,
+                () -> dispatcher.dispatch(2));
+        assertEquals(List.of(1, 2), ready.entries()); assertEquals(before, cpu.snapshot());
+        assertTrue(dispatcher.owner().isEmpty()); assertEquals(ProcessState.READY, second.state());
+        assertTrue(second.logicalTimes().firstDispatchTime().isEmpty());
     }
 }

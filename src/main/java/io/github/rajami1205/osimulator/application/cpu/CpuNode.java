@@ -18,20 +18,25 @@ public final class CpuNode {
     private final CpuTickCounter tickCounter = new CpuTickCounter();
     private final ReadyQueue ready;
     private final SuspendedReadyQueue suspended;
-    private final FcfsProcessScheduler scheduler;
+    private final ProcessScheduler scheduler;
     private final Dispatcher dispatcher;
     private final ProcessTable processes;
     private final MainMemory memory;
     private final ProcessResourceRegistry resources;
 
     public CpuNode(CpuId id, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources) {
+        this(id, processes, memory, resources, SchedulingPolicyId.FCFS);
+    }
+
+    public CpuNode(CpuId id, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy) {
         this.id = Objects.requireNonNull(id);
         this.processes = Objects.requireNonNull(processes);
         this.memory = Objects.requireNonNull(memory);
         this.resources = Objects.requireNonNull(resources);
         ready = new ReadyQueue(id, processes);
         suspended = new SuspendedReadyQueue(id, processes);
-        scheduler = new FcfsProcessScheduler(id, ready, processes);
+        scheduler = ProcessSchedulerFactory.create(policy, id, ready, processes);
         dispatcher = new Dispatcher(id, registers, processes, ready, resources, memory);
     }
 
@@ -40,7 +45,7 @@ public final class CpuNode {
     public CpuTickCounter tickCounter() { return tickCounter; }
     public ReadyQueue readyQueue() { return ready; }
     public SuspendedReadyQueue suspendedReadyQueue() { return suspended; }
-    public FcfsProcessScheduler scheduler() { return scheduler; }
+    public ProcessScheduler scheduler() { return scheduler; }
     public Dispatcher dispatcher() { return dispatcher; }
 
     void requireSharedResources(ProcessTable table, MainMemory mainMemory, ProcessResourceRegistry registry) {

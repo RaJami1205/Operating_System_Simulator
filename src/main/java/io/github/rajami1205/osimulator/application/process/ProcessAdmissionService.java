@@ -97,6 +97,7 @@ public final class ProcessAdmissionService {
         }
 
         ProgramLoadResult loaded = null;
+        MainMemory.UserReservation reservation = null;
         ProcessControlBlock previous = null;
         Optional<PcbAddress> previousLink = Optional.empty();
         boolean resourcesPublished = false;
@@ -104,8 +105,10 @@ public final class ProcessAdmissionService {
         boolean linkChanged = false;
         boolean enqueued = false;
         try {
-            loaded = loader.loadWithAllocation(memory, pid, program,
+            var prepared = loader.prepareWithAllocation(memory, pid, program,
                     LogicalProcessTimes.admitted(job.arrivalTime(), currentTime), affinity);
+            loaded = prepared.loaded();
+            reservation = prepared.reservation();
             memory.materializePcb(kernel, loaded.pcb());
             var address = new PcbAddress(kernel.base());
             previous = processes.last().orElse(null);
@@ -127,6 +130,8 @@ public final class ProcessAdmissionService {
             enqueued = true;
             // Copia antes de publicar; tras este commit no quedan operaciones de preparación que puedan fallar.
             jobs.markAdmitted(jobId);
+            // La reserva exclusiva sigue vigente: confirmar sólo consume el token, no reasigna memoria.
+            memory.confirmUser(reservation);
             nextProcessId++;
             return result;
         } catch (RuntimeException | Error failure) {
@@ -142,11 +147,11 @@ public final class ProcessAdmissionService {
             if (processPublished) cleanup(failure, () -> processes.remove(pid));
             if (resourcesPublished) cleanup(failure, () -> resources.remove(pid));
             if (loaded != null) {
-                var user = loaded.userAllocation();
-                cleanup(failure, () -> memory.release(user));
+                var provisional = reservation;
+                cleanup(failure, () -> memory.cancelUser(provisional));
             }
             cleanup(failure, () -> memory.release(kernel));
-            // El Loader envuelve con esta causa sólo fallos de allocateUser, tras validar el tamaño.
+            // El Loader envuelve con esta causa sólo fallos de reserva USER, tras validar el tamaño.
             // Un rollback fallido no debe ocultarse como un resultado Waiting ordinario.
             if (loaded == null && failure instanceof ProgramLoadException
                     && failure.getCause() instanceof MemoryAllocationException

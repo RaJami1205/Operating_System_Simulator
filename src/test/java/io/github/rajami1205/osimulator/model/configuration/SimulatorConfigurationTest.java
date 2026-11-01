@@ -8,6 +8,21 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @Test void historicalConstructorsDefaultToFirstFitAndExplicitStrategiesAreImmutable() {
+        var memory = new MemoryConfiguration(256, 140);
+        var first = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT;
+        for (var historical : java.util.List.of(new SimulatorConfiguration(memory, 512, 64),
+                new SimulatorConfiguration(memory, 512, 64, 1),
+                new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS))) {
+            assertEquals(first, historical.userAllocationStrategy());
+            assertEquals(new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, first), historical);
+        }
+        for (var strategy : io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.values()) {
+            var configuration = new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, strategy);
+            assertEquals(strategy, configuration.userAllocationStrategy());
+        }
+        assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, null));
+    }
     @Test void historicalConstructorsAndExplicitPolicyAreEquivalent() {
         var memory = new MemoryConfiguration(256, 140);
         var explicit = new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS);

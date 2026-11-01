@@ -7,6 +7,8 @@ import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
@@ -38,6 +40,7 @@ public final class SimulatorController {
     private boolean renderingSelection;
     private boolean renderingCpuSelection;
     @FXML private ComboBox<Integer> cpuCountBox;
+    @FXML private ComboBox<UserAllocationStrategy> userAllocationBox;
     @FXML private ComboBox<Integer> cpuSelector;
     private String feedback = "";
     @FXML private Label cpuTicksLabel;
@@ -130,6 +133,20 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        userAllocationBox.getItems().setAll(UserAllocationStrategy.values());
+        userAllocationBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(UserAllocationStrategy strategy) {
+                if (strategy == null) return "";
+                return switch (strategy) {
+                    case FIRST_FIT -> "First-Fit";
+                    case NEXT_FIT -> "Next-Fit";
+                    case BEST_FIT -> "Best-Fit";
+                };
+            }
+            @Override public UserAllocationStrategy fromString(String text) {
+                throw new UnsupportedOperationException("Allocation selector is not editable");
+            }
+        });
         cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
         cpuCountBox.setValue(1);
         cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
@@ -193,7 +210,8 @@ public final class SimulatorController {
     @FXML private void handleInitialize() {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
-                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue())));
+                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
+                SchedulingPolicyId.FCFS, userAllocationBox.getValue())));
     }
     /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
@@ -415,6 +433,8 @@ public final class SimulatorController {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
         cpuCountBox.setDisable(!configuring);
+        userAllocationBox.setDisable(!configuring);
+        snapshot.configuration().ifPresent(configuration -> userAllocationBox.setValue(configuration.userAllocationStrategy()));
         cpuSelector.setDisable(snapshot.cpus().isEmpty());
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
@@ -457,6 +477,7 @@ public final class SimulatorController {
         cpuCountBox.setValue(1);
         updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
+        userAllocationBox.setValue(defaults.userAllocationStrategy());
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
         secondaryStorageSlider.setValue(defaults.secondaryStoragePositions());
         updateDependentRange(kernelMemorySlider, mainMemorySlider);

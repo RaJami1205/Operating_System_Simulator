@@ -33,6 +33,20 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class ProgramLoaderTest {
 
+    @Test void failedNextFitLoadRestoresCursorAndDirectSuccessCommits() {
+        var memory = new MainMemory(new MemoryConfiguration(128, 32),
+                io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.NEXT_FIT);
+        var loader = new ProgramLoader();
+        var first = loader.loadWithAllocation(memory, 1, createRepresentativeProgram());
+        assertEquals(32, first.userAllocation().base());
+        assertThrows(ProgramLoadException.class, () -> loader.loadWithAllocation(memory, 0, createRepresentativeProgram()));
+        var second = loader.loadWithAllocation(memory, 2, createRepresentativeProgram());
+        assertEquals(37, second.userAllocation().base());
+        memory.release(second.userAllocation());
+        assertEquals(42, memory.allocateUser(1).base());
+        assertEquals(4096, first.pcb().programCounter());
+    }
+
     @Test
     void shouldLoadProgramInOrderAndReturnReadyProcessControlBlock() {
         MainMemory memory = createMemory();

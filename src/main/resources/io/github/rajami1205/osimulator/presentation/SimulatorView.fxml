@@ -39,6 +39,10 @@
                             <Label text="CPU count" styleClass="configuration-label"/>
                             <ComboBox fx:id="cpuCountBox" prefWidth="80"/>
                         </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="USER allocation" styleClass="configuration-label"/>
+                            <ComboBox fx:id="userAllocationBox" prefWidth="120"/>
+                        </HBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
                                 <Label text="Main Memory" styleClass="configuration-label"/>

@@ -28,6 +28,31 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void allocationSelectorConfiguresSessionLocksAndResetsToFirstFit() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var selector =
+                (ComboBox<io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy>) f.widget("userAllocationBox", ComboBox.class);
+        var strategies = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.values();
+        assertEquals(List.of(strategies), selector.getItems());
+        assertEquals(strategies[0], selector.getValue());
+        assertEquals(List.of("First-Fit", "Next-Fit", "Best-Fit"),
+                selector.getItems().stream().map(selector.getConverter()::toString).toList());
+        for (var strategy : strategies) {
+            f.enabled("userAllocationBox", true); selector.setValue(strategy);
+            f.action("handleInitialize");
+            var frozen = f.simulator.snapshot();
+            assertEquals(strategy, frozen.configuration().orElseThrow().userAllocationStrategy());
+            f.enabled("userAllocationBox", false);
+            f.load("strategy.asm", "INC", "INC"); f.action("handleStart");
+            f.enabled("userAllocationBox", false);
+            f.action("handlePause"); f.enabled("userAllocationBox", false);
+            f.action("handleResume"); f.action("handleStep"); f.action("handleStep");
+            f.enabled("userAllocationBox", false);
+            f.action("handleReset"); f.enabled("userAllocationBox", true);
+            assertEquals(strategies[0], selector.getValue());
+            assertEquals(strategy, frozen.configuration().orElseThrow().userAllocationStrategy());
+        }
+    }); }
     @Test void cpuCountAdjustsMemoryRangesAndResetRestoresDefaults() throws Exception { onFx(() -> {
         var f = new Fixture();
         @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);

@@ -15,6 +15,52 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessSwapServiceTest {
+    @ParameterizedTest @EnumSource(UserAllocationStrategy.class)
+    void strategyRoundTripAndFailedRestorePreserveIdentityContextAndCursor(UserAllocationStrategy strategy) throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("timed", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "timed", JobState.PENDING));
+        admission.admit(1);
+        var pcb = table.find(1).orElseThrow(); pcb.setProgramCounter(4097);
+        var context = pcb.cpuContext();
+        var old = user(1);
+        swap.swapOut(1);
+        var suspended = resource(1); var source = disk(1);
+        var faults = MemoryFaults.install(memory, "user");
+        faults.writeFailure = new IllegalStateException("restore failed");
+        assertSame(faults.writeFailure, assertThrows(IllegalStateException.class, () -> swap.swapIn(1)));
+        assertSame(suspended, resource(1)); assertSame(context, pcb.cpuContext());
+        assertEquals(3, storage.readSwapBlock(source).size()); assertTrue(queue.entries().isEmpty());
+        faults.writeFailure = null;
+        assertEquals(new SwapResult.Completed(), swap.swapIn(1));
+        int expectedBase = strategy == UserAllocationStrategy.NEXT_FIT ? 143 : 140;
+        assertEquals(expectedBase, user(1).base());
+        assertNotEquals(old.allocationId(), user(1).allocationId());
+        assertEquals(context, pcb.cpuContext());
+        assertEquals(4097, pcb.programCounter());
+        assertEquals(expectedBase + 1, memory.translateInstructionAddress(user(1), pcb.logicalCodeRange(), new LogicalAddress(4097)).value());
+        assertThrows(RuntimeException.class, () -> memory.readUserBlock(old));
+        memory.validatePcbAllocation(resource(1).kernel(), pcb);
+        assertEquals(expectedBase + 3, memory.allocateUser(1).base());
+    }
+
+    @ParameterizedTest @EnumSource(UserAllocationStrategy.class)
+    void strategySwapInWaitsWithoutChangingSuspendedOwnership(UserAllocationStrategy strategy) {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("waiting", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "waiting", JobState.PENDING)); admission.admit(1); swap.swapOut(1);
+        var suspended = resource(1);
+        var all = memory.allocateUser(96);
+        assertEquals(new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY), swap.swapIn(1));
+        assertSame(suspended, resource(1)); assertTrue(queue.entries().isEmpty());
+        memory.release(all);
+        assertEquals(new SwapResult.Completed(), swap.swapIn(1));
+        assertEquals(140, user(1).base());
+    }
     private final MainMemory memory=new MainMemory(new MemoryConfiguration(236,140));
     private final SecondaryStorage storage=new SecondaryStorage(512,64);
     private final ProcessTable table=new ProcessTable();

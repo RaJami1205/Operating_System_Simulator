@@ -22,6 +22,38 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MultiCpuRuntimeTest {
     @ParameterizedTest @ValueSource(ints = {1, 2, 3, 4, 5})
+    void selectedStrategyUsesOneSharedUserRegionAcrossAllCpus(int count) {
+        for (var strategy : UserAllocationStrategy.values()) {
+            var run = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());
+            var configuration = new SimulatorConfiguration(new MemoryConfiguration(1024, count * 140), 2048, 256, count,
+                    io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS, strategy);
+            run.initialize(configuration);
+            // La segunda ola encuentra huecos liberados por todas las CPU; Next-Fit continúa después.
+            for (int i = 0; i < count; i++) {
+                run.submitProgram(new ProgramImage("first" + i, new AsmParser().parse(List.of("INC"))), 0);
+                run.submitProgram(new ProgramImage("later" + i, new AsmParser().parse(List.of("INC", "INC"))), 2);
+            }
+            run.start(); run.step(); run.step(); run.step();
+            var snapshot = run.snapshot();
+            assertEquals(configuration, snapshot.configuration().orElseThrow());
+            int base = count * 140 + (strategy == UserAllocationStrategy.NEXT_FIT ? count : 0);
+            for (int cpu = 0; cpu < count; cpu++) {
+                var view = snapshot.cpus().get(cpu);
+                assertEquals(4097, view.cpu().programCounter());
+                assertEquals(Optional.of(base + 2 * cpu + 1), view.nextInstructionPhysicalAddress());
+                assertEquals(2, view.cpuTicks());
+            }
+            assertEquals(3, snapshot.simulationTimeSeconds().orElseThrow());
+            run.step();
+            assertEquals(SimulatorState.FINISHED, run.snapshot().simulatorState());
+            assertEquals(count * 2, run.completedProcesses().size());
+            run.reset();
+            assertTrue(run.snapshot().configuration().isEmpty());
+            assertEquals(strategy, snapshot.configuration().orElseThrow().userAllocationStrategy());
+            assertEquals(3, snapshot.simulationTimeSeconds().orElseThrow());
+        }
+    }
+    @ParameterizedTest @ValueSource(ints = {1, 2, 3, 4, 5})
     void explicitFcfsMatchesHistoricalConfigurationForEntireWorkload(int count) {
         var legacy = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());
         var explicit = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());

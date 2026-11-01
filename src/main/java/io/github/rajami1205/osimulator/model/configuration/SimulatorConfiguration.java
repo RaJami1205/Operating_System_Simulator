@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
 import java.util.Objects;
 import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
@@ -12,7 +13,8 @@ public record SimulatorConfiguration(
         int secondaryStoragePositions,
         int virtualMemoryPositions,
         int cpuCount,
-        SchedulingPolicyId schedulingPolicy
+        SchedulingPolicyId schedulingPolicy,
+        UserAllocationStrategy userAllocationStrategy
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -33,11 +35,19 @@ public record SimulatorConfiguration(
         this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, SchedulingPolicyId.FCFS);
     }
 
+    /** Las configuraciones históricas conservan First-Fit en USER. */
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount,
+                schedulingPolicy, UserAllocationStrategy.FIRST_FIT);
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
      */
     public SimulatorConfiguration {
+        Objects.requireNonNull(userAllocationStrategy, "userAllocationStrategy must not be null");
         Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {

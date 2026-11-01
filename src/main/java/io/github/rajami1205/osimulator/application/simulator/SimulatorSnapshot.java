@@ -40,8 +40,39 @@ public record SimulatorSnapshot(
         Optional<String> addressTranslationError,
         OptionalLong simulationTimeSeconds,
         List<CpuView> cpus,
-        List<RuntimeStepResult.CpuResult> lastCpuResults
+        List<RuntimeStepResult.CpuResult> lastCpuResults,
+        List<PartitionView> partitions
 ) {
+    /** Compatibilidad con snapshots multi-CPU previos a las particiones fijas. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds,
+                cpus, lastCpuResults, List.of());
+    }
+
+    /** Valores capturados; no expone handles ni referencias al registry/allocator. */
+    public record PartitionView(int partitionId, int base, int capacity, boolean occupied,
+            Optional<Integer> ownerPid, int usedLength, int internalFragmentation) {
+        public PartitionView {
+            Objects.requireNonNull(ownerPid);
+            if (partitionId <= 0 || base < 0 || capacity <= 0 || (long) base + capacity > Integer.MAX_VALUE
+                    || usedLength < 0 || usedLength > capacity
+                    || occupied != (usedLength > 0)
+                    || internalFragmentation != (occupied ? capacity - usedLength : 0)
+                    || ownerPid.isPresent() && (!occupied || ownerPid.orElseThrow() <= 0)) {
+                throw new IllegalArgumentException("Invalid partition snapshot");
+            }
+        }
+    }
     /** Campos singulares legacy: vista explícita CPU0, nunca agregados globales. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
@@ -99,6 +130,7 @@ public record SimulatorSnapshot(
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
+        partitions = List.copyOf(partitions);
         cpus = List.copyOf(cpus);
         lastCpuResults = List.copyOf(lastCpuResults);
         Objects.requireNonNull(simulatorState, "simulatorState must not be null");

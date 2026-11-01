@@ -9,6 +9,7 @@ import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.MemoryMode;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationException;
 import io.github.rajami1205.osimulator.model.process.PcbAddress;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
@@ -76,6 +77,8 @@ public final class ProcessAdmissionService {
         Job job = jobs.find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
         if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
         if (job.arrivalTime() > currentTime) throw new IllegalStateException("Job has not arrived: " + jobId);
+        var program = memory.memoryMode() == MemoryMode.DYNAMIC ? null : storage.readProgram(job.programName());
+        if (program != null) memory.validateProgramLength(program.size());
         if (processes.isFull()) return new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED);
         CpuId affinity = topology == null ? CpuId.ZERO : topology.leastLoaded().map(CpuNode::id).orElse(null);
         if (affinity == null || processes.countForCpu(affinity) >= ProcessTable.MAX_ADMITTED_PROCESSES) {
@@ -87,8 +90,8 @@ public final class ProcessAdmissionService {
         if (processes.find(pid).isPresent() || resources.find(pid).isPresent()) {
             throw new IllegalStateException("Next Process ID is already resident: " + pid);
         }
-        var program = storage.readProgram(job.programName());
         MemoryAllocation kernel;
+        if (program == null) program = storage.readProgram(job.programName());
         try {
             // El tamaño fijo es positivo: un fallo de allocation aquí indica capacidad insuficiente.
             kernel = memory.allocateKernel(PcbField.PCB_SIZE);

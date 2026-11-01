@@ -52,7 +52,22 @@ final class SimulatorSnapshotMapper {
                         value.accounting(), value.logicalTimes(), value.declaredBurst(), value.cpuAffinity())).toList(),
                 storageRows(storage), screen, zero.isEmpty() ? OptionalLong.empty() : OptionalLong.of(zero.orElseThrow().cpuTicks()),
                 zero.flatMap(CpuView::nextInstructionPhysicalAddress), zero.flatMap(CpuView::addressTranslationError),
-                simulationTimeSeconds, cpus, lastCpuResults);
+                simulationTimeSeconds, cpus, lastCpuResults, partitionViews(memory, resources));
+    }
+
+    private static List<PartitionView> partitionViews(MainMemory memory, ProcessResourceRegistry resources) {
+        if (memory == null) return List.of();
+        var owners = new HashMap<MemoryAllocation, Integer>();
+        if (resources != null) resources.entries().forEach((pid, resource) -> {
+            if (resource.residence() instanceof UserImageResidence.Resident resident) {
+                owners.put(resident.allocation(), pid);
+            }
+        });
+        return memory.partitions().stream().map(state -> {
+            var partition = state.partition();
+            return new PartitionView(partition.id(), partition.base(), partition.capacity(), state.occupied(),
+                    state.allocation().map(owners::get), state.usedLength(), state.internalFragmentation());
+        }).toList();
     }
 
     private static CpuView cpuView(CpuNode node,

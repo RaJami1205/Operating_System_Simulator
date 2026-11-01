@@ -8,6 +8,9 @@ import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
+import io.github.rajami1205.osimulator.model.memory.MemoryMode;
+import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
+import java.util.Optional;
 import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
@@ -41,6 +44,17 @@ public final class SimulatorController {
     private boolean renderingCpuSelection;
     @FXML private ComboBox<Integer> cpuCountBox;
     @FXML private ComboBox<UserAllocationStrategy> userAllocationBox;
+    @FXML private ComboBox<MemoryMode> memoryModeBox;
+    @FXML private TextField partitionCountField;
+    @FXML private TextField partitionCapacitiesField;
+    @FXML private TableView<PartitionView> partitionTable;
+    @FXML private TableColumn<PartitionView, String> partitionIdColumn;
+    @FXML private TableColumn<PartitionView, String> partitionBaseColumn;
+    @FXML private TableColumn<PartitionView, String> partitionCapacityColumn;
+    @FXML private TableColumn<PartitionView, String> partitionOccupiedColumn;
+    @FXML private TableColumn<PartitionView, String> partitionOwnerColumn;
+    @FXML private TableColumn<PartitionView, String> partitionUsedColumn;
+    @FXML private TableColumn<PartitionView, String> partitionFragmentationColumn;
     @FXML private ComboBox<Integer> cpuSelector;
     private String feedback = "";
     @FXML private Label cpuTicksLabel;
@@ -133,6 +147,21 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        memoryModeBox.getItems().setAll(MemoryMode.values());
+        memoryModeBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(MemoryMode mode) {
+                if (mode == null) return "";
+                return switch (mode) {
+                    case DYNAMIC -> "Dynamic";
+                    case FIXED_EQUAL -> "Fixed Equal";
+                    case FIXED_UNEQUAL -> "Fixed Unequal";
+                };
+            }
+            @Override public MemoryMode fromString(String value) {
+                throw new UnsupportedOperationException("Memory mode selector is not editable");
+            }
+        });
+        memoryModeBox.valueProperty().addListener((o, before, after) -> updateMemoryModeControls());
         userAllocationBox.getItems().setAll(UserAllocationStrategy.values());
         userAllocationBox.setConverter(new javafx.util.StringConverter<>() {
             @Override public String toString(UserAllocationStrategy strategy) {
@@ -186,7 +215,14 @@ public final class SimulatorController {
      * directamente.
      */
     private void configureTables() {
-        for (TableView<?> table : List.of(memoryTable, storageTable, programTable, jobsTable, processTable, completedTable)) {
+        column(partitionIdColumn, v -> Integer.toString(v.partitionId()));
+        column(partitionBaseColumn, v -> Integer.toString(v.base()));
+        column(partitionCapacityColumn, v -> Integer.toString(v.capacity()));
+        column(partitionOccupiedColumn, v -> v.occupied() ? "Occupied" : "Free");
+        column(partitionOwnerColumn, v -> v.ownerPid().map(Object::toString).orElse("—"));
+        column(partitionUsedColumn, v -> Integer.toString(v.usedLength()));
+        column(partitionFragmentationColumn, v -> Integer.toString(v.internalFragmentation()));
+        for (TableView<?> table : List.of(memoryTable, storageTable, programTable, jobsTable, processTable, completedTable, partitionTable)) {
             table.getSortOrder().clear();
         }
         column(programAddressColumn, v -> Integer.toString(v.address())); column(programInstructionColumn, ProgramEntry::instruction);
@@ -211,7 +247,41 @@ public final class SimulatorController {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
-                SchedulingPolicyId.FCFS, userAllocationBox.getValue())));
+                SchedulingPolicyId.FCFS, userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration())));
+    }
+
+    private Optional<FixedPartitionConfiguration> fixedConfiguration() {
+        return switch (memoryModeBox.getValue()) {
+            case DYNAMIC -> Optional.empty();
+            case FIXED_EQUAL -> Optional.of(FixedPartitionConfiguration.equal(parsePartitionInteger(partitionCountField.getText())));
+            case FIXED_UNEQUAL -> Optional.of(FixedPartitionConfiguration.unequal(parsePartitionCapacities(partitionCapacitiesField.getText())));
+        };
+    }
+
+    static int parsePartitionInteger(String text) {
+        String value = text == null ? "" : text.trim();
+        try {
+            if (!value.matches("[0-9]+")) throw new NumberFormatException();
+            int parsed = Integer.parseInt(value);
+            if (parsed <= 0) throw new NumberFormatException();
+            return parsed;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Partition values must be positive integers within 1..2147483647");
+        }
+    }
+
+    static List<Integer> parsePartitionCapacities(String text) {
+        if (text == null) throw new IllegalArgumentException("Enter comma-separated partition capacities");
+        return java.util.Arrays.stream(text.split(",", -1)).map(SimulatorController::parsePartitionInteger).toList();
+    }
+
+    private void updateMemoryModeControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        var mode = memoryModeBox.getValue();
+        memoryModeBox.setDisable(!configuring);
+        userAllocationBox.setDisable(!configuring || mode != MemoryMode.DYNAMIC);
+        partitionCountField.setDisable(!configuring || mode != MemoryMode.FIXED_EQUAL);
+        partitionCapacitiesField.setDisable(!configuring || mode != MemoryMode.FIXED_UNEQUAL);
     }
     /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
@@ -433,8 +503,14 @@ public final class SimulatorController {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
         cpuCountBox.setDisable(!configuring);
-        userAllocationBox.setDisable(!configuring);
-        snapshot.configuration().ifPresent(configuration -> userAllocationBox.setValue(configuration.userAllocationStrategy()));
+        snapshot.configuration().ifPresent(configuration -> {
+            userAllocationBox.setValue(configuration.userAllocationStrategy());
+            memoryModeBox.setValue(configuration.memoryMode());
+        });
+        updateMemoryModeControls();
+        partitionTable.getItems().setAll(snapshot.partitions());
+        partitionTable.setVisible(!snapshot.partitions().isEmpty());
+        partitionTable.setManaged(!snapshot.partitions().isEmpty());
         cpuSelector.setDisable(snapshot.cpus().isEmpty());
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
@@ -477,6 +553,9 @@ public final class SimulatorController {
         cpuCountBox.setValue(1);
         updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
+        memoryModeBox.setValue(defaults.memoryMode());
+        partitionCountField.setText("1");
+        partitionCapacitiesField.clear();
         userAllocationBox.setValue(defaults.userAllocationStrategy());
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
         secondaryStorageSlider.setValue(defaults.secondaryStoragePositions());

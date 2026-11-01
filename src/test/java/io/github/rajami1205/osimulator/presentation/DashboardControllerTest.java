@@ -28,6 +28,44 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void fixedControlsValidateExactIntegersAndLayoutsAndRenderPartitions() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        var equal = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_EQUAL;
+        var unequal = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_UNEQUAL;
+        f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", false);
+        mode.setValue(equal); f.enabled("userAllocationBox", false); f.enabled("partitionCountField", true);
+        f.widget("partitionCountField", TextField.class).setText("3"); // USER 116 no divisible.
+        f.action("handleInitialize"); f.closeAlerts();
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.widget("partitionCountField", TextField.class).setText("4"); f.action("handleInitialize");
+        assertEquals(4, f.simulator.snapshot().partitions().size());
+        f.enabled("memoryModeBox", false); f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", false);
+        assertEquals(f.simulator.snapshot().partitions(), f.widget("partitionTable", TableView.class).getItems());
+        f.load("fixed.asm", "INC", "INC"); f.action("handleStart");
+        assertTrue(f.simulator.snapshot().partitions().getFirst().occupied());
+        assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handlePause"); f.enabled("memoryModeBox", false); f.action("handleResume");
+        f.action("handleStep"); f.action("handleStep"); f.action("handleReset");
+        assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+        f.enabled("userAllocationBox", true); assertFalse(f.widget("partitionTable", TableView.class).isVisible());
+        mode.setValue(unequal); f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", true);
+        f.widget("partitionCapacitiesField", TextField.class).setText("32, 32, 52"); f.action("handleInitialize");
+        assertEquals(List.of(32, 32, 52), f.simulator.snapshot().partitions().stream().map(PartitionView::capacity).toList());
+        f.enabled("partitionCapacitiesField", false); f.action("handleReset");
+        assertTrue(f.widget("partitionCapacitiesField", TextField.class).getText().isEmpty());
+    }); }
+
+    @Test void partitionInputRejectsFractionsSignsOverflowAndEmptyElements() {
+        assertEquals(List.of(32, 48, 64), SimulatorController.parsePartitionCapacities("32, 48,64"));
+        assertEquals(Integer.MAX_VALUE, SimulatorController.parsePartitionInteger("2147483647"));
+        for (String invalid : List.of("0", "-1", "+1", "1.0", "1e2", "NaN", "2147483648", "")) {
+            assertThrows(IllegalArgumentException.class, () -> SimulatorController.parsePartitionInteger(invalid));
+        }
+        for (String invalid : List.of("32,", ",32", "32,,64", "", "32,-1")) {
+            assertThrows(IllegalArgumentException.class, () -> SimulatorController.parsePartitionCapacities(invalid));
+        }
+    }
     @Test void allocationSelectorConfiguresSessionLocksAndResetsToFirstFit() throws Exception { onFx(() -> {
         var f = new Fixture();
         @SuppressWarnings("unchecked") var selector =
@@ -257,8 +295,9 @@ class DashboardControllerTest {
         rows.put("memoryTable", snapshot.memory()); rows.put("storageTable", snapshot.storage());
         rows.put("programTable", snapshot.program()); rows.put("jobsTable", snapshot.jobs());
         rows.put("processTable", snapshot.processes()); rows.put("completedTable", snapshot.completedProcesses());
+        rows.put("partitionTable", snapshot.partitions());
         int columns = 0;
-        assertEquals(6, Arrays.stream(SimulatorController.class.getDeclaredFields())
+        assertEquals(7, Arrays.stream(SimulatorController.class.getDeclaredFields())
                 .filter(field -> field.getType() == TableView.class).count());
         for (var entry : rows.entrySet()) {
             TableView<?> table = f.widget(entry.getKey(), TableView.class);
@@ -269,7 +308,7 @@ class DashboardControllerTest {
                 columns++;
             }
         }
-        assertEquals(23, columns);
+        assertEquals(30, columns);
     }
     @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
         var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());

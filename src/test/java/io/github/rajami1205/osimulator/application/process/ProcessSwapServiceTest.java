@@ -15,6 +15,44 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessSwapServiceTest {
+    @Test void fixedSwapRelocatesToLargerPartitionAndFailurePreservesBacking() throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.BEST_FIT,
+                MemoryMode.FIXED_UNEQUAL, Optional.of(FixedPartitionConfiguration.unequal(List.of(16, 32, 48))));
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("fixed", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "fixed", JobState.PENDING)); admission.admit(1);
+        var pcb = table.find(1).orElseThrow(); pcb.setProgramCounter(4097);
+        var old = user(1); var context = pcb.cpuContext(); var affinity = pcb.cpuAffinity();
+        assertEquals(140, old.base()); assertEquals(3, old.size());
+        swap.swapOut(1);
+        assertFalse(memory.partitions().getFirst().occupied());
+        assertEquals(3, storage.readSwapBlock(disk(1)).size());
+        var blocker = memory.allocateUser(1); // Ocupa toda la antigua partición de 16.
+        var suspended = resource(1); var before = memory.partitions();
+        var medium = memory.allocateUser(32); var large = memory.allocateUser(48);
+        assertEquals(new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY), swap.swapIn(1));
+        assertSame(suspended, resource(1)); assertTrue(queue.entries().isEmpty());
+        memory.release(medium); memory.release(large);
+        var fault = MemoryFaults.install(memory, "user");
+        fault.writeFailure = new IllegalStateException("fixed restore failed");
+        assertSame(fault.writeFailure, assertThrows(IllegalStateException.class, () -> swap.swapIn(1)));
+        assertEquals(before, memory.partitions()); assertSame(suspended, resource(1));
+        assertEquals(context, pcb.cpuContext()); assertTrue(queue.entries().isEmpty());
+        assertEquals(ProcessState.READY_SUSPENDED, pcb.state());
+        fault.writeFailure = null;
+        swap.swapIn(1);
+        assertEquals(156, user(1).base()); assertEquals(3, user(1).size());
+        assertEquals(29, memory.partitions().get(1).internalFragmentation());
+        assertEquals(context, pcb.cpuContext()); assertEquals(affinity, pcb.cpuAffinity());
+        assertEquals(3, pcb.instructionCount());
+        assertEquals(157, memory.translateInstructionAddress(user(1), pcb.logicalCodeRange(), new LogicalAddress(4097)).value());
+        assertThrows(RuntimeException.class, () -> memory.readUserBlock(old));
+        memory.validatePcbAllocation(resource(1).kernel(), pcb);
+        assertEquals(List.of(1), queue.entries());
+        memory.release(blocker);
+        assertEquals(140, memory.allocateUser(16).base());
+    }
     @ParameterizedTest @EnumSource(UserAllocationStrategy.class)
     void strategyRoundTripAndFailedRestorePreserveIdentityContextAndCursor(UserAllocationStrategy strategy) throws Exception {
         var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);

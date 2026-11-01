@@ -8,6 +8,26 @@ import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @Test void fixedModesValidateBeforeInitializationAndAllHistoricalConstructorsStayDynamic() {
+        var geometry = new MemoryConfiguration(256, 140);
+        for (var legacy : java.util.List.of(new SimulatorConfiguration(geometry, 512, 64),
+                new SimulatorConfiguration(geometry, 512, 64, 1),
+                new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS),
+                new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS,
+                        io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT))) {
+            assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, legacy.memoryMode());
+            assertTrue(legacy.fixedPartitions().isEmpty()); assertEquals(SimulatorConfiguration.defaults(), legacy);
+        }
+        var equal = io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration.equal(4);
+        var mode = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_EQUAL;
+        var strategy = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.BEST_FIT;
+        var fixed = new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.of(equal));
+        assertEquals(equal, fixed.fixedPartitions().orElseThrow()); assertEquals(strategy, fixed.userAllocationStrategy());
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(geometry, 512, 64, 1,
+                SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(geometry, 512, 64, 1,
+                SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.of(io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration.equal(3))));
+    }
     @Test void historicalConstructorsDefaultToFirstFitAndExplicitStrategiesAreImmutable() {
         var memory = new MemoryConfiguration(256, 140);
         var first = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT;

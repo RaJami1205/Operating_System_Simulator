@@ -40,9 +40,19 @@
                             <ComboBox fx:id="cpuCountBox" prefWidth="80"/>
                         </HBox>
                         <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="Memory mode" styleClass="configuration-label"/>
+                            <ComboBox fx:id="memoryModeBox" prefWidth="130"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
                             <Label text="USER allocation" styleClass="configuration-label"/>
                             <ComboBox fx:id="userAllocationBox" prefWidth="120"/>
                         </HBox>
+                        <VBox spacing="4">
+                            <Label text="Equal: partition count" styleClass="configuration-label"/>
+                            <TextField fx:id="partitionCountField" text="1" styleClass="input-field"/>
+                            <Label text="Unequal: capacities (comma-separated)" wrapText="true" styleClass="configuration-label"/>
+                            <TextField fx:id="partitionCapacitiesField" promptText="32,48,64,112" styleClass="input-field"/>
+                        </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
                                 <Label text="Main Memory" styleClass="configuration-label"/>
@@ -243,6 +253,18 @@
                 <TabPane tabClosingPolicy="UNAVAILABLE" styleClass="dashboard-tabs" minHeight="130">
                     <tabs>
                         <Tab text="Main Memory">
+                            <VBox spacing="4">
+                            <TableView fx:id="partitionTable" prefHeight="120" minHeight="60" visible="false" managed="false">
+                                <columns>
+                                    <TableColumn fx:id="partitionIdColumn" text="Partition" prefWidth="75"/>
+                                    <TableColumn fx:id="partitionBaseColumn" text="Base" prefWidth="70"/>
+                                    <TableColumn fx:id="partitionCapacityColumn" text="Capacity" prefWidth="80"/>
+                                    <TableColumn fx:id="partitionOccupiedColumn" text="State" prefWidth="90"/>
+                                    <TableColumn fx:id="partitionOwnerColumn" text="PID" prefWidth="65"/>
+                                    <TableColumn fx:id="partitionUsedColumn" text="Used" prefWidth="70"/>
+                                    <TableColumn fx:id="partitionFragmentationColumn" text="Internal fragmentation" prefWidth="155"/>
+                                </columns>
+                            </TableView>
                             <TableView fx:id="memoryTable" minHeight="70.0" VBox.vgrow="ALWAYS">
                                 <placeholder>
                                     <Label text="Memory not initialized" styleClass="empty-state"/>
@@ -253,6 +275,7 @@
                                     <TableColumn fx:id="memoryContentColumn" text="Content" prefWidth="600"/>
                                 </columns>
                             </TableView>
+                            </VBox>
                         </Tab>
                         <Tab text="Secondary Storage">
                             <TableView fx:id="storageTable" minHeight="70.0" VBox.vgrow="ALWAYS">

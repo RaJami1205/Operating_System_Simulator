@@ -115,7 +115,8 @@ public final class DynamicMemoryAllocator implements MemoryAllocator {
         cursor = base;
     }
 
-    // Sólo MainMemory coordina rollback USER; no hay checkpoints públicos reutilizables.
-    int cursor() { return cursor; }
-    void restoreCursor(int previous) { cursor = previous; }
+    Runnable captureRollback() {
+        int previous = cursor;
+        return () -> cursor = previous;
+    }
 }

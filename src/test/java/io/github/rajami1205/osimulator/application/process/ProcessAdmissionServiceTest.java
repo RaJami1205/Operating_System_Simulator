@@ -16,6 +16,44 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessAdmissionServiceTest {
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = MemoryMode.class, names = {"FIXED_EQUAL", "FIXED_UNEQUAL"})
+    void fixedLateFailureReturnsPartitionAndPreservesLinksAndJob(MemoryMode mode) throws Exception {
+        var fixed = mode == MemoryMode.FIXED_EQUAL ? FixedPartitionConfiguration.equal(3)
+                : FixedPartitionConfiguration.unequal(List.of(40, 24, 32));
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.NEXT_FIT, mode, Optional.of(fixed));
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 2); submit(2, 3); service.admit(1);
+        var first = table.find(1).orElseThrow(); var before = registry.entries();
+        var occupancy = memory.partitions();
+        var failure = failJobPublication(null);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(2)));
+        assertEquals(occupancy, memory.partitions()); assertEquals(before, registry.entries());
+        assertEquals(List.of(first), table.entries()); assertEquals(List.of(1), queue.entries());
+        assertTrue(first.nextPcbAddress().isEmpty()); assertEquals(JobState.PENDING, jobs.find(2).orElseThrow().state());
+        assertEquals(new AdmissionResult.Admitted(2), service.admit(2));
+        assertEquals(2, memory.partitions().stream().filter(FixedPartition.Occupancy::occupied).count());
+        assertEquals(3, table.find(2).orElseThrow().instructionCount());
+        memory.validatePcbAllocation(registry.find(2).orElseThrow().kernel(), table.find(2).orElseThrow());
+    }
+
+    @Test void fixedAdmissionRejectsImpossibleEvenWhenKernelUnavailableAndWaitsForOccupiedPartition() {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.FIRST_FIT,
+                MemoryMode.FIXED_EQUAL, Optional.of(FixedPartitionConfiguration.equal(12)));
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 9); submit(2, 8);
+        var kernel = memory.allocateKernel(140);
+        assertThrows(io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException.class, () -> service.admit(1));
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY), service.admit(2));
+        memory.release(kernel);
+        var handles = new ArrayList<MemoryAllocation>();
+        for (int i = 0; i < 12; i++) handles.add(memory.allocateUser(1));
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(2));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        memory.release(handles.getFirst());
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(2));
+        assertEquals(140, table.find(1).orElseThrow().memoryBounds().base());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(UserAllocationStrategy.class)
     void lateFailureRestoresStrategyStateAndRetryCommits(UserAllocationStrategy strategy) throws Exception {
         var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);

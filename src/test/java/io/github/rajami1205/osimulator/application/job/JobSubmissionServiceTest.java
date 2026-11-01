@@ -11,6 +11,19 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class JobSubmissionServiceTest {
+    @Test void fixedSubmissionRejectsImpossibleProgramBeforeStorageJobAndIdPublication() {
+        var memory = new io.github.rajami1205.osimulator.model.memory.MainMemory(
+                new io.github.rajami1205.osimulator.model.memory.MemoryConfiguration(128, 32),
+                io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT,
+                io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_EQUAL,
+                Optional.of(io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration.equal(12)));
+        var service = new JobSubmissionService(storage, jobs, memory);
+        var impossible = new ProgramImage("impossible", Collections.nCopies(9, new StoreInstruction(RegisterName.BX)));
+        assertThrows(io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException.class,
+                () -> service.submit(impossible, 100));
+        assertTrue(storage.findProgram("impossible").isEmpty()); assertTrue(jobs.entries().isEmpty());
+        assertEquals(1, service.submit(program("valid")).jobId());
+    }
     @Test void arrivalValidationPrecedesStorageAndMetadataSurvivesAdmission() {
         assertThrows(IllegalArgumentException.class, () -> service.submit(program("future"), -1));
         assertTrue(storage.entries().isEmpty()); assertTrue(jobs.entries().isEmpty());

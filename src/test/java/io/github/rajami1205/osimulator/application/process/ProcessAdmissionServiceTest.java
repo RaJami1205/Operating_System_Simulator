@@ -15,6 +15,60 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessAdmissionServiceTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(UserAllocationStrategy.class)
+    void lateFailureRestoresStrategyStateAndRetryCommits(UserAllocationStrategy strategy) throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 2); submit(2, 3);
+        service.admit(1);
+        var first = table.find(1).orElseThrow();
+        var original = registry.entries();
+        var failure = failJobPublication(null);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(2)));
+        assertEquals(original, registry.entries());
+        assertEquals(List.of(first), table.entries()); assertEquals(List.of(1), queue.entries());
+        assertTrue(first.nextPcbAddress().isEmpty());
+        assertEquals(JobState.PENDING, jobs.find(2).orElseThrow().state());
+        assertTrue(memory.isEmpty(142)); assertTrue(memory.isEmpty(28));
+        assertEquals(new AdmissionResult.Admitted(2), service.admit(2));
+        assertEquals(142, table.find(2).orElseThrow().memoryBounds().base());
+        assertEquals(145, memory.allocateUser(1).base());
+        memory.validatePcbAllocation(registry.find(1).orElseThrow().kernel(), first);
+    }
+
+    @Test void nextFitLoaderWriteFailureRestoresCursorBeforeAdmissionRetry() throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.NEXT_FIT);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 3);
+        var prefix = memory.allocateUser(7);
+        var faults = MemoryFaults.install(memory, "user");
+        faults.writeFailure = new IllegalStateException("write failed");
+        assertSame(faults.writeFailure, assertThrows(IllegalStateException.class, () -> service.admit(1)));
+        assertEquals(1, faults.releases);
+        faults.writeFailure = null;
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1));
+        assertEquals(147, table.find(1).orElseThrow().memoryBounds().base());
+        memory.release(prefix);
+        assertEquals(150, memory.allocateUser(1).base());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(UserAllocationStrategy.class)
+    void allStrategiesPreserveUserShortageWaitingAndRetry(UserAllocationStrategy strategy) {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 50);
+        var first = memory.allocateUser(32); memory.allocateUser(32);
+        var last = memory.allocateUser(32); memory.release(first); memory.release(last);
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(1));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        assertEquals(JobState.PENDING, jobs.find(1).orElseThrow().state());
+        var wholeKernel = memory.allocateKernel(140); memory.release(wholeKernel);
+        memory.clearUserSpace();
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1));
+        assertEquals(140, table.find(1).orElseThrow().memoryBounds().base());
+    }
     @Test
     void configuredCapacityAdmitsTwentyFiveCanonicalBlocksAndWaitsWithoutResources() {
         var configuration = new io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration(

@@ -107,12 +107,13 @@ public final class ProcessSwapService {
         var swap = suspended.allocation();
         var image = storage.readSwapBlock(swap);
         if (image.size() != pcb.instructionCount()) throw new IllegalStateException("VIRTUAL_MEMORY image length mismatch");
-        MemoryAllocation user;
+        MainMemory.UserReservation reservation;
         try {
-            user = memory.allocateUser(image.size());
+            reservation = memory.reserveUser(image.size());
         } catch (MemoryAllocationException shortage) {
             return new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY);
         }
+        var user = reservation.allocation();
         ProcessMemoryBounds bounds;
         ProcessResources replacement;
         boolean ready = pcb.state() == ProcessState.READY_SUSPENDED;
@@ -124,11 +125,13 @@ public final class ProcessSwapService {
             storage.readSwapBlock(swap); // Valida identidad y contenido de origen antes del commit irreversible.
             pcb.relocateSuspended(bounds); // Publica ambos valores sólo tras preparar el contexto; fallo libera USER.
         } catch (RuntimeException | Error failure) {
-            cleanup(failure, () -> memory.release(user));
+            cleanup(failure, () -> memory.cancelUser(reservation));
             throw failure;
         }
         // Las precondiciones controladas ya se validaron; estos objetos de sesión no se usan concurrentemente.
         resources.replace(processId, original, replacement);
+        // La residencia canónica ya posee el handle; desde aquí su liberación es ordinaria.
+        memory.confirmUser(reservation);
         storage.releaseSwap(swap);
         pcb.changeState(ready ? ProcessState.READY : ProcessState.BLOCKED);
         if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().remove(processId);

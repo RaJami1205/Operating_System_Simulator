@@ -100,7 +100,7 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
-        MainMemory newMemory = new MainMemory(configuration.mainMemory());
+        MainMemory newMemory = new MainMemory(configuration.mainMemory(), configuration.userAllocationStrategy());
         ScreenDevice newScreen = new ScreenDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());

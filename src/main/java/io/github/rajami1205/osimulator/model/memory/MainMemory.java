@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Memoria física tipada con allocators First-Fit independientes para Kernel y USER. La disponibilidad
+ * Memoria física tipada con KERNEL First-Fit y estrategia USER independiente. La disponibilidad
  * pertenece a los allocators, no a EmptyContent; el fetch usa el handle canónico.
  */
 public final class MainMemory {
@@ -19,13 +19,22 @@ public final class MainMemory {
     private final MemoryContent[] positions;
     private final MemoryAllocator kernel;
     private final MemoryAllocator user;
+    private final DynamicMemoryAllocator userCore;
+    private Object userGeneration = new Object();
+    private UserReservation pendingUser;
 
     /** Crea celdas vacías y dos allocators bounded independientes según MemoryConfiguration. */
     public MainMemory(MemoryConfiguration configuration) {
+        this(configuration, UserAllocationStrategy.FIRST_FIT);
+    }
+
+    public MainMemory(MemoryConfiguration configuration, UserAllocationStrategy strategy) {
         this.configuration = Objects.requireNonNull(configuration, "configuration must not be null");
+        Objects.requireNonNull(strategy, "strategy must not be null");
         positions = new MemoryContent[configuration.totalPositions()];
         kernel = new FirstFitMemoryAllocator(MemoryRegion.KERNEL, 0, configuration.kernelReservedPositions());
-        user = new FirstFitMemoryAllocator(MemoryRegion.USER, configuration.userStartAddress(), configuration.userPositions());
+        userCore = new DynamicMemoryAllocator(MemoryRegion.USER, configuration.userStartAddress(), configuration.userPositions(), strategy);
+        user = userCore;
         Arrays.fill(positions, EmptyContent.INSTANCE);
     }
 
@@ -52,14 +61,70 @@ public final class MainMemory {
 
     /** Indica ausencia de contenido; una posición vacía puede seguir reservada por su allocator. */
     public boolean isEmpty(int address) { return read(address) == EmptyContent.INSTANCE; }
-    /** Reserva un bloque contiguo bounded exclusivamente en USER mediante First-Fit. */
-    public MemoryAllocation allocateUser(int size) { return user.allocate(size); }
+    /** Reserva USER confirmada; no puede intercalarse con una publicación provisional. */
+    public MemoryAllocation allocateUser(int size) {
+        requireNoPendingUser();
+        return user.allocate(size);
+    }
+
+    /** Token opaco de una operación USER, ligado al allocator y a su generación. */
+    public static final class UserReservation {
+        private final MemoryAllocator allocator;
+        private final Object generation;
+        private final MemoryAllocation allocation;
+        private final int previousCursor;
+
+        private UserReservation(MemoryAllocator allocator, Object generation,
+                MemoryAllocation allocation, int previousCursor) {
+            this.allocator = allocator;
+            this.generation = generation;
+            this.allocation = allocation;
+            this.previousCursor = previousCursor;
+        }
+
+        public MemoryAllocation allocation() { return allocation; }
+    }
+
+    /** Mantiene una única reserva provisional hasta confirmar, cancelar o resetear la región. */
+    public UserReservation reserveUser(int size) {
+        requireNoPendingUser();
+        int previousCursor = userCore.cursor();
+        var allocation = user.allocate(size);
+        pendingUser = new UserReservation(user, userGeneration, allocation, previousCursor);
+        return pendingUser;
+    }
+
+    public void confirmUser(UserReservation reservation) {
+        validateReservation(reservation);
+        pendingUser = null;
+    }
+
+    /** Libera sólo esta reserva; nunca restaura mapas ni reactiva identidades anteriores. */
+    public void cancelUser(UserReservation reservation) {
+        validateReservation(reservation);
+        user.release(reservation.allocation);
+        Arrays.fill(positions, reservation.allocation.base(), reservation.allocation.endExclusive(), EmptyContent.INSTANCE);
+        userCore.restoreCursor(reservation.previousCursor);
+        pendingUser = null;
+    }
+
+    private void validateReservation(UserReservation reservation) {
+        if (reservation == null || reservation != pendingUser || reservation.allocator != user
+                || reservation.generation != userGeneration) {
+            throw new IllegalStateException("USER reservation is foreign, stale or already resolved");
+        }
+    }
+
+    private void requireNoPendingUser() {
+        if (pendingUser != null) throw new IllegalStateException("A provisional USER reservation is open");
+    }
     /** Reserva un bloque contiguo bounded exclusivamente en Kernel mediante First-Fit. */
     public MemoryAllocation allocateKernel(int size) { return kernel.allocate(size); }
 
     /** Valida antes de vaciar; una reserva inválida nunca modifica contenido. */
     public void release(MemoryAllocation allocation) {
         Objects.requireNonNull(allocation, "allocation must not be null");
+        if (allocation.region() == MemoryRegion.USER) requireNoPendingUser();
         allocator(allocation.region()).release(allocation);
         Arrays.fill(positions, allocation.base(), allocation.endExclusive(), EmptyContent.INSTANCE);
     }
@@ -213,15 +278,17 @@ public final class MainMemory {
 
     /** Vacía USER e invalida sus handles; preserva Kernel y su allocator. */
     public void clearUserSpace() {
-        Arrays.fill(positions, configuration.userStartAddress(), size(), EmptyContent.INSTANCE);
         user.reset();
+        userGeneration = new Object();
+        pendingUser = null;
+        Arrays.fill(positions, configuration.userStartAddress(), size(), EmptyContent.INSTANCE);
     }
 
     /** Vacía ambas regiones y reinicia allocators, invalidando todos los handles anteriores. */
     public void reset() {
-        Arrays.fill(positions, EmptyContent.INSTANCE);
+        clearUserSpace();
         kernel.reset();
-        user.reset();
+        Arrays.fill(positions, 0, configuration.userStartAddress(), EmptyContent.INSTANCE);
     }
 
     /** Selecciona el allocator bounded que corresponde a la región solicitada. */

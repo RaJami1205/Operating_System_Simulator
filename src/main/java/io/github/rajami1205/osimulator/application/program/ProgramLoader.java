@@ -3,7 +3,6 @@ package io.github.rajami1205.osimulator.application.program;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
-import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -44,6 +43,14 @@ public final class ProgramLoader {
 
     public ProgramLoadResult loadWithAllocation(MainMemory memory, int processId,
             List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        var provisional = prepareWithAllocation(memory, processId, instructions, logicalTimes, cpuAffinity);
+        memory.confirmUser(provisional.reservation());
+        return provisional.loaded();
+    }
+
+    /** Admission conserva la reserva abierta hasta publicar Job, PCB, recursos y cola. */
+    public PreparedProgramLoad prepareWithAllocation(MainMemory memory, int processId,
+            List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
         Objects.requireNonNull(cpuAffinity);
         Objects.requireNonNull(logicalTimes);
         MainMemory nonNullMemory = Objects.requireNonNull(
@@ -58,20 +65,21 @@ public final class ProgramLoader {
             throw new ProgramLoadException("Program must contain at least one instruction");
         }
 
-        MemoryAllocation allocation;
+        MainMemory.UserReservation reservation;
         try {
-            allocation = nonNullMemory.allocateUser(program.size());
+            reservation = nonNullMemory.reserveUser(program.size());
         } catch (MemoryAllocationException exception) {
             throw new ProgramLoadException("Unable to allocate contiguous User memory", exception);
         }
         try {
+            var allocation = reservation.allocation();
             nonNullMemory.writeUserBlock(allocation, program);
             ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size(), logicalTimes, cpuAffinity);
             pcb.changeState(ProcessState.READY);
-            return new ProgramLoadResult(pcb, allocation);
+            return new PreparedProgramLoad(new ProgramLoadResult(pcb, allocation), reservation);
         } catch (RuntimeException | Error exception) {
             try {
-                nonNullMemory.release(allocation);
+                nonNullMemory.cancelUser(reservation);
             } catch (RuntimeException | Error cleanup) {
                 if (cleanup != exception) exception.addSuppressed(cleanup);
             }

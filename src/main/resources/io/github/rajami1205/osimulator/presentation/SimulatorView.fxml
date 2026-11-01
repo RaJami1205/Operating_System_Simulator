@@ -52,6 +52,8 @@
                             <TextField fx:id="partitionCountField" text="1" styleClass="input-field"/>
                             <Label text="Unequal: capacities (comma-separated)" wrapText="true" styleClass="configuration-label"/>
                             <TextField fx:id="partitionCapacitiesField" promptText="32,48,64,112" styleClass="input-field"/>
+                            <Label text="Paging: page size (cells)" styleClass="configuration-label"/>
+                            <TextField fx:id="pageSizeField" text="4" styleClass="input-field"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
@@ -254,6 +256,7 @@
                     <tabs>
                         <Tab text="Main Memory">
                             <VBox spacing="4">
+                            <TextArea fx:id="pagingDetailsArea" editable="false" prefHeight="130" minHeight="60" visible="false" managed="false" styleClass="detail-area"/>
                             <TableView fx:id="partitionTable" prefHeight="120" minHeight="60" visible="false" managed="false">
                                 <columns>
                                     <TableColumn fx:id="partitionIdColumn" text="Partition" prefWidth="75"/>
@@ -296,6 +299,7 @@
                                 </placeholder>
                                 <columns>
                                     <TableColumn fx:id="programAddressColumn" text="Address" prefWidth="100"/>
+                                    <TableColumn fx:id="programLogicalColumn" text="Logical address" prefWidth="115" visible="false"/>
                                     <TableColumn fx:id="programInstructionColumn" text="Instruction" prefWidth="550"/>
                                 </columns>
                             </TableView>

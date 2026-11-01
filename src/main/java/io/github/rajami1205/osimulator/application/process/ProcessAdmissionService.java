@@ -2,7 +2,7 @@ package io.github.rajami1205.osimulator.application.process;
 
 import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.application.program.ProgramLoader;
-import io.github.rajami1205.osimulator.application.program.ProgramLoadResult;
+import io.github.rajami1205.osimulator.application.program.ResidentProgramLoad;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
@@ -99,7 +99,7 @@ public final class ProcessAdmissionService {
             return new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY);
         }
 
-        ProgramLoadResult loaded = null;
+        ResidentProgramLoad loaded = null;
         MainMemory.UserReservation reservation = null;
         ProcessControlBlock previous = null;
         Optional<PcbAddress> previousLink = Optional.empty();
@@ -108,7 +108,7 @@ public final class ProcessAdmissionService {
         boolean linkChanged = false;
         boolean enqueued = false;
         try {
-            var prepared = loader.prepareWithAllocation(memory, pid, program,
+            var prepared = loader.prepareImage(memory, pid, program,
                     LogicalProcessTimes.admitted(job.arrivalTime(), currentTime), affinity);
             loaded = prepared.loaded();
             reservation = prepared.reservation();
@@ -117,7 +117,7 @@ public final class ProcessAdmissionService {
             previous = processes.last().orElse(null);
             if (previous != null) previousLink = previous.nextPcbAddress();
             var result = new AdmissionResult.Admitted(pid);
-            resources.register(pid, new ProcessResources(kernel, address, new UserImageResidence.Resident(loaded.userAllocation())));
+            resources.register(pid, new ProcessResources(kernel, address, UserImageResidence.resident(loaded.image())));
             resourcesPublished = true;
             processes.register(loaded.pcb());
             processPublished = true;

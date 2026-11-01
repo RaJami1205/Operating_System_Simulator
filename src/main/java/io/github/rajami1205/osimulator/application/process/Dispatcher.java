@@ -61,15 +61,13 @@ public final class Dispatcher {
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
         if (!ready.entries().contains(pid) || pcb.state() != ProcessState.READY
                 || !pcb.cpuAffinity().equals(cpuId)
-                || !(resource.residence() instanceof UserImageResidence.Resident resident)
-                || resident.allocation().base() != pcb.memoryBounds().base()
-                || resident.allocation().size() != pcb.instructionCount()
+                || resource.residence() instanceof UserImageResidence.Suspended
                 || !pcb.hasExecutableProgramCounter()
                 || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING
                     && p.cpuAffinity().equals(cpuId))) {
             throw new IllegalStateException("Invalid dispatch candidate or CPU ownership");
         }
-        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        memory.validateImage(resource.residence().residentImage(), pcb);
         memory.validatePcbAllocation(resource.kernel(), pcb);
         // Prevalida el evento antes de restaurar CPU; sólo se publica tras sincronización exitosa.
         pcb.logicalTimes().dispatchedAt(currentTime);

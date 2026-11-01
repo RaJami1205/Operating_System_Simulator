@@ -28,6 +28,34 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void pagingControlsRenderSelectedCpuAndLockConfigurationUntilReset() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+        count.setValue(2); f.widget("mainMemorySlider", Slider.class).setValue(1024);
+        mode.setValue(io.github.rajami1205.osimulator.model.memory.MemoryMode.PAGING);
+        f.enabled("pageSizeField", true); f.widget("pageSizeField", TextField.class).setText("3.5");
+        f.action("handleInitialize"); f.closeAlerts(); assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.widget("pageSizeField", TextField.class).setText("3"); f.action("handleInitialize");
+        f.enabled("pageSizeField", false); f.enabled("memoryModeBox", false);
+        f.load("zero.asm", "INC", "INC", "INC", "INC"); f.load("one.asm", "INC", "INC", "INC", "INC");
+        f.action("handleStart"); f.action("handleStep");
+        @SuppressWarnings("unchecked") var selector = (ComboBox<Integer>) f.widget("cpuSelector", ComboBox.class);
+        for (int id : List.of(0, 1, 0)) {
+            selector.setValue(id); var cpu = f.simulator.snapshot().cpus().get(id);
+            assertEquals(cpu.nextInstructionPhysicalAddress().orElseThrow().toString(), f.widget("pcValueLabel", Label.class).getText());
+            assertEquals(cpu.program(), f.widget("programTable", TableView.class).getItems());
+        }
+        assertTrue(f.widget("pagingDetailsArea", TextArea.class).isVisible());
+        assertFalse(f.widget("pagingDetailsArea", TextArea.class).getText().isBlank());
+        assertTrue(f.widget("programLogicalColumn", TableColumn.class).isVisible());
+        assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleReset");
+        assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+        assertEquals("4", f.widget("pageSizeField", TextField.class).getText());
+        assertFalse(f.widget("pagingDetailsArea", TextArea.class).isVisible());
+        assertTrue(f.simulator.snapshot().paging().frames().isEmpty());
+    }); }
     @Test void fixedControlsValidateExactIntegersAndLayoutsAndRenderPartitions() throws Exception { onFx(() -> {
         var f = new Fixture();
         @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
@@ -308,7 +336,7 @@ class DashboardControllerTest {
                 columns++;
             }
         }
-        assertEquals(30, columns);
+        assertEquals(31, columns);
     }
     @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
         var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());

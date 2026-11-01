@@ -10,7 +10,7 @@ public record FixedPartitionConfiguration(MemoryMode mode, int partitionCount, L
     public FixedPartitionConfiguration {
         Objects.requireNonNull(mode);
         capacities = List.copyOf(capacities);
-        if (mode == MemoryMode.DYNAMIC || partitionCount <= 0) {
+        if ((mode != MemoryMode.FIXED_EQUAL && mode != MemoryMode.FIXED_UNEQUAL) || partitionCount <= 0) {
             throw new IllegalArgumentException("Fixed configuration requires a fixed mode and positive count");
         }
         if (mode == MemoryMode.FIXED_EQUAL && !capacities.isEmpty()) {
@@ -58,7 +58,7 @@ public record FixedPartitionConfiguration(MemoryMode mode, int partitionCount, L
     public static void validateMode(MemoryConfiguration geometry, MemoryMode mode,
             Optional<FixedPartitionConfiguration> fixed) {
         Objects.requireNonNull(geometry); Objects.requireNonNull(mode); Objects.requireNonNull(fixed);
-        if (mode == MemoryMode.DYNAMIC) {
+        if (mode == MemoryMode.DYNAMIC || mode == MemoryMode.PAGING) {
             if (fixed.isPresent()) throw new IllegalArgumentException("Dynamic memory cannot have a fixed layout");
         } else {
             var configuration = fixed.orElseThrow(() -> new IllegalArgumentException("Fixed memory requires a layout"));

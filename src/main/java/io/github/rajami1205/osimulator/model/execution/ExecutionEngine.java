@@ -17,6 +17,7 @@ import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
 import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.ResidentImage;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -47,6 +48,11 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnder
  * no conserva estado de sesión propio.
  */
 public final class ExecutionEngine {
+    /** Compatibilidad con callers que conservan el handle USER contiguo histórico. */
+    public TickResult executeTick(SimulatedFileSystem filesystem, ScreenDevice screen, MainMemory memory,
+            CpuRegisters<Instruction> cpu, ProcessControlBlock pcb, MemoryAllocation allocation) {
+        return executeTick(filesystem, screen, memory, cpu, pcb, (ResidentImage) allocation);
+    }
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
     private sealed interface SemanticOutcome permits Continue, Terminate { }
     /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
@@ -55,7 +61,7 @@ public final class ExecutionEngine {
     private record Terminate() implements SemanticOutcome { }
 
     /**
-     * Completa una instrucción usando la allocation USER canónica; detecta PC terminal antes del fetch.
+     * Completa una instrucción usando la imagen USER canónica; detecta PC terminal antes del fetch.
      */
     public TickResult executeTick(
             SimulatedFileSystem filesystem,
@@ -63,7 +69,7 @@ public final class ExecutionEngine {
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
-            MemoryAllocation allocation
+            ResidentImage allocation
     ) {
         Objects.requireNonNull(memory, "memory must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
@@ -75,7 +81,7 @@ public final class ExecutionEngine {
 
         int currentProgramCounter = pcb.programCounter();
         try {
-            memory.validateUserAllocation(allocation, pcb.memoryBounds());
+            memory.validateImage(allocation, pcb);
         } catch (RuntimeException exception) {
             throw new ExecutionEngineException("Invalid process allocation", exception);
         }

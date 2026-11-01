@@ -55,17 +55,15 @@ public final class ProcessSwapService {
         var pcb = process(processId);
         var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
-        if (!(original.residence() instanceof UserImageResidence.Resident resident)
+        if (original.residence() instanceof UserImageResidence.Suspended
                 || (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.BLOCKED)) {
             throw new IllegalStateException("Swap-out requires an eligible resident READY/BLOCKED process");
         }
         boolean ready = pcb.state() == ProcessState.READY;
         validateQueue(processId, ready);
-        var user = resident.allocation();
-        if (user.base() != pcb.memoryBounds().base() || user.size() != pcb.instructionCount()) {
-            throw new IllegalStateException("Resident image and PCB bounds disagree");
-        }
-        var image = memory.readUserBlock(user);
+        var user = original.residence().residentImage();
+        memory.validateImage(user, pcb);
+        var image = memory.readImage(user);
         StorageAllocation swap;
         try {
             swap = storage.allocateSwap(image.size());
@@ -109,21 +107,24 @@ public final class ProcessSwapService {
         if (image.size() != pcb.instructionCount()) throw new IllegalStateException("VIRTUAL_MEMORY image length mismatch");
         MainMemory.UserReservation reservation;
         try {
-            reservation = memory.reserveUser(image.size());
+            reservation = memory.reserveImage(processId, image.size());
         } catch (MemoryAllocationException shortage) {
             return new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY);
         }
-        var user = reservation.allocation();
-        ProcessMemoryBounds bounds;
+        var user = reservation.image();
         ProcessResources replacement;
         boolean ready = pcb.state() == ProcessState.READY_SUSPENDED;
         try {
-            memory.writeUserBlock(user, image);
-            bounds = new ProcessMemoryBounds(user.base(), user.size());
-            replacement = original.withResidence(new UserImageResidence.Resident(user));
+            memory.writeImage(user, image);
+            replacement = original.withResidence(UserImageResidence.resident(user));
             validateCommit(pcb, original, false);
             storage.readSwapBlock(swap); // Valida identidad y contenido de origen antes del commit irreversible.
-            pcb.relocateSuspended(bounds); // Publica ambos valores sólo tras preparar el contexto; fallo libera USER.
+            if (user instanceof MemoryAllocation allocation) {
+                pcb.relocateSuspended(new ProcessMemoryBounds(allocation.base(), allocation.size()));
+            } else {
+                memory.validateImage(user, pcb);
+                if (!pcb.hasExecutableProgramCounter() && !pcb.hasTerminalProgramCounter()) throw new IllegalStateException("Invalid suspended Logical PC");
+            }
         } catch (RuntimeException | Error failure) {
             cleanup(failure, () -> memory.cancelUser(reservation));
             throw failure;

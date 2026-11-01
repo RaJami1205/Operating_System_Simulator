@@ -4,6 +4,7 @@ import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
 import io.github.rajami1205.osimulator.model.memory.MemoryMode;
 import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
+import io.github.rajami1205.osimulator.model.memory.PagingConfiguration;
 import java.util.Optional;
 import java.util.Objects;
 import io.github.rajami1205.osimulator.model.memory.PcbField;
@@ -19,7 +20,8 @@ public record SimulatorConfiguration(
         SchedulingPolicyId schedulingPolicy,
         UserAllocationStrategy userAllocationStrategy,
         MemoryMode memoryMode,
-        Optional<FixedPartitionConfiguration> fixedPartitions
+        Optional<FixedPartitionConfiguration> fixedPartitions,
+        Optional<PagingConfiguration> paging
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -54,6 +56,15 @@ public record SimulatorConfiguration(
                 userAllocationStrategy, MemoryMode.DYNAMIC, Optional.empty());
     }
 
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy,
+            UserAllocationStrategy userAllocationStrategy, MemoryMode memoryMode,
+            Optional<FixedPartitionConfiguration> fixedPartitions) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, schedulingPolicy,
+                userAllocationStrategy, memoryMode, fixedPartitions,
+                memoryMode == MemoryMode.PAGING ? Optional.of(PagingConfiguration.defaults()) : Optional.empty());
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
@@ -63,6 +74,9 @@ public record SimulatorConfiguration(
         Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         FixedPartitionConfiguration.validateMode(mainMemory, memoryMode, fixedPartitions);
+        Objects.requireNonNull(paging);
+        if ((memoryMode == MemoryMode.PAGING) != paging.isPresent()) throw new IllegalArgumentException("Paging configuration and mode disagree");
+        paging.ifPresent(value -> value.validate(mainMemory));
         if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {
             throw new IllegalArgumentException("CPU count must be between 1 and 5");
         }

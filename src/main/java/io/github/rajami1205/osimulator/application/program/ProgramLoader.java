@@ -3,6 +3,8 @@ package io.github.rajami1205.osimulator.application.program;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.MemoryMode;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryAllocationException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -23,7 +25,7 @@ public final class ProgramLoader {
             int processId,
             List<Instruction> instructions
     ) {
-        return loadWithAllocation(memory, processId, instructions).pcb();
+        return loadImage(memory, processId, instructions, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO).pcb();
     }
 
     /**
@@ -51,6 +53,23 @@ public final class ProgramLoader {
     /** Admission conserva la reserva abierta hasta publicar Job, PCB, recursos y cola. */
     public PreparedProgramLoad prepareWithAllocation(MainMemory memory, int processId,
             List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        if (Objects.requireNonNull(memory).memoryMode() == MemoryMode.PAGING) {
+            throw new ProgramLoadException("Use image loading for PAGING; no contiguous allocation exists");
+        }
+        var prepared = prepareImage(memory, processId, instructions, logicalTimes, cpuAffinity);
+        return new PreparedProgramLoad(new ProgramLoadResult(prepared.loaded().pcb(),
+                prepared.reservation().allocation()), prepared.reservation());
+    }
+
+    public ResidentProgramLoad loadImage(MainMemory memory, int processId, List<Instruction> instructions,
+            LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        var prepared = prepareImage(memory, processId, instructions, logicalTimes, cpuAffinity);
+        memory.confirmUser(prepared.reservation());
+        return prepared.loaded();
+    }
+
+    public PreparedResidentProgramLoad prepareImage(MainMemory memory, int processId,
+            List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
         Objects.requireNonNull(cpuAffinity);
         Objects.requireNonNull(logicalTimes);
         MainMemory nonNullMemory = Objects.requireNonNull(
@@ -67,16 +86,18 @@ public final class ProgramLoader {
 
         MainMemory.UserReservation reservation;
         try {
-            reservation = nonNullMemory.reserveUser(program.size());
+            reservation = nonNullMemory.reserveImage(processId, program.size());
         } catch (MemoryAllocationException exception) {
-            throw new ProgramLoadException("Unable to allocate contiguous User memory", exception);
+            throw new ProgramLoadException("Unable to allocate User image", exception);
         }
         try {
-            var allocation = reservation.allocation();
-            nonNullMemory.writeUserBlock(allocation, program);
-            ProcessControlBlock pcb = createProcessControlBlock(processId, allocation.base(), allocation.size(), logicalTimes, cpuAffinity);
+            var image = reservation.image();
+            nonNullMemory.writeImage(image, program);
+            ProcessControlBlock pcb = image instanceof MemoryAllocation allocation
+                    ? createProcessControlBlock(processId, allocation.base(), allocation.size(), logicalTimes, cpuAffinity)
+                    : ProcessControlBlock.paged(processId, image.size(), logicalTimes, cpuAffinity);
             pcb.changeState(ProcessState.READY);
-            return new PreparedProgramLoad(new ProgramLoadResult(pcb, allocation), reservation);
+            return new PreparedResidentProgramLoad(new ResidentProgramLoad(pcb, image), reservation);
         } catch (RuntimeException | Error exception) {
             try {
                 nonNullMemory.cancelUser(reservation);

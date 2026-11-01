@@ -11,7 +11,7 @@ import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.job.*;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
-import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.ResidentImage;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.*;
 import java.util.*;
@@ -27,7 +27,7 @@ public final class MultiprocessRuntime {
             Objects.requireNonNull(scheduler); Objects.requireNonNull(ticks);
         }
     }
-    private record Participant(LocalCpu node, ProcessControlBlock pcb, MemoryAllocation allocation,
+    private record Participant(LocalCpu node, ProcessControlBlock pcb, ResidentImage allocation,
             ProcessAccounting accounting) { }
     private final List<LocalCpu> cpus;
     private final ExecutionEngine engine;
@@ -219,14 +219,15 @@ public final class MultiprocessRuntime {
             throw new IllegalStateException("Invalid CPU affinity or executable PC");
         }
         var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
-        if (!(resource.residence() instanceof UserImageResidence.Resident resident)) {
+        if (resource.residence() instanceof UserImageResidence.Suspended) {
             throw new IllegalStateException("CPU owner must be resident");
         }
-        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        var image = resource.residence().residentImage();
+        memory.validateImage(image, pcb);
         memory.validatePcbAllocation(resource.kernel(), pcb);
         if (!node.registers.snapshot().equals(pcb.cpuContext())) throw new IllegalStateException("CPU context differs from canonical PCB");
         node.ticks.validateCanAdvance();
-        return new Participant(node, pcb, resident.allocation(),
+        return new Participant(node, pcb, image,
                 pcb.accounting().recordSuccessfulCpuTick(node.id.value(), realClock.instant()));
     }
 

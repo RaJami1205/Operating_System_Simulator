@@ -100,12 +100,13 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
-        MainMemory newMemory = new MainMemory(configuration.mainMemory(), configuration.userAllocationStrategy());
+        MainMemory newMemory = new MainMemory(configuration.mainMemory(), configuration.userAllocationStrategy(),
+                configuration.memoryMode(), configuration.fixedPartitions());
         ScreenDevice newScreen = new ScreenDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
-        JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
+        JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs, newMemory);
         ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
         CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources,

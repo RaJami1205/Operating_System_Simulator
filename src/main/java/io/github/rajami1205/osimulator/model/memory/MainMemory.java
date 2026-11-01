@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Memoria física tipada con KERNEL First-Fit y estrategia USER independiente. La disponibilidad
@@ -16,10 +17,11 @@ import java.util.Objects;
  */
 public final class MainMemory {
     private final MemoryConfiguration configuration;
+    private final MemoryMode memoryMode;
     private final MemoryContent[] positions;
     private final MemoryAllocator kernel;
     private final MemoryAllocator user;
-    private final DynamicMemoryAllocator userCore;
+    private final UserAllocationSupport userSupport;
     private Object userGeneration = new Object();
     private UserReservation pendingUser;
 
@@ -29,17 +31,30 @@ public final class MainMemory {
     }
 
     public MainMemory(MemoryConfiguration configuration, UserAllocationStrategy strategy) {
+        this(configuration, strategy, MemoryMode.DYNAMIC, Optional.empty());
+    }
+
+    public MainMemory(MemoryConfiguration configuration, UserAllocationStrategy strategy,
+            MemoryMode mode, Optional<FixedPartitionConfiguration> fixed) {
         this.configuration = Objects.requireNonNull(configuration, "configuration must not be null");
         Objects.requireNonNull(strategy, "strategy must not be null");
+        FixedPartitionConfiguration.validateMode(configuration, mode, fixed);
+        memoryMode = mode;
         positions = new MemoryContent[configuration.totalPositions()];
         kernel = new FirstFitMemoryAllocator(MemoryRegion.KERNEL, 0, configuration.kernelReservedPositions());
-        userCore = new DynamicMemoryAllocator(MemoryRegion.USER, configuration.userStartAddress(), configuration.userPositions(), strategy);
-        user = userCore;
+        user = mode == MemoryMode.DYNAMIC
+                ? new DynamicMemoryAllocator(MemoryRegion.USER, configuration.userStartAddress(), configuration.userPositions(), strategy)
+                : new FixedPartitionMemoryAllocator(configuration, fixed.orElseThrow());
+        userSupport = new UserAllocationSupport(user);
         Arrays.fill(positions, EmptyContent.INSTANCE);
     }
 
     /** Expone la configuración inmutable que separa Kernel y USER. */
     public MemoryConfiguration configuration() { return configuration; }
+    public MemoryMode memoryMode() { return memoryMode; }
+    /** No consulta ocupación: distingue incompatibilidad del layout y capacidad temporal. */
+    public void validateProgramLength(int length) { userSupport.validateProgramLength(length); }
+    public List<FixedPartition.Occupancy> partitions() { return userSupport.partitions(); }
     /** Devuelve el total de posiciones físicas simuladas, incluidas ambas regiones. */
     public int size() { return positions.length; }
     /** Valida la dirección física y devuelve Kernel o USER según la configuración. */
@@ -72,14 +87,14 @@ public final class MainMemory {
         private final MemoryAllocator allocator;
         private final Object generation;
         private final MemoryAllocation allocation;
-        private final int previousCursor;
+        private final Runnable rollback;
 
         private UserReservation(MemoryAllocator allocator, Object generation,
-                MemoryAllocation allocation, int previousCursor) {
+                MemoryAllocation allocation, Runnable rollback) {
             this.allocator = allocator;
             this.generation = generation;
             this.allocation = allocation;
-            this.previousCursor = previousCursor;
+            this.rollback = rollback;
         }
 
         public MemoryAllocation allocation() { return allocation; }
@@ -88,9 +103,9 @@ public final class MainMemory {
     /** Mantiene una única reserva provisional hasta confirmar, cancelar o resetear la región. */
     public UserReservation reserveUser(int size) {
         requireNoPendingUser();
-        int previousCursor = userCore.cursor();
+        Runnable rollback = userSupport.captureRollback();
         var allocation = user.allocate(size);
-        pendingUser = new UserReservation(user, userGeneration, allocation, previousCursor);
+        pendingUser = new UserReservation(user, userGeneration, allocation, rollback);
         return pendingUser;
     }
 
@@ -104,7 +119,7 @@ public final class MainMemory {
         validateReservation(reservation);
         user.release(reservation.allocation);
         Arrays.fill(positions, reservation.allocation.base(), reservation.allocation.endExclusive(), EmptyContent.INSTANCE);
-        userCore.restoreCursor(reservation.previousCursor);
+        reservation.rollback.run();
         pendingUser = null;
     }
 

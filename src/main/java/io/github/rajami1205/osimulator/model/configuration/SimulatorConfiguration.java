@@ -2,6 +2,9 @@ package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
+import io.github.rajami1205.osimulator.model.memory.MemoryMode;
+import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
+import java.util.Optional;
 import java.util.Objects;
 import io.github.rajami1205.osimulator.model.memory.PcbField;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
@@ -14,7 +17,9 @@ public record SimulatorConfiguration(
         int virtualMemoryPositions,
         int cpuCount,
         SchedulingPolicyId schedulingPolicy,
-        UserAllocationStrategy userAllocationStrategy
+        UserAllocationStrategy userAllocationStrategy,
+        MemoryMode memoryMode,
+        Optional<FixedPartitionConfiguration> fixedPartitions
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -42,6 +47,13 @@ public record SimulatorConfiguration(
                 schedulingPolicy, UserAllocationStrategy.FIRST_FIT);
     }
 
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy,
+            UserAllocationStrategy userAllocationStrategy) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, schedulingPolicy,
+                userAllocationStrategy, MemoryMode.DYNAMIC, Optional.empty());
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
@@ -50,6 +62,7 @@ public record SimulatorConfiguration(
         Objects.requireNonNull(userAllocationStrategy, "userAllocationStrategy must not be null");
         Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
+        FixedPartitionConfiguration.validateMode(mainMemory, memoryMode, fixedPartitions);
         if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {
             throw new IllegalArgumentException("CPU count must be between 1 and 5");
         }

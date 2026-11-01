@@ -19,6 +19,7 @@ public final class ProcessResourceRegistry {
     public void register(int pid, ProcessResources value) {
         if (pid <= 0) throw new IllegalArgumentException("PID must be positive");
         Objects.requireNonNull(value);
+        validatePagedOwner(pid, value);
         if (resources.putIfAbsent(pid, value) != null) throw new IllegalStateException("Resources already registered");
     }
     /** Retira la asociación del PID y devuelve si existía; no libera allocations por sí mismo. */
@@ -26,7 +27,14 @@ public final class ProcessResourceRegistry {
     /** Publica recursos de reemplazo sólo si la instancia canónica previa sigue siendo la esperada. */
     void replace(int pid, ProcessResources expected, ProcessResources replacement) {
         Objects.requireNonNull(replacement);
+        validatePagedOwner(pid, replacement);
         if (resources.get(pid) != expected) throw new IllegalStateException("Process resources changed during transfer");
         resources.put(pid, replacement);
+    }
+
+    private static void validatePagedOwner(int pid, ProcessResources resources) {
+        if (resources.residence() instanceof UserImageResidence.Paged paged && paged.table().processId() != pid) {
+            throw new IllegalArgumentException("Page table owner does not match resource PID");
+        }
     }
 }

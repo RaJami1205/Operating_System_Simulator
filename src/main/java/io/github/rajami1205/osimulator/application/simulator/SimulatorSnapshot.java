@@ -41,8 +41,37 @@ public record SimulatorSnapshot(
         OptionalLong simulationTimeSeconds,
         List<CpuView> cpus,
         List<RuntimeStepResult.CpuResult> lastCpuResults,
-        List<PartitionView> partitions
+        List<PartitionView> partitions,
+        PagingView paging
 ) {
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults, List<PartitionView> partitions) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds,
+                cpus, lastCpuResults, partitions, new PagingView(List.of(), List.of(), 0));
+    }
+    public record FrameView(int frameId, int base, int capacity, boolean occupied,
+            Optional<Integer> ownerPid, Optional<Integer> pageNumber) {
+        public FrameView { Objects.requireNonNull(ownerPid); Objects.requireNonNull(pageNumber); }
+    }
+    public record PageMapping(int pageNumber, int frameId, int physicalBase, int usedLength) { }
+    public record PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages) {
+        public PageTableView { pages = List.copyOf(pages); }
+    }
+    public record PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells) {
+        public PagingView {
+            frames = List.copyOf(frames); pageTables = List.copyOf(pageTables);
+            if (unassignableCells < 0) throw new IllegalArgumentException("Negative USER remainder");
+        }
+    }
     /** Compatibilidad con snapshots multi-CPU previos a las particiones fijas. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
@@ -130,6 +159,7 @@ public record SimulatorSnapshot(
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
+        Objects.requireNonNull(paging);
         partitions = List.copyOf(partitions);
         cpus = List.copyOf(cpus);
         lastCpuResults = List.copyOf(lastCpuResults);
@@ -219,9 +249,11 @@ public record SimulatorSnapshot(
         }
     }
     /** Fila de programa activo con dirección física y texto de instrucción. */
-    public record ProgramEntry(int address, String instruction) {
+    public record ProgramEntry(int address, String instruction, Optional<Integer> logicalAddress) {
+        public ProgramEntry(int address, String instruction) { this(address, instruction, Optional.empty()); }
         /** Exige representación textual no nula para la instrucción de la fila. */
         public ProgramEntry {
+            Objects.requireNonNull(logicalAddress);
             Objects.requireNonNull(instruction, "instruction must not be null");
         }
     }

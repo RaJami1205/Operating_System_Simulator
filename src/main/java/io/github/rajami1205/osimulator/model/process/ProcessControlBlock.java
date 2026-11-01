@@ -47,17 +47,28 @@ public final class ProcessControlBlock {
     /** Fija afinidad antes de publicar recursos; nunca cambia por dispatch o swapping. */
     public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
             LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        this(processId, new ProcessMemoryBounds(programStartAddress, instructionCount), instructionCount, logicalTimes, cpuAffinity);
+    }
+
+    private ProcessControlBlock(int processId, ProcessMemoryBounds bounds, int instructionCount,
+            LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
         this.cpuAffinity = Objects.requireNonNull(cpuAffinity);
         this.logicalTimes = Objects.requireNonNull(logicalTimes);
         validateProcessId(processId);
         this.processId = processId;
-        this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
+        this.memoryBounds = bounds;
         this.logicalCodeRange = new LogicalCodeRange(new LogicalAddress(LOGICAL_CODE_BASE), instructionCount);
         this.cpuContext = CpuContext.<Instruction>initial().withProgramCounter(logicalCodeRange.base().value());
     }
 
+    public static ProcessControlBlock paged(int processId, int instructionCount, LogicalProcessTimes times, CpuId affinity) {
+        return new ProcessControlBlock(processId, null, instructionCount, times, affinity);
+    }
+    public boolean isPaged() { return memoryBounds == null; }
+
     /** Devuelve bounds físicos vigentes; rechaza la consulta mientras el proceso está suspended. */
     public ProcessMemoryBounds memoryBounds() {
+        if (isPaged()) throw new IllegalStateException("Paged process has no contiguous physical bounds");
         if (state == ProcessState.READY_SUSPENDED || state == ProcessState.BLOCKED_SUSPENDED) {
             throw new IllegalStateException("Suspended process has no current MainMemory bounds");
         }
@@ -68,7 +79,7 @@ public final class ProcessControlBlock {
     public void relocateSuspended(ProcessMemoryBounds bounds) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
-                || bounds.limit() != memoryBounds.limit()) {
+                || isPaged() || bounds.limit() != instructionCount()) {
             throw new IllegalStateException("Relocation requires suspended state and unchanged limit");
         }
         validateOperationalProgramCounter(programCounter());
@@ -146,7 +157,7 @@ public final class ProcessControlBlock {
 
     /** Expone la cantidad de instrucciones del proceso. */
     public int instructionCount() {
-        return memoryBounds.limit();
+        return logicalCodeRange.length();
     }
 
     /** Expone el límite exclusivo del programa en memoria. */

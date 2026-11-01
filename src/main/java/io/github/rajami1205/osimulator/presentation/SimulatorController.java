@@ -10,6 +10,7 @@ import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
 import io.github.rajami1205.osimulator.model.memory.MemoryMode;
 import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
+import io.github.rajami1205.osimulator.model.memory.PagingConfiguration;
 import java.util.Optional;
 import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.job.Job;
@@ -47,6 +48,9 @@ public final class SimulatorController {
     @FXML private ComboBox<MemoryMode> memoryModeBox;
     @FXML private TextField partitionCountField;
     @FXML private TextField partitionCapacitiesField;
+    @FXML private TextField pageSizeField;
+    @FXML private TextArea pagingDetailsArea;
+    @FXML private TableColumn<ProgramEntry, String> programLogicalColumn;
     @FXML private TableView<PartitionView> partitionTable;
     @FXML private TableColumn<PartitionView, String> partitionIdColumn;
     @FXML private TableColumn<PartitionView, String> partitionBaseColumn;
@@ -155,6 +159,7 @@ public final class SimulatorController {
                     case DYNAMIC -> "Dynamic";
                     case FIXED_EQUAL -> "Fixed Equal";
                     case FIXED_UNEQUAL -> "Fixed Unequal";
+                    case PAGING -> "Paging";
                 };
             }
             @Override public MemoryMode fromString(String value) {
@@ -215,6 +220,7 @@ public final class SimulatorController {
      * directamente.
      */
     private void configureTables() {
+        column(programLogicalColumn, v -> v.logicalAddress().map(Object::toString).orElse("—"));
         column(partitionIdColumn, v -> Integer.toString(v.partitionId()));
         column(partitionBaseColumn, v -> Integer.toString(v.base()));
         column(partitionCapacityColumn, v -> Integer.toString(v.capacity()));
@@ -247,12 +253,14 @@ public final class SimulatorController {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
-                SchedulingPolicyId.FCFS, userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration())));
+                SchedulingPolicyId.FCFS, userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
+                memoryModeBox.getValue() == MemoryMode.PAGING
+                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()))) : Optional.empty())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
         return switch (memoryModeBox.getValue()) {
-            case DYNAMIC -> Optional.empty();
+            case DYNAMIC, PAGING -> Optional.empty();
             case FIXED_EQUAL -> Optional.of(FixedPartitionConfiguration.equal(parsePartitionInteger(partitionCountField.getText())));
             case FIXED_UNEQUAL -> Optional.of(FixedPartitionConfiguration.unequal(parsePartitionCapacities(partitionCapacitiesField.getText())));
         };
@@ -282,6 +290,7 @@ public final class SimulatorController {
         userAllocationBox.setDisable(!configuring || mode != MemoryMode.DYNAMIC);
         partitionCountField.setDisable(!configuring || mode != MemoryMode.FIXED_EQUAL);
         partitionCapacitiesField.setDisable(!configuring || mode != MemoryMode.FIXED_UNEQUAL);
+        pageSizeField.setDisable(!configuring || mode != MemoryMode.PAGING);
     }
     /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
@@ -511,6 +520,25 @@ public final class SimulatorController {
         partitionTable.getItems().setAll(snapshot.partitions());
         partitionTable.setVisible(!snapshot.partitions().isEmpty());
         partitionTable.setManaged(!snapshot.partitions().isEmpty());
+        boolean paged = snapshot.configuration().map(c -> c.memoryMode() == MemoryMode.PAGING).orElse(false);
+        programLogicalColumn.setVisible(paged);
+        pagingDetailsArea.setVisible(paged); pagingDetailsArea.setManaged(paged);
+        if (paged) {
+            var text = new StringBuilder("Frames (physical order)\n");
+            for (var frame : snapshot.paging().frames()) text.append("Frame ").append(frame.frameId())
+                    .append(" | Base ").append(frame.base()).append(" | Size ").append(frame.capacity())
+                    .append(frame.occupied() ? " | Occupied" : " | Free")
+                    .append(" | PID ").append(frame.ownerPid().map(Object::toString).orElse("—"))
+                    .append(" | Page ").append(frame.pageNumber().map(Object::toString).orElse("—")).append('\n');
+            for (var table : snapshot.paging().pageTables()) {
+                text.append("PID ").append(table.processId()).append(" Page Table (logical order)\n");
+                for (var page : table.pages()) text.append("Page ").append(page.pageNumber()).append(" → Frame ")
+                        .append(page.frameId()).append(" | Base ").append(page.physicalBase())
+                        .append(" | Used ").append(page.usedLength()).append('\n');
+            }
+            text.append("Unassignable USER remainder: ").append(snapshot.paging().unassignableCells());
+            pagingDetailsArea.setText(text.toString());
+        } else pagingDetailsArea.clear();
         cpuSelector.setDisable(snapshot.cpus().isEmpty());
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
@@ -555,6 +583,7 @@ public final class SimulatorController {
         var defaults = SimulatorConfiguration.defaults();
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
+        pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));
         partitionCapacitiesField.clear();
         userAllocationBox.setValue(defaults.userAllocationStrategy());
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());

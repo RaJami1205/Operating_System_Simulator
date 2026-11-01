@@ -92,6 +92,10 @@ public final class ProcessCompletionService {
                 }
                 yield memory.readUserBlock(resident.allocation()).size();
             }
+            case UserImageResidence.Paged paged -> {
+                memory.validateImage(paged.table(), pcb);
+                yield memory.readImage(paged.table()).size();
+            }
             case UserImageResidence.Suspended swapped -> storage.readSwapBlock(swapped.allocation()).size();
         };
         if (size != pcb.instructionCount()) throw new IllegalStateException("Completed image length mismatch");
@@ -127,6 +131,7 @@ public final class ProcessCompletionService {
         // Todas las comprobaciones de identidad, contenido y enlaces preceden a las operaciones destructivas.
         switch (resource.residence()) {
             case UserImageResidence.Resident resident -> memory.release(resident.allocation());
+            case UserImageResidence.Paged paged -> memory.release(paged.table());
             case UserImageResidence.Suspended swapped -> storage.releaseSwap(swapped.allocation());
         }
         memory.release(resource.kernel());

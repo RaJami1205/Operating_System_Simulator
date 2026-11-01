@@ -57,7 +57,7 @@ public final class PcbMemoryImage {
         values[AL.offset()] = new PcbValue.Register(context.alValue());
         values[EQUAL.offset()] = new PcbValue.Flag(context.conditionFlags().equal());
         values[OVERFLOW.offset()] = new PcbValue.Flag(context.conditionFlags().overflow());
-        values[BASE.offset()] = !resident ? PcbValue.Empty.INSTANCE : number(pcb.memoryBounds().base());
+        values[BASE.offset()] = !resident || pcb.isPaged() ? PcbValue.Empty.INSTANCE : number(pcb.memoryBounds().base());
         values[LIMIT.offset()] = number(pcb.instructionCount());
         values[PRIORITY.offset()] = number(pcb.priority());
         // CPU_ID representa afinidad desde admission, no la observación histórica de ejecución.

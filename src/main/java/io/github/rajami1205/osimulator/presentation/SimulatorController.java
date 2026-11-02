@@ -49,6 +49,7 @@ public final class SimulatorController {
     @FXML private TextField partitionCountField;
     @FXML private TextField partitionCapacitiesField;
     @FXML private TextField pageSizeField;
+    @FXML private ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode> pagingLoadModeBox;
     @FXML private TextArea pagingDetailsArea;
     @FXML private TableColumn<ProgramEntry, String> programLogicalColumn;
     @FXML private TableView<PartitionView> partitionTable;
@@ -151,6 +152,8 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        pagingLoadModeBox.getItems().setAll(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.values());
+        pagingLoadModeBox.setValue(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT);
         memoryModeBox.getItems().setAll(MemoryMode.values());
         memoryModeBox.setConverter(new javafx.util.StringConverter<>() {
             @Override public String toString(MemoryMode mode) {
@@ -231,7 +234,7 @@ public final class SimulatorController {
         for (TableView<?> table : List.of(memoryTable, storageTable, programTable, jobsTable, processTable, completedTable, partitionTable)) {
             table.getSortOrder().clear();
         }
-        column(programAddressColumn, v -> Integer.toString(v.address())); column(programInstructionColumn, ProgramEntry::instruction);
+        column(programAddressColumn, v -> v.physicalAddress().map(Object::toString).orElse("Not resident")); column(programInstructionColumn, ProgramEntry::instruction);
         column(memoryAddressColumn, v -> Integer.toString(v.address())); column(memoryRegionColumn, MemoryEntry::region);
         column(memoryContentColumn, v -> v.content().orElse("\u2014"));
         regions(memoryTable, v -> v.region().equals("KERNEL") ? "kernel-row" : "user-row");
@@ -255,7 +258,7 @@ public final class SimulatorController {
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
                 SchedulingPolicyId.FCFS, userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
-                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()))) : Optional.empty())));
+                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
@@ -291,6 +294,7 @@ public final class SimulatorController {
         partitionCountField.setDisable(!configuring || mode != MemoryMode.FIXED_EQUAL);
         partitionCapacitiesField.setDisable(!configuring || mode != MemoryMode.FIXED_UNEQUAL);
         pageSizeField.setDisable(!configuring || mode != MemoryMode.PAGING);
+        pagingLoadModeBox.setDisable(!configuring || mode != MemoryMode.PAGING);
     }
     /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
     @FXML private void handleBrowseProgram() {
@@ -340,12 +344,13 @@ public final class SimulatorController {
     /** Una llegada futura justifica IDLE automático, incluso si también falta capacidad. */
     private boolean runnable() {
         return view.simulatorState() == SimulatorState.RUNNING
+                && view.runtimeStatus().orElse(null) != RuntimeStatus.WAITING_FOR_FRAMES
                 && (view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE || view.nextArrivalTime().isPresent());
     }
     /** Manual permite confirmar intervalos IDLE aunque no exista un próximo evento. */
     private boolean canStep() {
         return view.simulatorState() == SimulatorState.RUNNING
-                && view.runtimeStatus().filter(status -> status != RuntimeStatus.FINISHED).isPresent();
+                && view.runtimeStatus().filter(status -> status != RuntimeStatus.FINISHED && status != RuntimeStatus.WAITING_FOR_FRAMES).isPresent();
     }
     /** Manual y Automatic usan el mismo Step; render decide continuidad desde el nuevo snapshot. */
     private void executeSingleStep() {
@@ -498,6 +503,7 @@ public final class SimulatorController {
             case RUNNABLE -> automaticMode ? "Automatic execution" : "Ready for next CPU tick";
             case WAITING_FOR_CAPACITY -> "Waiting for capacity";
             case WAITING_FOR_ARRIVAL -> "Waiting for arrival";
+            case WAITING_FOR_FRAMES -> "Waiting for frames: no internal progress; inspect or Reset";
             case FINISHED -> "Workload finished";
         };
         return switch (snapshot.simulatorState()) {
@@ -515,6 +521,10 @@ public final class SimulatorController {
         snapshot.configuration().ifPresent(configuration -> {
             userAllocationBox.setValue(configuration.userAllocationStrategy());
             memoryModeBox.setValue(configuration.memoryMode());
+            configuration.paging().ifPresent(paging -> {
+                pageSizeField.setText(Integer.toString(paging.pageSize()));
+                pagingLoadModeBox.setValue(paging.loadMode());
+            });
         });
         updateMemoryModeControls();
         partitionTable.getItems().setAll(snapshot.partitions());
@@ -531,12 +541,17 @@ public final class SimulatorController {
                     .append(" | PID ").append(frame.ownerPid().map(Object::toString).orElse("—"))
                     .append(" | Page ").append(frame.pageNumber().map(Object::toString).orElse("—")).append('\n');
             for (var table : snapshot.paging().pageTables()) {
-                text.append("PID ").append(table.processId()).append(" Page Table (logical order)\n");
+                text.append("PID ").append(table.processId()).append(" ").append(table.loadMode())
+                        .append(" Page Table rev ").append(table.revision()).append(table.suspended() ? " Suspended" : "")
+                        .append(" | Backing ").append(table.backing().map(Object::toString).orElse("—")).append(" (logical order)\n");
                 for (var page : table.pages()) text.append("Page ").append(page.pageNumber()).append(" → Frame ")
-                        .append(page.frameId()).append(" | Base ").append(page.physicalBase())
+                        .append(page.frame().map(Object::toString).orElse("Not Present")).append(" | Base ").append(page.base().map(Object::toString).orElse("—"))
                         .append(" | Used ").append(page.usedLength()).append('\n');
             }
             text.append("Unassignable USER remainder: ").append(snapshot.paging().unassignableCells());
+            for (var event : snapshot.paging().events()) text.append('\n').append(event.kind()).append(" t=").append(event.time())
+                    .append(" CPU ").append(event.cpuId().value()).append(" PID ").append(event.processId()).append(" Page ").append(event.pageNumber());
+            for (var request : snapshot.paging().pending()) text.append("\nPending Page-In: PID ").append(request.processId()).append(" Page ").append(request.pageNumber());
             pagingDetailsArea.setText(text.toString());
         } else pagingDetailsArea.clear();
         cpuSelector.setDisable(snapshot.cpus().isEmpty());
@@ -584,6 +599,7 @@ public final class SimulatorController {
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
         pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));
+        pagingLoadModeBox.setValue(PagingConfiguration.defaults().loadMode());
         partitionCapacitiesField.clear();
         userAllocationBox.setValue(defaults.userAllocationStrategy());
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());

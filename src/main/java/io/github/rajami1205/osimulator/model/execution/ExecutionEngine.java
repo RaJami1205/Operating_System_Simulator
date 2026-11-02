@@ -95,8 +95,10 @@ public final class ExecutionEngine {
         }
         Instruction instruction;
         try {
-            var physical = memory.translateInstructionAddress(allocation, pcb.logicalCodeRange(),
+            var resolution = memory.resolveInstructionAddress(allocation, pcb.logicalCodeRange(),
                     new LogicalAddress(currentProgramCounter));
+            if (resolution instanceof io.github.rajami1205.osimulator.model.memory.AddressResolution.PageNotPresent) return TickResult.PAGE_FAULT;
+            var physical = ((io.github.rajami1205.osimulator.model.memory.AddressResolution.Present) resolution).address();
             instruction = memory.readInstruction(allocation, physical.value());
         } catch (MemoryProtectionException exception) {
             throw new ExecutionEngineException("Unable to fetch process instruction", exception);

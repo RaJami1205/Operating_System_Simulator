@@ -61,7 +61,7 @@ public final class Dispatcher {
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
         if (!ready.entries().contains(pid) || pcb.state() != ProcessState.READY
                 || !pcb.cpuAffinity().equals(cpuId)
-                || resource.residence() instanceof UserImageResidence.Suspended
+                || resource.residence().suspended()
                 || !pcb.hasExecutableProgramCounter()
                 || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING
                     && p.cpuAffinity().equals(cpuId))) {

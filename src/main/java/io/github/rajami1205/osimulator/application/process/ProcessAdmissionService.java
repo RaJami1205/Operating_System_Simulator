@@ -79,6 +79,8 @@ public final class ProcessAdmissionService {
         if (job.arrivalTime() > currentTime) throw new IllegalStateException("Job has not arrived: " + jobId);
         var program = memory.memoryMode() == MemoryMode.DYNAMIC ? null : storage.readProgram(job.programName());
         if (program != null) memory.validateProgramLength(program.size());
+        if (memory.isDemandPaging() && program.size() > storage.virtualMemoryPositions())
+            throw new io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException("Program exceeds backing capacity");
         if (processes.isFull()) return new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED);
         CpuId affinity = topology == null ? CpuId.ZERO : topology.leastLoaded().map(CpuNode::id).orElse(null);
         if (affinity == null || processes.countForCpu(affinity) >= ProcessTable.MAX_ADMITTED_PROCESSES) {
@@ -101,6 +103,7 @@ public final class ProcessAdmissionService {
 
         ResidentProgramLoad loaded = null;
         MainMemory.UserReservation reservation = null;
+        io.github.rajami1205.osimulator.model.storage.PageBacking backing = null;
         ProcessControlBlock previous = null;
         Optional<PcbAddress> previousLink = Optional.empty();
         boolean resourcesPublished = false;
@@ -108,16 +111,19 @@ public final class ProcessAdmissionService {
         boolean linkChanged = false;
         boolean enqueued = false;
         try {
-            var prepared = loader.prepareImage(memory, pid, program,
+            var prepared = loader.prepareImage(memory, storage, pid, program,
                     LogicalProcessTimes.admitted(job.arrivalTime(), currentTime), affinity);
             loaded = prepared.loaded();
             reservation = prepared.reservation();
+            backing = prepared.backing().orElse(null);
             memory.materializePcb(kernel, loaded.pcb());
             var address = new PcbAddress(kernel.base());
             previous = processes.last().orElse(null);
             if (previous != null) previousLink = previous.nextPcbAddress();
             var result = new AdmissionResult.Admitted(pid);
-            resources.register(pid, new ProcessResources(kernel, address, UserImageResidence.resident(loaded.image())));
+            var residence = backing == null ? UserImageResidence.resident(loaded.image())
+                    : new UserImageResidence.Demand((io.github.rajami1205.osimulator.model.memory.PageTable) loaded.image(), backing);
+            resources.register(pid, new ProcessResources(kernel, address, residence));
             resourcesPublished = true;
             processes.register(loaded.pcb());
             processPublished = true;
@@ -154,6 +160,11 @@ public final class ProcessAdmissionService {
                 cleanup(failure, () -> memory.cancelUser(provisional));
             }
             cleanup(failure, () -> memory.release(kernel));
+            if (backing != null) {
+                var allocation = backing.allocation(); cleanup(failure, () -> storage.releaseSwap(allocation));
+            }
+            if (loaded == null && failure instanceof io.github.rajami1205.osimulator.model.storage.exception.StorageAllocationException
+                    && failure.getSuppressed().length == 0) return new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_BACKING_STORE);
             // El Loader envuelve con esta causa sólo fallos de reserva USER, tras validar el tamaño.
             // Un rollback fallido no debe ocultarse como un resultado Waiting ordinario.
             if (loaded == null && failure instanceof ProgramLoadException

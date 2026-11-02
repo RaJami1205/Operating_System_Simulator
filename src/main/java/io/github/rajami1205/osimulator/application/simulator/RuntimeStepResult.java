@@ -20,7 +20,7 @@ public sealed interface RuntimeStepResult {
             case Global value -> value.cpuResults();
         };
     }
-    enum CpuOutcome { EXECUTED, IDLE, NOT_EXECUTED, FAILED }
+    enum CpuOutcome { EXECUTED, IDLE, NOT_EXECUTED, FAILED, WAITING_FOR_PAGE }
     record CpuResult(CpuId cpuId, Optional<Integer> processId, CpuOutcome outcome, Optional<TickResult> tickResult) {
         public CpuResult {
             Objects.requireNonNull(cpuId); Objects.requireNonNull(processId);
@@ -30,6 +30,7 @@ public sealed interface RuntimeStepResult {
                     || (outcome == CpuOutcome.EXECUTED) != tickResult.isPresent()) {
                 throw new IllegalArgumentException("Inconsistent CPU result");
             }
+            if (tickResult.orElse(null) == TickResult.PAGE_FAULT) throw new IllegalArgumentException("Page fault is not an executed instruction");
         }
         public static CpuResult executed(CpuId id, int pid, TickResult result) {
             return new CpuResult(id, Optional.of(pid), CpuOutcome.EXECUTED, Optional.of(result));
@@ -53,6 +54,7 @@ public sealed interface RuntimeStepResult {
         /** Exige PID positivo y resultados no nulos para un tick ejecutado. */
         public Executed {
             if (processId <= 0) throw new IllegalArgumentException("PID must be positive");
+            if (tickResult == TickResult.PAGE_FAULT) throw new IllegalArgumentException("Page fault is not an executed instruction");
             Objects.requireNonNull(tickResult);
             Objects.requireNonNull(status);
         }

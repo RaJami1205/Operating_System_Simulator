@@ -25,7 +25,11 @@ public final class JobSubmissionService {
     }
 
     public JobSubmissionService(SecondaryStorage storage, JobList jobs, MainMemory memory) {
-        this(storage, jobs, Objects.requireNonNull(memory)::validateProgramLength);
+        this(storage, jobs, length -> {
+            Objects.requireNonNull(memory).validateProgramLength(length);
+            if (memory.isDemandPaging() && length > storage.virtualMemoryPositions())
+                throw new io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException("Program exceeds backing capacity");
+        });
     }
 
     private JobSubmissionService(SecondaryStorage storage, JobList jobs, java.util.function.IntConsumer validation) {

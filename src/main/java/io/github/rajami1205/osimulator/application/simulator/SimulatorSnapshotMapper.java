@@ -32,7 +32,7 @@ final class SimulatorSnapshotMapper {
             ProcessResourceRegistry resources, List<CompletedProcessRecord> completed, List<Integer> screen,
             OptionalLong simulationTimeSeconds, List<RuntimeStepResult.CpuResult> lastCpuResults) {
         var cpus = topology == null ? List.<CpuView>of() : topology.nodes().stream()
-                .map(node -> cpuView(node, memory, resources)).toList();
+                .map(node -> cpuView(node, memory, storage, resources)).toList();
         var zero = cpus.isEmpty() ? Optional.<CpuView>empty() : Optional.of(cpus.getFirst());
         var translationError = cpus.stream().flatMap(value -> value.addressTranslationError().stream()).findFirst();
         if (translationError.isPresent()) { state = SimulatorState.ERROR; status = Optional.empty(); }
@@ -63,23 +63,35 @@ final class SimulatorSnapshotMapper {
         var pool = memory.frames();
         var liveHandles = pool.stream().flatMap(frame -> frame.handle().stream()).collect(java.util.stream.Collectors.toSet());
         if (resources != null) resources.entries().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
-            if (entry.getValue().residence() instanceof UserImageResidence.Paged paged) {
-                var table = paged.table();
+            var residence = entry.getValue().residence();
+            PageTable table = switch (residence) {
+                case UserImageResidence.Paged paged -> paged.table();
+                case UserImageResidence.Demand demand -> demand.table();
+                case UserImageResidence.DemandSuspended demand -> demand.table();
+                default -> null;
+            };
+            if (table != null) {
                 // Una sesión en ERROR tampoco presenta mappings liberados como residencia vigente.
                 if (!liveHandles.containsAll(table.frames())) return;
                 var mappings = new ArrayList<PageMapping>();
                 for (var page : table.entries()) {
-                    var handle = page.frameHandle(); var frame = handle.frame();
-                    owners.put(handle, entry.getKey()); pages.put(handle, page.pageNumber());
-                    mappings.add(new PageMapping(page.pageNumber(), frame.id(), frame.base(),
+                    page.mapping().ifPresent(handle -> { owners.put(handle, entry.getKey()); pages.put(handle, page.pageNumber()); });
+                    mappings.add(new PageMapping(page.pageNumber(), page.mapping().map(h -> h.frame().id()), page.mapping().map(h -> h.frame().base()),
                             Math.min(table.pageSize(), table.size() - page.pageNumber() * table.pageSize())));
                 }
-                tables.add(new PageTableView(entry.getKey(), table.size(), table.pageSize(), mappings));
+                var backing = switch (residence) {
+                    case UserImageResidence.Demand demand -> Optional.of(new BackingView(demand.backing().allocation().base(), demand.backing().programLength()));
+                    case UserImageResidence.DemandSuspended demand -> Optional.of(new BackingView(demand.backing().allocation().base(), demand.backing().programLength()));
+                    default -> Optional.<BackingView>empty();
+                };
+                tables.add(new PageTableView(entry.getKey(), table.size(), table.pageSize(), mappings,
+                        table.loadMode(), table.revision(), backing, residence.suspended()));
             }
         });
         var frames = pool.stream().map(state -> new FrameView(state.frame().id(), state.frame().base(),
                 state.frame().capacity(), state.handle().isPresent(), state.handle().map(owners::get), state.handle().map(pages::get))).toList();
-        return new PagingView(frames, tables, memory.unassignableUserCells());
+        return new PagingView(frames, tables, memory.unassignableUserCells(), resources == null ? List.of() : resources.pageEvents(),
+                resources == null ? List.of() : resources.pendingPages().stream().map(r -> new PendingPageView(r.processId(), r.pageNumber(), r.logicalPc())).toList());
     }
 
     private static List<PartitionView> partitionViews(MainMemory memory, ProcessResourceRegistry resources) {
@@ -98,7 +110,7 @@ final class SimulatorSnapshotMapper {
     }
 
     private static CpuView cpuView(CpuNode node,
-            MainMemory memory, ProcessResourceRegistry resources) {
+            MainMemory memory, SecondaryStorage storage, ProcessResourceRegistry resources) {
         var cpu = node.registers();
         var owner = node.dispatcher().owner();
         var instruction = owner.isEmpty() ? Optional.<InstructionSnapshot>empty()
@@ -110,7 +122,7 @@ final class SimulatorSnapshotMapper {
         if (owner.isPresent()) {
             var pcb = owner.orElseThrow();
             var resource = resources.find(pcb.processId());
-            if (resource.isPresent() && !(resource.orElseThrow().residence() instanceof UserImageResidence.Suspended)) {
+            if (resource.isPresent() && !resource.orElseThrow().residence().suspended()) {
                 var resident = resource.orElseThrow().residence().residentImage();
                 if (resident instanceof MemoryAllocation allocation) {
                     active = Optional.of(new ProcessSnapshot(pcb.processId(), pcb.state().name(), allocation.base(),
@@ -119,17 +131,20 @@ final class SimulatorSnapshotMapper {
                 try {
                     if (pcb.state() != ProcessState.TERMINATED && pcb.hasExecutableProgramCounter()) {
                         memory.validateImage(resident, pcb);
-                        nextPhysical = Optional.of(memory.translateInstructionAddress(resident,
-                                pcb.logicalCodeRange(), new LogicalAddress(cpu.programCounter())).value());
+                        var resolution = memory.resolveInstructionAddress(resident, pcb.logicalCodeRange(), new LogicalAddress(cpu.programCounter()));
+                        if (resolution instanceof AddressResolution.Present present) nextPhysical = Optional.of(present.address().value());
                     }
-                    var image = memory.readImage(resident);
+                    var image = resource.orElseThrow().residence() instanceof UserImageResidence.Demand demand
+                            ? storage.readSwapBlock(demand.backing().allocation()) : memory.readImage(resident);
                     for (int i = 0; i < image.size(); i++) {
                         int logical = pcb.logicalInstructionAddress(i);
-                        int physical = memory.translateInstructionAddress(resident, pcb.logicalCodeRange(), new LogicalAddress(logical)).value();
+                        var resolution = memory.resolveInstructionAddress(resident, pcb.logicalCodeRange(), new LogicalAddress(logical));
+                        var physical = resolution instanceof AddressResolution.Present present ? Optional.of(present.address().value()) : Optional.<Integer>empty();
                         program.add(new ProgramEntry(physical, SemanticFormatter.semanticText(image.get(i)),
                                 resident instanceof PageTable ? Optional.of(logical) : Optional.empty()));
                     }
-                    program.sort(Comparator.comparingInt(ProgramEntry::address));
+                    program.sort(Comparator.comparingInt((ProgramEntry p) -> p.physicalAddress().orElse(Integer.MAX_VALUE))
+                            .thenComparingInt(p -> p.logicalAddress().orElse(0)));
                 } catch (RuntimeException failure) {
                     nextPhysical = Optional.empty();
                     translationError = Optional.of("Invalid instruction allocation/address");
@@ -155,7 +170,7 @@ final class SimulatorSnapshotMapper {
         Optional<Integer> base = resource.residence() instanceof UserImageResidence.Resident resident
                 ? Optional.of(resident.allocation().base()) : Optional.empty();
         return new ProcessDetails(pcb.processId(), pcb.state(), pcb.programCounter(),
-                resource.residence() instanceof UserImageResidence.Suspended ? Residency.SUSPENDED : Residency.RESIDENT, base, pcb.instructionCount(),
+                resource.residence().suspended() ? Residency.SUSPENDED : Residency.RESIDENT, base, pcb.instructionCount(),
                 pcb.priority(), context(pcb.cpuContext()), pcb.stack().values(), pcb.openFiles().files().stream().sorted().toList(),
                 resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting(), pcb.logicalTimes(), pcb.cpuAffinity());
     }

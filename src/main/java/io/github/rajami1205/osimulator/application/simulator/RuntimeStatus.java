@@ -5,4 +5,4 @@ package io.github.rajami1205.osimulator.application.simulator;
  * WAITING_FOR_ARRIVAL sólo conserva Jobs futuros;
  * FINISHED indica workload agotado, no un único PCB terminado.
  */
-public enum RuntimeStatus { RUNNABLE, WAITING_FOR_CAPACITY, WAITING_FOR_ARRIVAL, FINISHED }
+public enum RuntimeStatus { RUNNABLE, WAITING_FOR_CAPACITY, WAITING_FOR_ARRIVAL, WAITING_FOR_FRAMES, FINISHED }

@@ -54,6 +54,8 @@
                             <TextField fx:id="partitionCapacitiesField" promptText="32,48,64,112" styleClass="input-field"/>
                             <Label text="Paging: page size (cells)" styleClass="configuration-label"/>
                             <TextField fx:id="pageSizeField" text="4" styleClass="input-field"/>
+                            <Label text="Paging load mode" styleClass="configuration-label"/>
+                            <ComboBox fx:id="pagingLoadModeBox" maxWidth="Infinity"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">

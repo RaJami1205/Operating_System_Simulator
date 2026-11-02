@@ -70,6 +70,12 @@ public final class ProgramLoader {
 
     public PreparedResidentProgramLoad prepareImage(MainMemory memory, int processId,
             List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        return prepareImage(memory, null, processId, instructions, logicalTimes, cpuAffinity);
+    }
+
+    public PreparedResidentProgramLoad prepareImage(MainMemory memory,
+            io.github.rajami1205.osimulator.model.storage.SecondaryStorage storage, int processId,
+            List<Instruction> instructions, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
         Objects.requireNonNull(cpuAffinity);
         Objects.requireNonNull(logicalTimes);
         MainMemory nonNullMemory = Objects.requireNonNull(
@@ -84,25 +90,52 @@ public final class ProgramLoader {
             throw new ProgramLoadException("Program must contain at least one instruction");
         }
 
+        io.github.rajami1205.osimulator.model.storage.StorageAllocation backingAllocation = null;
+        if (memory.isDemandPaging()) {
+            Objects.requireNonNull(storage, "DEMAND loading requires canonical backing storage");
+            if (program.size() > storage.virtualMemoryPositions()) throw new io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException("Program exceeds backing capacity");
+            if (processId <= 0) throw new IllegalArgumentException("Invalid PID");
+            memory.validateProgramLength(program.size());
+            backingAllocation = storage.allocateSwap(program.size());
+            try { storage.writeSwapBlock(backingAllocation, program); storage.readSwapBlock(backingAllocation); }
+            catch (RuntimeException | Error failure) {
+                try { storage.releaseSwap(backingAllocation); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+                throw failure;
+            }
+        }
+
         MainMemory.UserReservation reservation;
         try {
             reservation = nonNullMemory.reserveImage(processId, program.size());
         } catch (MemoryAllocationException exception) {
+            if (backingAllocation != null) storage.releaseSwap(backingAllocation);
             throw new ProgramLoadException("Unable to allocate User image", exception);
+        } catch (RuntimeException | Error failure) {
+            if (backingAllocation != null) {
+                try { storage.releaseSwap(backingAllocation); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            }
+            throw failure;
         }
         try {
             var image = reservation.image();
-            nonNullMemory.writeImage(image, program);
+            if (!memory.isDemandPaging()) nonNullMemory.writeImage(image, program);
             ProcessControlBlock pcb = image instanceof MemoryAllocation allocation
                     ? createProcessControlBlock(processId, allocation.base(), allocation.size(), logicalTimes, cpuAffinity)
                     : ProcessControlBlock.paged(processId, image.size(), logicalTimes, cpuAffinity);
             pcb.changeState(ProcessState.READY);
-            return new PreparedResidentProgramLoad(new ResidentProgramLoad(pcb, image), reservation);
+            var backing = backingAllocation == null ? java.util.Optional.<io.github.rajami1205.osimulator.model.storage.PageBacking>empty()
+                    : java.util.Optional.of(new io.github.rajami1205.osimulator.model.storage.PageBacking(
+                            ((io.github.rajami1205.osimulator.model.memory.PageTable) image).imageId(), processId,
+                            image.size(), ((io.github.rajami1205.osimulator.model.memory.PageTable) image).pageSize(), backingAllocation));
+            return new PreparedResidentProgramLoad(new ResidentProgramLoad(pcb, image), reservation, backing);
         } catch (RuntimeException | Error exception) {
             try {
                 nonNullMemory.cancelUser(reservation);
             } catch (RuntimeException | Error cleanup) {
                 if (cleanup != exception) exception.addSuppressed(cleanup);
+            }
+            if (backingAllocation != null) {
+                try { storage.releaseSwap(backingAllocation); } catch (RuntimeException | Error cleanup) { exception.addSuppressed(cleanup); }
             }
             throw exception;
         }

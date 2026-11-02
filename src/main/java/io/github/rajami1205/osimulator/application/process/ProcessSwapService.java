@@ -55,12 +55,27 @@ public final class ProcessSwapService {
         var pcb = process(processId);
         var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
-        if (original.residence() instanceof UserImageResidence.Suspended
+        if (original.residence().suspended()
                 || (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.BLOCKED)) {
             throw new IllegalStateException("Swap-out requires an eligible resident READY/BLOCKED process");
         }
         boolean ready = pcb.state() == ProcessState.READY;
         validateQueue(processId, ready);
+        if (original.residence() instanceof UserImageResidence.Demand demand) {
+            // BLOCKED suspension is intentionally unsupported until its pending-request lifecycle is defined.
+            if (!ready) throw new IllegalStateException("Demand suspension requires READY; pending page requests remain active");
+            memory.validateImage(demand.table(), pcb); demand.backing().validate(demand.table());
+            storage.readSwapBlock(demand.backing().allocation());
+            validateCommit(pcb, original, true);
+            memory.emptyDemandMapping(demand.table(), replacement -> resources.replace(processId, original,
+                    original.withResidence(new UserImageResidence.DemandSuspended(replacement, demand.backing()))),
+                    replacement -> resources.rollbackReplacement(processId, original,
+                            original.withResidence(new UserImageResidence.DemandSuspended(replacement, demand.backing()))));
+            pcb.changeState(ProcessState.READY_SUSPENDED); queue.remove(processId);
+            if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().enqueue(processId);
+            pcbSynchronizer.sync(pcb);
+            return new SwapResult.Completed();
+        }
         var user = original.residence().residentImage();
         memory.validateImage(user, pcb);
         var image = memory.readImage(user);
@@ -97,6 +112,20 @@ public final class ProcessSwapService {
         var pcb = process(processId);
         var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
+        if (original.residence() instanceof UserImageResidence.DemandSuspended demand) {
+            if (pcb.state() != ProcessState.READY_SUSPENDED) throw new IllegalStateException("Invalid suspended demand state");
+            validateQueue(processId, false); memory.validateImage(demand.table(), pcb);
+            demand.backing().validate(demand.table()); storage.readSwapBlock(demand.backing().allocation());
+            validateCommit(pcb, original, false);
+            memory.emptyDemandMapping(demand.table(), replacement -> resources.replace(processId, original,
+                    original.withResidence(new UserImageResidence.Demand(replacement, demand.backing()))),
+                    replacement -> resources.rollbackReplacement(processId, original,
+                            original.withResidence(new UserImageResidence.Demand(replacement, demand.backing()))));
+            pcb.changeState(ProcessState.READY);
+            if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().remove(processId);
+            queue.enqueue(processId); pcbSynchronizer.sync(pcb);
+            return new SwapResult.Completed();
+        }
         if (!(original.residence() instanceof UserImageResidence.Suspended suspended)
                 || (pcb.state() != ProcessState.READY_SUSPENDED && pcb.state() != ProcessState.BLOCKED_SUSPENDED)) {
             throw new IllegalStateException("Swap-in requires a suspended process");

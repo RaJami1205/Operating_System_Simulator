@@ -97,6 +97,14 @@ public final class ProcessCompletionService {
                 yield memory.readImage(paged.table()).size();
             }
             case UserImageResidence.Suspended swapped -> storage.readSwapBlock(swapped.allocation()).size();
+            case UserImageResidence.Demand demand -> {
+                memory.validateImage(demand.table(), pcb); demand.backing().validate(demand.table());
+                yield storage.readSwapBlock(demand.backing().allocation()).size();
+            }
+            case UserImageResidence.DemandSuspended demand -> {
+                memory.validateImage(demand.table(), pcb); demand.backing().validate(demand.table());
+                yield storage.readSwapBlock(demand.backing().allocation()).size();
+            }
         };
         if (size != pcb.instructionCount()) throw new IllegalStateException("Completed image length mismatch");
 
@@ -133,6 +141,8 @@ public final class ProcessCompletionService {
             case UserImageResidence.Resident resident -> memory.release(resident.allocation());
             case UserImageResidence.Paged paged -> memory.release(paged.table());
             case UserImageResidence.Suspended swapped -> storage.releaseSwap(swapped.allocation());
+            case UserImageResidence.Demand demand -> { memory.release(demand.table()); storage.releaseSwap(demand.backing().allocation()); }
+            case UserImageResidence.DemandSuspended demand -> { memory.release(demand.table()); storage.releaseSwap(demand.backing().allocation()); }
         }
         memory.release(resource.kernel());
         resources.remove(pid);

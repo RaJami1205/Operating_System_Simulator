@@ -20,7 +20,7 @@ public final class PcbKernelSynchronizer {
 
     public void sync(ProcessControlBlock pcb) {
         var resource = resource(pcb);
-        var image = PcbMemoryImage.capture(pcb, pcb.nextPcbAddress(), !(resource.residence() instanceof UserImageResidence.Suspended));
+        var image = PcbMemoryImage.capture(pcb, pcb.nextPcbAddress(), !resource.residence().suspended());
         memory.writePcbImage(resource.kernel(), pcb, image);
     }
 

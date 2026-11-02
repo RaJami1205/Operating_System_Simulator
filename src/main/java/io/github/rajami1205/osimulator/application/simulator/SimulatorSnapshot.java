@@ -62,12 +62,31 @@ public record SimulatorSnapshot(
             Optional<Integer> ownerPid, Optional<Integer> pageNumber) {
         public FrameView { Objects.requireNonNull(ownerPid); Objects.requireNonNull(pageNumber); }
     }
-    public record PageMapping(int pageNumber, int frameId, int physicalBase, int usedLength) { }
-    public record PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages) {
-        public PageTableView { pages = List.copyOf(pages); }
+    public record PageMapping(int pageNumber, Optional<Integer> frame, Optional<Integer> base, int usedLength) {
+        public PageMapping(int pageNumber, int frameId, int physicalBase, int usedLength) {
+            this(pageNumber, Optional.of(frameId), Optional.of(physicalBase), usedLength);
+        }
+        public PageMapping { Objects.requireNonNull(frame); Objects.requireNonNull(base); }
+        public int frameId() { return frame.orElseThrow(); }
+        public int physicalBase() { return base.orElseThrow(); }
     }
-    public record PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells) {
+    public record BackingView(int base, int length) { }
+    public record PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages,
+            io.github.rajami1205.osimulator.model.memory.PagingLoadMode loadMode, long revision,
+            Optional<BackingView> backing, boolean suspended) {
+        public PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages) {
+            this(processId, programLength, pageSize, pages, io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, 0, Optional.empty(), false);
+        }
+        public PageTableView { pages = List.copyOf(pages); Objects.requireNonNull(loadMode); Objects.requireNonNull(backing); }
+    }
+    public record PendingPageView(int processId, int pageNumber, int logicalPc) { }
+    public record PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells,
+            List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending) {
+        public PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells) {
+            this(frames, pageTables, unassignableCells, List.of(), List.of());
+        }
         public PagingView {
+            events = List.copyOf(events); pending = List.copyOf(pending);
             frames = List.copyOf(frames); pageTables = List.copyOf(pageTables);
             if (unassignableCells < 0) throw new IllegalArgumentException("Negative USER remainder");
         }
@@ -249,10 +268,13 @@ public record SimulatorSnapshot(
         }
     }
     /** Fila de programa activo con dirección física y texto de instrucción. */
-    public record ProgramEntry(int address, String instruction, Optional<Integer> logicalAddress) {
+    public record ProgramEntry(Optional<Integer> physicalAddress, String instruction, Optional<Integer> logicalAddress) {
+        public ProgramEntry(int address, String instruction, Optional<Integer> logicalAddress) { this(Optional.of(address), instruction, logicalAddress); }
+        public int address() { return physicalAddress.orElseThrow(); }
         public ProgramEntry(int address, String instruction) { this(address, instruction, Optional.empty()); }
         /** Exige representación textual no nula para la instrucción de la fila. */
         public ProgramEntry {
+            Objects.requireNonNull(physicalAddress);
             Objects.requireNonNull(logicalAddress);
             Objects.requireNonNull(instruction, "instruction must not be null");
         }

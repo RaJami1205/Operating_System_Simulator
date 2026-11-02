@@ -1,4 +1,5 @@
 package io.github.rajami1205.osimulator.application.simulator;
+import io.github.rajami1205.osimulator.application.process.PageInService;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorLifecycle;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
@@ -140,7 +141,7 @@ public final class SimulatorOrchestrator {
         processCompletion = new ProcessCompletionService(cpuTopology, memory, secondaryStorage, processTable, processResources, realClock);
         runtime = new MultiprocessRuntime(cpuTopology, executionEngine, memory, filesystem,
                 screen, processCompletion, processSwapService, jobScheduler, jobList, processTable,
-                processResources, simulationClock, realClock);
+                processResources, simulationClock, realClock, new PageInService(memory, secondaryStorage, processResources));
         this.configuration = configuration;
     }
 
@@ -226,6 +227,8 @@ public final class SimulatorOrchestrator {
      */
     private void requireSwapCandidate(int pid, boolean out) {
         var pcb = processTable.find(pid).orElseThrow(() -> new IllegalArgumentException("Unknown process: " + pid));
+        if (out && memory.isDemandPaging() && pcb.state() == ProcessState.BLOCKED)
+            throw new IllegalStateException("Demand BLOCKED suspension is unsupported; inspect or Reset");
         boolean eligible = out ? pcb.state() == ProcessState.READY || pcb.state() == ProcessState.BLOCKED
                 : pcb.state() == ProcessState.READY_SUSPENDED || pcb.state() == ProcessState.BLOCKED_SUSPENDED;
         if (!eligible || cpuTopology.node(pcb.cpuAffinity()).dispatcher().owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
@@ -327,6 +330,9 @@ public final class SimulatorOrchestrator {
     /** Descarta los recursos de sesión y devuelve la sesión a CONFIGURING. */
     public void reset() {
         lifecycle.reset();
+        if (memory != null) memory.reset();
+        if (secondaryStorage != null) secondaryStorage.reset();
+        if (processResources != null) processResources.clear();
         memory = null;
         secondaryStorage = null;
         filesystem = null;

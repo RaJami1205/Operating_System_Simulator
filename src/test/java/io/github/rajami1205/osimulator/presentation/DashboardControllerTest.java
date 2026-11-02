@@ -28,6 +28,37 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void demandControlsShowAbsentPcAndStopAutomaticOnFrameStall() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        @SuppressWarnings("unchecked") var loadMode = (ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode>) f.widget("pagingLoadModeBox", ComboBox.class);
+        assertEquals(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, loadMode.getValue());
+        mode.setValue(io.github.rajami1205.osimulator.model.memory.MemoryMode.PAGING);
+        f.enabled("pagingLoadModeBox", true); loadMode.setValue(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.DEMAND);
+        f.widget("kernelMemorySlider", Slider.class).setValue(252);
+        f.action("handleInitialize"); f.enabled("pagingLoadModeBox", false); f.enabled("pageSizeField", false);
+        f.load("demand.asm", "INC", "INC", "INC", "INC", "INC"); f.action("handleStart");
+        assertTrue(f.simulator.snapshot().paging().frames().stream().noneMatch(FrameView::occupied));
+        assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("Not Present"));
+        var timeline = (Timeline) get(f.controller, "automaticTimeline");
+        try {
+            f.action("handleAutomatic");
+            for (int i = 0; i < 4; i++) timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            var before = f.simulator.snapshot();
+            assertTrue(before.cpus().getFirst().nextInstructionPhysicalAddress().isEmpty());
+            assertNotEquals("ERROR", f.widget("pcValueLabel", Label.class).getText());
+            assertOperationalOrdering(f, before);
+            timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_FRAMES), f.simulator.snapshot().runtimeStatus());
+            assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
+            f.enabled("automaticButton", false); f.enabled("stepButton", false);
+            assertEquals(4, f.simulator.snapshot().cpus().getFirst().cpuTicks());
+            assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("Pending Page-In"));
+            f.action("handleReset");
+            assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+            assertEquals(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, loadMode.getValue());
+        } finally { timeline.stop(); }
+    }); }
     @Test void pagingControlsRenderSelectedCpuAndLockConfigurationUntilReset() throws Exception { onFx(() -> {
         var f = new Fixture();
         @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);

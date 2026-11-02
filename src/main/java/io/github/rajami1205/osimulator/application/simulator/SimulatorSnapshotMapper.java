@@ -89,9 +89,11 @@ final class SimulatorSnapshotMapper {
             }
         });
         var frames = pool.stream().map(state -> new FrameView(state.frame().id(), state.frame().base(),
-                state.frame().capacity(), state.handle().isPresent(), state.handle().map(owners::get), state.handle().map(pages::get))).toList();
+                state.frame().capacity(), state.handle().isPresent(), state.handle().map(owners::get), state.handle().map(pages::get),
+                memory.clockView().flatMap(clock -> state.handle().map(clock.references()::get)))).toList();
         return new PagingView(frames, tables, memory.unassignableUserCells(), resources == null ? List.of() : resources.pageEvents(),
-                resources == null ? List.of() : resources.pendingPages().stream().map(r -> new PendingPageView(r.processId(), r.pageNumber(), r.logicalPc())).toList());
+                resources == null ? List.of() : resources.pendingPages().stream().map(r -> new PendingPageView(r.processId(), r.pageNumber(), r.logicalPc())).toList(),
+                memory.clockView().map(ClockReplacement.View::hand));
     }
 
     private static List<PartitionView> partitionViews(MainMemory memory, ProcessResourceRegistry resources) {

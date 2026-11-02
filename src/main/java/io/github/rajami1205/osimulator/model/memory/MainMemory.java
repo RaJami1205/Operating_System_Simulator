@@ -26,8 +26,10 @@ public final class MainMemory {
     private final MemoryAllocator user;
     private final UserAllocationSupport userSupport;
     private final FrameAllocator frames;
+    private final ClockReplacement clock;
     private final Optional<PagingConfiguration> paging;
     private final Map<Integer, PageTable> pageTables = new HashMap<>();
+    private final java.util.Set<Integer> protectedImages = new java.util.HashSet<>();
     private Object userGeneration = new Object();
     private UserReservation pendingUser;
     private PageReservation pendingPage;
@@ -63,6 +65,7 @@ public final class MainMemory {
                 : new FixedPartitionMemoryAllocator(configuration, fixed.orElseThrow());
         userSupport = new UserAllocationSupport(user);
         frames = paging.map(value -> new FrameAllocator(configuration, value)).orElse(null);
+        clock = isDemandPaging() ? new ClockReplacement(frames.count()) : null;
         Arrays.fill(positions, EmptyContent.INSTANCE);
     }
 
@@ -249,6 +252,17 @@ public final class MainMemory {
         throw new MemoryProtectionException("Physical PC outside executable page mapping");
     }
 
+    /** Only the execution engine uses this access; administrative reads never set R. */
+    public Instruction fetchInstruction(ResidentImage image, int physicalPc) {
+        var instruction = readInstruction(image, physicalPc);
+        if (image instanceof PageTable table && table.loadMode() == PagingLoadMode.DEMAND) {
+            var handle = table.frames().stream().filter(h -> physicalPc >= h.frame().base()
+                    && (long) physicalPc < (long) h.frame().base() + h.frame().capacity()).findFirst().orElseThrow();
+            clock.reference(handle);
+        }
+        return instruction;
+    }
+
     public void writeImage(ResidentImage image, List<? extends Instruction> instructions) {
         if (image instanceof MemoryAllocation allocation) { writeUserBlock(allocation, instructions); return; }
         if (!(image instanceof PageTable table)) throw new MemoryProtectionException("Missing image");
@@ -296,28 +310,71 @@ public final class MainMemory {
         } else if (image instanceof PageTable table) {
             validatePageTable(table);
             frames.releaseAll(table.frames());
+            if (clock != null) clock.release(table.frames());
             for (var entry : table.entries()) {
                 if (entry.mapping().isEmpty()) continue;
                 var frame = entry.frameHandle().frame();
                 Arrays.fill(positions, frame.base(), frame.base() + frame.capacity(), EmptyContent.INSTANCE);
             }
             pageTables.remove(table.processId());
+            protectedImages.remove(table.processId());
         } else throw new MemoryProtectionException("Missing image");
     }
 
     public List<FrameAllocator.Occupancy> frames() { return frames == null ? List.of() : frames.snapshot(); }
     public boolean hasFreeFrame() { return frames != null && frames.snapshot().stream().anyMatch(f -> f.handle().isEmpty()); }
 
+    public Optional<ClockReplacement.View> clockView() { return Optional.ofNullable(clock).map(ClockReplacement::snapshot); }
+    /** A provisional operation protects the pool until it is confirmed/cancelled. */
+    public boolean pageOperationAvailable() { return pendingPage == null && pendingUser == null; }
+    /** Runtime protects finished participants until its post-interval cleanup. */
+    public void protectImageForCompletion(int pid) {
+        if (pageTables.containsKey(pid)) protectedImages.add(pid);
+    }
+    public boolean isReplacementProtected(int pid) { return protectedImages.contains(pid); }
+    public List<PageTable> demandReplacementImages() {
+        if (clock == null || !pageOperationAvailable()) return List.of();
+        var result = pageTables.values().stream().filter(t -> t.loadMode() == PagingLoadMode.DEMAND)
+                .sorted(java.util.Comparator.comparingInt(PageTable::processId)).toList();
+        var seen = new java.util.HashSet<FrameHandle>();
+        for (var table : result) {
+            validatePageTable(table);
+            for (var handle : table.frames()) if (!seen.add(handle)) throw new MemoryProtectionException("Duplicate page ownership");
+        }
+        for (var occupied : frames.snapshot()) if (occupied.handle().isPresent() && !seen.contains(occupied.handle().orElseThrow()))
+            throw new MemoryProtectionException("Occupied frame has no canonical DEMAND owner");
+        return result;
+    }
+    public Optional<ClockReplacement.Selection> selectVictim(List<FrameHandle> eligible) {
+        if (clock == null || !pageOperationAvailable()) return Optional.empty();
+        frames.validateAll(eligible);
+        for (var handle : eligible) {
+            var owner = pageTables.values().stream().filter(t -> t.frames().contains(handle)).findFirst()
+                    .orElseThrow(() -> new MemoryProtectionException("Victim has no current page mapping"));
+            if (owner.loadMode() != PagingLoadMode.DEMAND || protectedImages.contains(owner.processId()))
+                throw new MemoryProtectionException("Protected image cannot be evicted");
+        }
+        return clock.prepare(eligible);
+    }
+
     /** Token de Page-In: el mapping anterior sigue vigente hasta el commit conjunto. */
     public static final class PageReservation {
         private final PageTable previous;
         private final PageTable replacement;
         private final FrameHandle frame;
+        private PageTable victim;
+        private FrameHandle oldHandle;
+        private MemoryContent[] oldContent;
+        private ClockReplacement.Selection selection;
+        private Map<Integer, PageTable> replacements;
         private boolean written;
         private PageReservation(PageTable previous, PageTable replacement, FrameHandle frame) {
             this.previous = previous; this.replacement = replacement; this.frame = frame;
         }
         public PageTable replacement() { return replacement; }
+        public Map<Integer, PageTable> replacements() {
+            return replacements == null ? Map.of(previous.processId(), replacement) : replacements;
+        }
     }
     public PageReservation reservePage(PageTable table, int page) {
         requireNoPendingUser(); validatePageTable(table);
@@ -337,7 +394,35 @@ public final class MainMemory {
     }
     private void validatePageReservation(PageReservation token) {
         if (token == null || token != pendingPage) throw new IllegalStateException("Stale/foreign Page-In token");
-        validatePageTable(token.previous); frames.validateAll(List.of(token.frame));
+        validatePageTable(token.previous);
+        if (token.victim == null) frames.validateAll(List.of(token.frame));
+        else {
+            validatePageTable(token.victim);
+            frames.validateReplacement(token.oldHandle, token.frame);
+        }
+    }
+    public PageReservation reserveReplacement(PageTable requester, int page, PageTable victim, int victimPage,
+            ClockReplacement.Selection selection) {
+        requireNoPendingUser(); validatePageTable(requester); validatePageTable(victim);
+        if (clock == null || requester.loadMode() != PagingLoadMode.DEMAND || victim.loadMode() != PagingLoadMode.DEMAND
+                || protectedImages.contains(victim.processId()) || requester.entries().get(page).mapping().isPresent())
+            throw new MemoryProtectionException("Invalid replacement images");
+        var old = victim.entries().get(victimPage).frameHandle();
+        if (!old.equals(selection.victim())) throw new MemoryProtectionException("CLOCK victim mismatch");
+        var incoming = frames.prepareReplacement(old);
+        clock.prepareCommit(selection, incoming);
+        var victimEntries = new ArrayList<>(victim.entries());
+        victimEntries.set(victimPage, new PageTableEntry(victimPage, Optional.empty()));
+        var requesterEntries = requester.processId() == victim.processId() ? victimEntries : new ArrayList<>(requester.entries());
+        requesterEntries.set(page, new PageTableEntry(page, incoming));
+        var next = requester.updated(requesterEntries);
+        var replacements = requester.processId() == victim.processId() ? Map.of(requester.processId(), next)
+                : Map.of(requester.processId(), next, victim.processId(), victim.updated(victimEntries));
+        var token = new PageReservation(requester, next, incoming);
+        token.victim = victim; token.oldHandle = old; token.selection = selection; token.replacements = replacements;
+        token.oldContent = Arrays.copyOfRange(positions, old.frame().base(), old.frame().base() + old.frame().capacity());
+        pendingPage = token;
+        return token;
     }
     public void writePage(PageReservation token, List<Instruction> instructions) {
         validatePageReservation(token);
@@ -346,7 +431,9 @@ public final class MainMemory {
         int length = Math.min(token.previous.pageSize(), token.previous.size() - page * token.previous.pageSize());
         var program = List.copyOf(instructions);
         if (program.size() != length) throw new MemoryProtectionException("Page length mismatch");
-        var cells = program.stream().map(InstructionContent::new).toArray(InstructionContent[]::new);
+        var cells = new MemoryContent[token.frame.frame().capacity()];
+        Arrays.fill(cells, EmptyContent.INSTANCE);
+        for (int i = 0; i < program.size(); i++) cells[i] = new InstructionContent(program.get(i));
         for (var cell : cells) if (!positions.getClass().getComponentType().isInstance(cell))
             throw new MemoryProtectionException("Incompatible page memory content");
         System.arraycopy(cells, 0, positions, token.frame.frame().base(), cells.length);
@@ -356,23 +443,36 @@ public final class MainMemory {
         validatePageReservation(token);
         if (!token.written) throw new IllegalStateException("Unwritten Page-In");
         Objects.requireNonNull(publishResources); Objects.requireNonNull(rollbackResources);
+        var nextOccupancy = token.victim == null ? null : frames.prepareOccupancy(token.oldHandle, token.frame);
+        ClockReplacement.View nextClock;
+        if (token.selection != null) nextClock = clock.prepareCommit(token.selection, token.frame);
+        else {
+            var bits = new HashMap<>(clock.snapshot().references()); bits.put(token.frame, true);
+            nextClock = new ClockReplacement.View(clock.snapshot().hand(), bits);
+        }
         try {
             publishResources.run();
-            pageTables.put(token.previous.processId(), token.replacement);
+            for (var entry : token.replacements().entrySet()) pageTables.put(entry.getKey(), entry.getValue());
         } catch (RuntimeException | Error failure) {
             try { pageTables.put(token.previous.processId(), token.previous); }
+            catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            if (token.victim != null) try { pageTables.put(token.victim.processId(), token.victim); }
             catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             try { rollbackResources.run(); }
             catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             throw failure;
         }
+        if (token.victim != null) frames.commitReplacement(nextOccupancy);
+        clock.commit(nextClock);
         pendingPage = null;
     }
     public void cancelPage(PageReservation token) {
         validatePageReservation(token);
-        frames.releaseAll(List.of(token.frame));
         var frame = token.frame.frame();
-        Arrays.fill(positions, frame.base(), frame.base() + frame.capacity(), EmptyContent.INSTANCE);
+        if (token.victim == null) {
+            frames.releaseAll(List.of(token.frame));
+            Arrays.fill(positions, frame.base(), frame.base() + frame.capacity(), EmptyContent.INSTANCE);
+        } else System.arraycopy(token.oldContent, 0, positions, frame.base(), token.oldContent.length);
         pendingPage = null;
     }
     /** Suspensión/reactivación conservan identidad, pero invalidan cada versión anterior. */
@@ -394,6 +494,7 @@ public final class MainMemory {
             catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
             throw failure;
         }
+        clock.release(table.frames());
         for (var handle : table.frames()) Arrays.fill(positions, handle.frame().base(),
                 handle.frame().base() + handle.frame().capacity(), EmptyContent.INSTANCE);
         return replacement;
@@ -565,6 +666,8 @@ public final class MainMemory {
     public void clearUserSpace() {
         if (user != null) user.reset();
         if (frames != null) frames.reset();
+        if (clock != null) clock.reset();
+        protectedImages.clear();
         pageTables.clear();
         pendingPage = null;
         userGeneration = new Object();

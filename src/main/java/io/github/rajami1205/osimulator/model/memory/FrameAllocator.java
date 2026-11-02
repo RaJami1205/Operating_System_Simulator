@@ -7,7 +7,7 @@ import java.util.*;
 /** Pool global, determinista y sin reservas parciales por escasez o validación fallida. */
 public final class FrameAllocator {
     private final List<Frame> frames;
-    private final Map<Integer, FrameHandle> active = new HashMap<>();
+    private Map<Integer, FrameHandle> active = new HashMap<>();
 
     public FrameAllocator(MemoryConfiguration geometry, PagingConfiguration paging) {
         Objects.requireNonNull(paging).validate(Objects.requireNonNull(geometry));
@@ -46,6 +46,25 @@ public final class FrameAllocator {
         var copy = List.copyOf(handles);
         validateAll(copy);
         for (var handle : copy) active.remove(handle.frame().id());
+    }
+    FrameHandle prepareReplacement(FrameHandle victim) {
+        validateAll(List.of(victim));
+        return new FrameHandle(UUID.randomUUID(), victim.frame());
+    }
+    void validateReplacement(FrameHandle victim, FrameHandle incoming) {
+        validateAll(List.of(victim));
+        if (!victim.frame().equals(incoming.frame()) || victim.allocationId().equals(incoming.allocationId()))
+            throw new IllegalArgumentException("Invalid frame reassignment");
+    }
+    Map<Integer, FrameHandle> prepareOccupancy(FrameHandle victim, FrameHandle incoming) {
+        validateReplacement(victim, incoming);
+        var prepared = new HashMap<>(active);
+        prepared.put(victim.frame().id(), incoming);
+        return prepared;
+    }
+    void commitReplacement(Map<Integer, FrameHandle> prepared) {
+        // No fallible map publication after invalidating the old identity.
+        active = prepared;
     }
     public void reset() { active.clear(); }
     public int count() { return frames.size(); }

@@ -535,11 +535,13 @@ public final class SimulatorController {
         pagingDetailsArea.setVisible(paged); pagingDetailsArea.setManaged(paged);
         if (paged) {
             var text = new StringBuilder("Frames (physical order)\n");
+            snapshot.paging().clockHand().ifPresent(hand -> text.append("CLOCK Hand: ").append(hand).append('\n'));
             for (var frame : snapshot.paging().frames()) text.append("Frame ").append(frame.frameId())
                     .append(" | Base ").append(frame.base()).append(" | Size ").append(frame.capacity())
                     .append(frame.occupied() ? " | Occupied" : " | Free")
                     .append(" | PID ").append(frame.ownerPid().map(Object::toString).orElse("—"))
-                    .append(" | Page ").append(frame.pageNumber().map(Object::toString).orElse("—")).append('\n');
+                    .append(" | Page ").append(frame.pageNumber().map(Object::toString).orElse("—"))
+                    .append(" | R ").append(frame.referenced().map(r -> r ? "1" : "0").orElse("—")).append('\n');
             for (var table : snapshot.paging().pageTables()) {
                 text.append("PID ").append(table.processId()).append(" ").append(table.loadMode())
                         .append(" Page Table rev ").append(table.revision()).append(table.suspended() ? " Suspended" : "")
@@ -549,8 +551,12 @@ public final class SimulatorController {
                         .append(" | Used ").append(page.usedLength()).append('\n');
             }
             text.append("Unassignable USER remainder: ").append(snapshot.paging().unassignableCells());
-            for (var event : snapshot.paging().events()) text.append('\n').append(event.kind()).append(" t=").append(event.time())
-                    .append(" CPU ").append(event.cpuId().value()).append(" PID ").append(event.processId()).append(" Page ").append(event.pageNumber());
+            for (var event : snapshot.paging().events()) {
+                text.append('\n').append(event.kind()).append(" t=").append(event.time())
+                        .append(" CPU ").append(event.cpuId().value()).append(" PID ").append(event.processId()).append(" Page ").append(event.pageNumber());
+                event.eviction().ifPresent(e -> text.append(" | Victim PID ").append(e.victimProcessId())
+                        .append(" Page ").append(e.victimPageNumber()).append(" | Frame ").append(e.frameId()));
+            }
             for (var request : snapshot.paging().pending()) text.append("\nPending Page-In: PID ").append(request.processId()).append(" Page ").append(request.pageNumber());
             pagingDetailsArea.setText(text.toString());
         } else pagingDetailsArea.clear();

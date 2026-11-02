@@ -43,6 +43,22 @@ public final class ProcessResourceRegistry {
         if (resources.get(pid) != expected) throw new IllegalStateException("Process resources changed during transfer");
         resources.put(pid, replacement);
     }
+    /** Validate every expected identity before publishing the coordinated page-table update. */
+    void replaceTogether(Map<Integer, ProcessResources> expected, Map<Integer, ProcessResources> replacements) {
+        if (!expected.keySet().equals(replacements.keySet()) || expected.isEmpty()) throw new IllegalArgumentException("Mismatched publication");
+        for (var entry : replacements.entrySet()) {
+            int pid = entry.getKey();
+            if (resources.get(pid) != expected.get(pid)) throw new IllegalStateException("Process resources changed during transfer");
+            validatePagedOwner(pid, entry.getValue()); validateUniqueBacking(pid, entry.getValue());
+        }
+        for (var entry : replacements.entrySet()) resources.put(entry.getKey(), entry.getValue());
+    }
+    void rollbackTogether(Map<Integer, ProcessResources> previous, Map<Integer, ProcessResources> attempted) {
+        RuntimeException failure = null;
+        for (int pid : previous.keySet()) try { rollbackReplacement(pid, previous.get(pid), attempted.get(pid)); }
+        catch (RuntimeException error) { if (failure == null) failure = error; else failure.addSuppressed(error); }
+        if (failure != null) throw failure;
+    }
     /** Sólo rollback de una publicación síncrona fallida; nunca reemplaza un tercero. */
     void rollbackReplacement(int pid, ProcessResources previous, ProcessResources attempted) {
         var current = resources.get(pid);

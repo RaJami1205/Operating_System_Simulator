@@ -27,7 +27,7 @@ public final class MultiprocessRuntime {
             Objects.requireNonNull(scheduler); Objects.requireNonNull(ticks);
         }
     }
-    private record Participant(LocalCpu node, ProcessControlBlock pcb, ResidentImage allocation,
+    private record Participant(LocalCpu node, ProcessControlBlock pcb,
             ProcessAccounting accounting) { }
     private final List<LocalCpu> cpus;
     private final ExecutionEngine engine;
@@ -179,11 +179,11 @@ public final class MultiprocessRuntime {
             var node = participant.node;
             var pcb = participant.pcb;
             try {
-                var result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, participant.allocation);
+                var result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, currentImage(pcb));
                 if (result == TickResult.PAGE_FAULT) {
                     var request = Objects.requireNonNull(pageIns, "Missing Page-In service").request(pcb);
                     pageEvent(pcb, request, PageFaultEvent.Kind.FAULT_OBSERVED);
-                    if (!pageIns.resolve(pcb, request)) {
+                    if (!pageIns.resolve(pcb, request, simulationClock.current())) {
                         resources.awaitPage(request);
                         pcb.changeState(ProcessState.BLOCKED); node.dispatcher.release();
                         outcomes.set(node.id.value(), new RuntimeStepResult.CpuResult(node.id, Optional.of(pcb.processId()),
@@ -191,8 +191,7 @@ public final class MultiprocessRuntime {
                         continue;
                     }
                     pageEvent(pcb, request, PageFaultEvent.Kind.PAGE_IN_COMMITTED);
-                    var currentImage = resources.find(pcb.processId()).orElseThrow().residence().residentImage();
-                    result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, currentImage);
+                    result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, currentImage(pcb));
                     if (result == TickResult.PAGE_FAULT) throw new IllegalStateException("Page-In did not resolve instruction fetch");
                 }
                 if (result == TickResult.PROGRAM_FINISHED) pcb.logicalTimes().finishedAt(finishTime);
@@ -204,6 +203,7 @@ public final class MultiprocessRuntime {
                 outcomes.set(node.id.value(), RuntimeStepResult.CpuResult.executed(node.id, pcb.processId(), result));
                 if (result == TickResult.PROGRAM_FINISHED) {
                     pcb.recordLogicalFinish(finishTime);
+                    memory.protectImageForCompletion(pcb.processId());
                     finished.add(participant);
                 }
             } catch (RuntimeException error) {
@@ -256,8 +256,15 @@ public final class MultiprocessRuntime {
         memory.validatePcbAllocation(resource.kernel(), pcb);
         if (!node.registers.snapshot().equals(pcb.cpuContext())) throw new IllegalStateException("CPU context differs from canonical PCB");
         node.ticks.validateCanAdvance();
-        return new Participant(node, pcb, image,
+        return new Participant(node, pcb,
                 pcb.accounting().recordSuccessfulCpuTick(node.id.value(), realClock.instant()));
+    }
+
+    private ResidentImage currentImage(ProcessControlBlock pcb) {
+        var image = resources.find(pcb.processId()).orElseThrow().residence().residentImage();
+        memory.validateImage(image, pcb);
+        if (pageIns != null) pageIns.validateBacking(pcb);
+        return image;
     }
 
     private RuntimeStepResult idleResult(RuntimeStatus status) {
@@ -270,15 +277,15 @@ public final class MultiprocessRuntime {
     }
 
     private void retryPendingPages() {
-        if (pageIns == null || !memory.hasFreeFrame()) return;
+        if (pageIns == null || resources.pendingPages().isEmpty()) return;
         var requests = resources.pendingPages().stream().sorted(Comparator
                 .comparingInt((PendingPageRequest r) -> table.find(r.processId()).orElseThrow().cpuAffinity().value())
                 .thenComparingInt(PendingPageRequest::processId)).toList();
         for (var request : requests) {
-            if (!memory.hasFreeFrame()) break;
+            if (!pageIns.canResolve()) break;
             var pcb = table.find(request.processId()).orElseThrow();
             if (pcb.state() != ProcessState.BLOCKED) throw new IllegalStateException("Pending request is not blocked");
-            if (pageIns.resolve(pcb, request)) {
+            if (pageIns.resolve(pcb, request, simulationClock.current())) {
                 pageEvent(pcb, request, PageFaultEvent.Kind.PAGE_IN_COMMITTED);
                 resources.clearPageRequest(pcb.processId());
                 pcb.changeState(ProcessState.READY); nodeFor(pcb).ready.enqueue(pcb.processId()); pcbSynchronizer.sync(pcb);
@@ -333,8 +340,8 @@ public final class MultiprocessRuntime {
             return RuntimeStatus.RUNNABLE;
         }
         if (!resources.pendingPages().isEmpty()) {
-            if (memory.hasFreeFrame()) return RuntimeStatus.RUNNABLE;
-            if (cpus.stream().noneMatch(node -> node.suspended.peek().isPresent())) return RuntimeStatus.WAITING_FOR_FRAMES;
+            if (pageIns != null && pageIns.canResolve()) return RuntimeStatus.RUNNABLE;
+            if (cpus.stream().noneMatch(node -> node.suspended.peek().isPresent()) && nextArrivalTime().isEmpty()) return RuntimeStatus.WAITING_FOR_FRAMES;
         }
         if (table.size() == 0 && jobs.entries().stream().noneMatch(job -> job.state() == JobState.PENDING
                 && job.arrivalTime() <= simulationClock.current()) && nextArrivalTime().isPresent()) {

@@ -59,8 +59,11 @@ public record SimulatorSnapshot(
                 cpus, lastCpuResults, partitions, new PagingView(List.of(), List.of(), 0));
     }
     public record FrameView(int frameId, int base, int capacity, boolean occupied,
-            Optional<Integer> ownerPid, Optional<Integer> pageNumber) {
-        public FrameView { Objects.requireNonNull(ownerPid); Objects.requireNonNull(pageNumber); }
+            Optional<Integer> ownerPid, Optional<Integer> pageNumber, Optional<Boolean> referenced) {
+        public FrameView(int frameId, int base, int capacity, boolean occupied, Optional<Integer> ownerPid, Optional<Integer> pageNumber) {
+            this(frameId, base, capacity, occupied, ownerPid, pageNumber, Optional.empty());
+        }
+        public FrameView { Objects.requireNonNull(ownerPid); Objects.requireNonNull(pageNumber); Objects.requireNonNull(referenced); }
     }
     public record PageMapping(int pageNumber, Optional<Integer> frame, Optional<Integer> base, int usedLength) {
         public PageMapping(int pageNumber, int frameId, int physicalBase, int usedLength) {
@@ -81,11 +84,17 @@ public record SimulatorSnapshot(
     }
     public record PendingPageView(int processId, int pageNumber, int logicalPc) { }
     public record PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells,
-            List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending) {
+            List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending,
+            Optional<Integer> clockHand) {
+        public PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells,
+                List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending) {
+            this(frames, pageTables, unassignableCells, events, pending, Optional.empty());
+        }
         public PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells) {
             this(frames, pageTables, unassignableCells, List.of(), List.of());
         }
         public PagingView {
+            Objects.requireNonNull(clockHand);
             events = List.copyOf(events); pending = List.copyOf(pending);
             frames = List.copyOf(frames); pageTables = List.copyOf(pageTables);
             if (unassignableCells < 0) throw new IllegalArgumentException("Negative USER remainder");

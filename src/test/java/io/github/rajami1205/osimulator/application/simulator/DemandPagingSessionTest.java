@@ -53,19 +53,20 @@ class DemandPagingSessionTest {
         assertEquals(Long.MAX_VALUE, run.snapshot().simulationTimeSeconds().orElseThrow());
         assertTrue(run.snapshot().paging().events().isEmpty()); assertTrue(demand(run, 1).table().frames().isEmpty());
     }
-    @Test void explicitReadySuspensionReleasesFramesAndWakesLocalRequestWithoutExecutingIt() throws Exception {
-        var run = run(1, 1); submit(run, "waiting", "INC"); submit(run, "resident", "INC"); run.start();
+    @Test void readyVictimCanBeEvictedThenSuspendedWithoutExtraExecution() throws Exception {
+        var run = run(1, 1); submit(run, "waiting", "INC", "INC"); submit(run, "resident", "INC"); run.start();
         var memory = field(run, "memory", MainMemory.class); var storage = field(run, "secondaryStorage", SecondaryStorage.class);
         var registry = field(run, "processResources", ProcessResourceRegistry.class); var processes = field(run, "processTable", ProcessTable.class);
         var pageService = new PageInService(memory, storage, registry); var second = processes.find(2).orElseThrow();
         pageService.resolve(second, pageService.request(second));
-        run.step(); assertEquals(ProcessState.BLOCKED, processes.find(1).orElseThrow().state());
+        run.step(); assertEquals(ProcessState.RUNNING, processes.find(1).orElseThrow().state());
         assertThrows(IllegalStateException.class, () -> run.swapOut(1));
         assertEquals(SimulatorState.RUNNING, run.snapshot().simulatorState());
         var before = run.snapshot().simulationTimeSeconds();
         run.swapOut(2); var woke = run.snapshot();
-        assertEquals(before, woke.simulationTimeSeconds()); assertEquals(0, woke.cpus().getFirst().cpuTicks());
-        assertTrue(woke.paging().pending().isEmpty()); assertEquals(List.of(1), woke.readyQueue());
+        assertEquals(before, woke.simulationTimeSeconds()); assertEquals(1, woke.cpus().getFirst().cpuTicks());
+        assertTrue(woke.paging().pending().isEmpty()); assertTrue(woke.readyQueue().isEmpty());
+        assertEquals(1, woke.paging().events().stream().filter(e -> e.kind() == PageFaultEvent.Kind.EVICTION_COMMITTED).count());
         assertEquals(ProcessState.READY_SUSPENDED, second.state());
         run.step(); run.step(); assertEquals(SimulatorState.FINISHED, run.snapshot().simulatorState());
     }
@@ -108,16 +109,18 @@ class DemandPagingSessionTest {
         var storage = field(run, "secondaryStorage", SecondaryStorage.class); var all = storage.allocateSwap(256); storage.releaseSwap(all);
     }
     @Test void freeFramePriorityBlockedRecoveryAndNoSuccessorInstructionInSameInterval() throws Exception {
-        var run = run(2, 1); submit(run, "first", "INC", "INC"); submit(run, "second", "INC"); run.start();
+        // CPU0's completed image is protected until post-interval cleanup: a real no-victim window.
+        var run = run(2, 1); submit(run, "first", "INC"); submit(run, "second", "INC", "INC"); run.start();
         run.step(); var blocked = run.snapshot();
         assertEquals(List.of(1L, 0L), blocked.cpus().stream().map(SimulatorSnapshot.CpuView::cpuTicks).toList());
-        assertEquals(1, blocked.paging().pending().size()); assertEquals(2, blocked.paging().pending().getFirst().processId());
-        assertEquals(ProcessState.BLOCKED, blocked.processes().get(1).state());
+        assertEquals(RuntimeStepResult.CpuOutcome.WAITING_FOR_PAGE, blocked.lastCpuResults().get(1).outcome());
+        assertTrue(blocked.paging().pending().isEmpty());
+        assertEquals(ProcessState.READY, blocked.processes().getFirst().state());
         assertTrue(blocked.cpus().get(1).ownerPid().isEmpty()); assertTrue(blocked.cpus().get(1).cpu().instructionRegister().isEmpty());
         run.step(); var ready = run.snapshot();
-        assertEquals(List.of(2L, 0L), ready.cpus().stream().map(SimulatorSnapshot.CpuView::cpuTicks).toList());
-        assertTrue(ready.paging().pending().isEmpty()); assertEquals(List.of(2), ready.cpus().get(1).readyQueue());
-        assertEquals(0, ready.cpus().get(1).cpu().accumulator()); assertEquals(2, ready.simulationTimeSeconds().orElseThrow());
+        assertEquals(List.of(1L, 1L), ready.cpus().stream().map(SimulatorSnapshot.CpuView::cpuTicks).toList());
+        assertTrue(ready.paging().pending().isEmpty()); assertTrue(ready.cpus().get(1).readyQueue().isEmpty());
+        assertEquals(1, ready.cpus().get(1).cpu().accumulator()); assertEquals(2, ready.simulationTimeSeconds().orElseThrow());
         run.step(); assertEquals(SimulatorState.FINISHED, run.snapshot().simulatorState());
         assertEquals(3, run.snapshot().simulationTimeSeconds().orElseThrow());
         assertEquals(2, run.snapshot().paging().events().stream().filter(e -> e.kind() == PageFaultEvent.Kind.FAULT_OBSERVED).count());
@@ -136,22 +139,25 @@ class DemandPagingSessionTest {
         assertTrue(next.cpus().getFirst().nextInstructionPhysicalAddress().isPresent());
         run.step(); assertEquals(SimulatorState.FINISHED, run.snapshot().simulatorState());
     }
-    @Test void noFreeFramesExposeStableStallWithoutRepeatedFaultsOrArtificialTime() throws Exception {
+    @Test void morePagesThanFramesProgressWithoutRepeatedFaultsOrArtificialTime() throws Exception {
         var run = run(1, 1); submit(run, "larger", "INC", "INC", "INC", "INC", "INC"); run.start();
         for (int i = 0; i < 4; i++) run.step(); var before = run.snapshot();
-        run.step(); var waiting = run.snapshot();
-        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_FRAMES), waiting.runtimeStatus());
-        assertEquals(SimulatorState.RUNNING, waiting.simulatorState()); assertEquals(5, waiting.simulationTimeSeconds().orElseThrow());
-        assertEquals(4, waiting.cpus().getFirst().cpuTicks()); assertEquals(before.cpus().getFirst().cpu(), waiting.cpus().getFirst().cpu());
-        assertEquals(1, waiting.paging().pending().size());
-        for (int i = 0; i < 3; i++) run.step();
-        assertEquals(5, run.snapshot().simulationTimeSeconds().orElseThrow()); assertEquals(waiting.paging(), run.snapshot().paging());
         var memory = field(run, "memory", MainMemory.class); var storage = field(run, "secondaryStorage", SecondaryStorage.class);
         var registry = field(run, "processResources", ProcessResourceRegistry.class); var old = demand(run, 1);
+        run.step(); var done = run.snapshot();
+        assertEquals(Optional.of(RuntimeStatus.FINISHED), done.runtimeStatus());
+        assertEquals(SimulatorState.FINISHED, done.simulatorState()); assertEquals(5, done.simulationTimeSeconds().orElseThrow());
+        assertEquals(5, done.cpus().getFirst().cpuTicks()); assertEquals(4, before.cpus().getFirst().cpuTicks());
+        assertTrue(done.paging().pending().isEmpty());
+        assertEquals(2, done.paging().events().stream().filter(e -> e.kind() == PageFaultEvent.Kind.FAULT_OBSERVED).count());
+        assertEquals(1, done.paging().events().stream().filter(e -> e.kind() == PageFaultEvent.Kind.EVICTION_COMMITTED).count());
+        for (int i = 0; i < 3; i++) assertEquals(done, run.snapshot());
+        assertTrue(memory.clockView().orElseThrow().references().isEmpty());
         run.reset(); assertTrue(registry.pendingPages().isEmpty());
         assertThrows(RuntimeException.class, () -> memory.validatePageTable(old.table()));
         assertThrows(RuntimeException.class, () -> storage.readSwapBlock(old.backing().allocation()));
         assertTrue(run.snapshot().paging().events().isEmpty());
+        assertEquals(0, memory.clockView().orElseThrow().hand());
     }
     @ParameterizedTest @ValueSource(ints = {0, 1})
     void successfulPageInSurvivesInstructionFailureButDoesNotCommitTimeAlone(int failingCpu) throws Exception {

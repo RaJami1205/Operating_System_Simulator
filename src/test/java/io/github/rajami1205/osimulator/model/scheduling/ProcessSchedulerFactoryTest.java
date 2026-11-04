@@ -31,6 +31,18 @@ class ProcessSchedulerFactoryTest {
                 () -> ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, CpuId.ZERO, one, table));
     }
 
+    @Test void createsSpnSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var pcbs = List.of(new ProcessControlBlock(1, 280, 5, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO),
+                new ProcessControlBlock(2, 280, 2, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO));
+        for (var pcb : pcbs) { pcb.changeState(ProcessState.READY); table.register(pcb); zero.enqueue(pcb.processId()); }
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.SPN, CpuId.ZERO, zero, table);
+        assertInstanceOf(SpnProcessScheduler.class, scheduler);
+        assertEquals(Optional.of(2), scheduler.selectNext());
+        assertEquals(List.of(1, 2), zero.entries());
+    }
+
     @Test void rejectsMissingDependencies() {
         var table = new ProcessTable(); var queue = new ReadyQueue(CpuId.ZERO, table);
         assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(null, CpuId.ZERO, queue, table));

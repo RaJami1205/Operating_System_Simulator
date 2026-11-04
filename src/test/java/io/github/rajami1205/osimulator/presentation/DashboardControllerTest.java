@@ -176,6 +176,27 @@ class DashboardControllerTest {
         }
     }); }
 
+    @Test void schedulingPolicySelectorOffersOnlyImplementedPoliciesAndFreezesAfterInitialize() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var policy = (ComboBox<io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId>)
+                f.widget("schedulingPolicyBox", ComboBox.class);
+        var badge = f.widget("schedulingPolicyLabel", Label.class);
+        assertEquals(List.of(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.values()), policy.getItems());
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS, policy.getValue());
+        assertEquals("—", badge.getText());
+        f.enabled("schedulingPolicyBox", true);
+        policy.setValue(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.SPN);
+        f.action("handleInitialize");
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.SPN,
+                f.simulator.configuration().orElseThrow().schedulingPolicy());
+        f.enabled("schedulingPolicyBox", false);
+        assertEquals("SPN", badge.getText());
+        f.action("handleReset");
+        f.enabled("schedulingPolicyBox", true);
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS, policy.getValue());
+        assertEquals("—", badge.getText());
+    }); }
+
     @Test void selectorDisplaysEntireLocalCpuAndManualMatchesAutomatic() throws Exception { onFx(() -> {
         List<SimulatorSnapshot.CpuView> manual = null;
         for (boolean automatic : List.of(false, true)) {

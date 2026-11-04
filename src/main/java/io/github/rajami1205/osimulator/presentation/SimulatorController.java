@@ -44,6 +44,8 @@ public final class SimulatorController {
     private boolean renderingSelection;
     private boolean renderingCpuSelection;
     @FXML private ComboBox<Integer> cpuCountBox;
+    @FXML private ComboBox<SchedulingPolicyId> schedulingPolicyBox;
+    @FXML private Label schedulingPolicyLabel;
     @FXML private ComboBox<UserAllocationStrategy> userAllocationBox;
     @FXML private ComboBox<MemoryMode> memoryModeBox;
     @FXML private TextField partitionCountField;
@@ -184,6 +186,9 @@ public final class SimulatorController {
                 throw new UnsupportedOperationException("Allocation selector is not editable");
             }
         });
+        // Sólo políticas implementadas: cada feature que extiende el enum aparece aquí sin otra lista.
+        schedulingPolicyBox.getItems().setAll(SchedulingPolicyId.values());
+        schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
         cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
         cpuCountBox.setValue(1);
         cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
@@ -256,7 +261,7 @@ public final class SimulatorController {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
-                SchedulingPolicyId.FCFS, userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
+                schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
                         ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty())));
     }
@@ -518,7 +523,11 @@ public final class SimulatorController {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
         cpuCountBox.setDisable(!configuring);
+        schedulingPolicyBox.setDisable(!configuring);
+        schedulingPolicyLabel.setText(snapshot.configuration()
+                .map(configuration -> configuration.schedulingPolicy().name()).orElse("—"));
         snapshot.configuration().ifPresent(configuration -> {
+            schedulingPolicyBox.setValue(configuration.schedulingPolicy());
             userAllocationBox.setValue(configuration.userAllocationStrategy());
             memoryModeBox.setValue(configuration.memoryMode());
             configuration.paging().ifPresent(paging -> {
@@ -602,6 +611,7 @@ public final class SimulatorController {
         cpuCountBox.setValue(1);
         updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
+        schedulingPolicyBox.setValue(defaults.schedulingPolicy());
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
         pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));

@@ -12,6 +12,7 @@ public final class ProcessSchedulerFactory {
             ReadyQueue ready, ProcessTable processes) {
         return switch (Objects.requireNonNull(policy, "policy must not be null")) {
             case FCFS -> new FcfsProcessScheduler(cpuId, ready, processes);
+            case SPN -> new SpnProcessScheduler(cpuId, ready, processes);
         };
     }
 }

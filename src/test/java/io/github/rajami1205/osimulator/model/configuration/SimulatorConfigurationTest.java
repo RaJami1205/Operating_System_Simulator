@@ -51,7 +51,7 @@ class SimulatorConfigurationTest {
         assertEquals(new SimulatorConfiguration(memory, 512, 64, 1), explicit);
         assertEquals(SchedulingPolicyId.FCFS, explicit.schedulingPolicy());
         assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, null));
-        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN),
+        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN, SchedulingPolicyId.SRT),
                 java.util.List.of(SchedulingPolicyId.values()));
         assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("RR"));
     }

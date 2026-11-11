@@ -151,6 +151,16 @@ public final class MultiprocessRuntime {
         settle();
         retryPendingPages();
         for (var node : cpus) {
+            Optional<ProcessControlBlock> currentOwner = node.dispatcher.owner();
+            if (currentOwner.isPresent()) {
+                ProcessControlBlock ownerPcb = currentOwner.get();
+                boolean preemptionRequested = node.scheduler.shouldPreempt(ownerPcb);
+                if (preemptionRequested) {
+                    node.dispatcher.preempt();
+                }
+            }
+        }
+        for (var node : cpus) {
             if (node.dispatcher.owner().isEmpty()) node.scheduler.selectNext().ifPresent(
                     pid -> node.dispatcher.dispatch(pid, simulationClock.current()));
         }

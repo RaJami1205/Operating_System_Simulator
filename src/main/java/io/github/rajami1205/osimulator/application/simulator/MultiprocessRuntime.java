@@ -161,10 +161,13 @@ public final class MultiprocessRuntime {
             }
         }
         for (var node : cpus) {
-            if (node.dispatcher.owner().isEmpty()) node.scheduler.selectNext().ifPresent(pid -> {
-                node.dispatcher.dispatch(pid, simulationClock.current());
-                node.scheduler.onDispatched(pid);
-            });
+            if (node.dispatcher.owner().isEmpty()) {
+                node.scheduler.onSchedulingPoint(simulationClock.current());
+                node.scheduler.selectNext().ifPresent(pid -> {
+                    node.dispatcher.dispatch(pid, simulationClock.current());
+                    node.scheduler.onDispatched(pid);
+                });
+            }
         }
         var participants = new ArrayList<Participant>();
         var outcomes = new ArrayList<RuntimeStepResult.CpuResult>();

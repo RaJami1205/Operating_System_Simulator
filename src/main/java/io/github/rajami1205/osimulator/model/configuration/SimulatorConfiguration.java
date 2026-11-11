@@ -21,11 +21,15 @@ public record SimulatorConfiguration(
         UserAllocationStrategy userAllocationStrategy,
         MemoryMode memoryMode,
         Optional<FixedPartitionConfiguration> fixedPartitions,
-        Optional<PagingConfiguration> paging
+        Optional<PagingConfiguration> paging,
+        int quantum
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
     public static final int PROCESSES_PER_CPU = ProcessTable.MAX_ADMITTED_PROCESSES;
+    public static final int MIN_QUANTUM = 1;
+    public static final int MAX_QUANTUM = 10;
+    public static final int DEFAULT_QUANTUM = 2;
     public static final int MIN_MAIN_MEMORY = 256;
     /** Mínimo compatible de una CPU para los controles actuales. */
     public static final int MIN_KERNEL_MEMORY = PcbField.PCB_SIZE * ProcessTable.MAX_ADMITTED_PROCESSES;
@@ -65,6 +69,15 @@ public record SimulatorConfiguration(
                 memoryMode == MemoryMode.PAGING ? Optional.of(PagingConfiguration.defaults()) : Optional.empty());
     }
 
+    /** Compatibilidad: quantum predeterminado (sólo lo usan las políticas con quantum). */
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy,
+            UserAllocationStrategy userAllocationStrategy, MemoryMode memoryMode,
+            Optional<FixedPartitionConfiguration> fixedPartitions, Optional<PagingConfiguration> paging) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, schedulingPolicy,
+                userAllocationStrategy, memoryMode, fixedPartitions, paging, DEFAULT_QUANTUM);
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
@@ -77,6 +90,9 @@ public record SimulatorConfiguration(
         Objects.requireNonNull(paging);
         if ((memoryMode == MemoryMode.PAGING) != paging.isPresent()) throw new IllegalArgumentException("Paging configuration and mode disagree");
         paging.ifPresent(value -> value.validate(mainMemory));
+        if (quantum < MIN_QUANTUM || quantum > MAX_QUANTUM) {
+            throw new IllegalArgumentException("Quantum must be between " + MIN_QUANTUM + " and " + MAX_QUANTUM);
+        }
         if (cpuCount < MIN_CPU_COUNT || cpuCount > MAX_CPU_COUNT) {
             throw new IllegalArgumentException("CPU count must be between 1 and 5");
         }

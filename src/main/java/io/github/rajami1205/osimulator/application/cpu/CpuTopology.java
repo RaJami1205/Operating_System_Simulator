@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.application.cpu;
 
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
@@ -19,7 +20,12 @@ public final class CpuTopology {
 
     public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
             SchedulingPolicyId policy) {
-        this(createNodes(cpuCount, processes, memory, resources, policy));
+        this(cpuCount, processes, memory, resources, policy, SimulatorConfiguration.DEFAULT_QUANTUM);
+    }
+
+    public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy, int quantum) {
+        this(createNodes(cpuCount, processes, memory, resources, policy, quantum));
     }
 
     public CpuTopology(List<CpuNode> nodes) {
@@ -41,10 +47,10 @@ public final class CpuTopology {
     }
 
     private static List<CpuNode> createNodes(int count, ProcessTable table, MainMemory memory, ProcessResourceRegistry resources,
-            SchedulingPolicyId policy) {
+            SchedulingPolicyId policy, int quantum) {
         validateCount(count);
         Objects.requireNonNull(policy, "policy must not be null");
-        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources, policy)).toList();
+        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources, policy, quantum)).toList();
     }
 
     private static void validateCount(int count) {

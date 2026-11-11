@@ -111,7 +111,7 @@ public final class SimulatorOrchestrator {
         ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
         CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources,
-                configuration.schedulingPolicy());
+                configuration.schedulingPolicy(), configuration.quantum());
         var node = newTopology.node(CpuId.ZERO);
         ReadyQueue newReadyQueue = node.readyQueue();
         ProcessSwapService newSwap = new ProcessSwapService(newTopology, newMemory, newStorage, newProcesses, newResources);

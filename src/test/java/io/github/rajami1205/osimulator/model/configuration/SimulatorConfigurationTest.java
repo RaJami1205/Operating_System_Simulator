@@ -51,9 +51,17 @@ class SimulatorConfigurationTest {
         assertEquals(new SimulatorConfiguration(memory, 512, 64, 1), explicit);
         assertEquals(SchedulingPolicyId.FCFS, explicit.schedulingPolicy());
         assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, null));
-        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN, SchedulingPolicyId.SRT),
+        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN, SchedulingPolicyId.SRT,
+                        SchedulingPolicyId.RR),
                 java.util.List.of(SchedulingPolicyId.values()));
-        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("RR"));
+        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("LOTTERY"));
+        assertEquals(2, explicit.quantum());
+        for (int invalid : new int[] {0, 11, -1}) {
+            assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1,
+                    SchedulingPolicyId.RR, io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT,
+                    io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, java.util.Optional.empty(),
+                    java.util.Optional.empty(), invalid));
+        }
     }
     @ParameterizedTest
     @CsvSource({"1,5,140", "2,10,280", "3,15,420", "4,20,560", "5,25,700"})

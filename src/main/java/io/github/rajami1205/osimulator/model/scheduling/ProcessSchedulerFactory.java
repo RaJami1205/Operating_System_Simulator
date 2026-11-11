@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.model.scheduling;
 
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import java.util.Objects;
@@ -10,10 +11,16 @@ public final class ProcessSchedulerFactory {
 
     public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId,
             ReadyQueue ready, ProcessTable processes) {
+        return create(policy, cpuId, ready, processes, SimulatorConfiguration.DEFAULT_QUANTUM);
+    }
+
+    public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId,
+            ReadyQueue ready, ProcessTable processes, int quantum) {
         return switch (Objects.requireNonNull(policy, "policy must not be null")) {
             case FCFS -> new FcfsProcessScheduler(cpuId, ready, processes);
             case SPN -> new SpnProcessScheduler(cpuId, ready, processes);
             case SRT -> new SrtProcessScheduler(cpuId, ready, processes);
+            case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
         };
     }
 }

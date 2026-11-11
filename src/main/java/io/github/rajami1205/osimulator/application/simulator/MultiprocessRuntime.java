@@ -161,8 +161,10 @@ public final class MultiprocessRuntime {
             }
         }
         for (var node : cpus) {
-            if (node.dispatcher.owner().isEmpty()) node.scheduler.selectNext().ifPresent(
-                    pid -> node.dispatcher.dispatch(pid, simulationClock.current()));
+            if (node.dispatcher.owner().isEmpty()) node.scheduler.selectNext().ifPresent(pid -> {
+                node.dispatcher.dispatch(pid, simulationClock.current());
+                node.scheduler.onDispatched(pid);
+            });
         }
         var participants = new ArrayList<Participant>();
         var outcomes = new ArrayList<RuntimeStepResult.CpuResult>();
@@ -209,6 +211,7 @@ public final class MultiprocessRuntime {
                 pcb.replaceAccounting(participant.accounting);
                 pcbSynchronizer.sync(pcb);
                 node.ticks.advance();
+                node.scheduler.onInstructionCompleted(pcb.processId());
                 committed = true;
                 outcomes.set(node.id.value(), RuntimeStepResult.CpuResult.executed(node.id, pcb.processId(), result));
                 if (result == TickResult.PROGRAM_FINISHED) {

@@ -24,6 +24,7 @@ import javafx.animation.*;
 import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.layout.HBox;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import static io.github.rajami1205.osimulator.presentation.DashboardTables.*;
@@ -51,6 +52,8 @@ public final class SimulatorController {
     @FXML private TextField partitionCountField;
     @FXML private TextField partitionCapacitiesField;
     @FXML private TextField pageSizeField;
+    @FXML private HBox quantumRow;
+    @FXML private TextField quantumField;
     @FXML private ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode> pagingLoadModeBox;
     @FXML private TextArea pagingDetailsArea;
     @FXML private TableColumn<ProgramEntry, String> programLogicalColumn;
@@ -189,6 +192,8 @@ public final class SimulatorController {
         // Sólo políticas implementadas: cada feature que extiende el enum aparece aquí sin otra lista.
         schedulingPolicyBox.getItems().setAll(SchedulingPolicyId.values());
         schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
+        quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
+        schedulingPolicyBox.valueProperty().addListener((o, before, after) -> updateQuantumControls());
         cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
         cpuCountBox.setValue(1);
         cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
@@ -263,7 +268,8 @@ public final class SimulatorController {
                 sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
                 schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
-                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty())));
+                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty(),
+                parseQuantum())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
@@ -289,6 +295,20 @@ public final class SimulatorController {
     static List<Integer> parsePartitionCapacities(String text) {
         if (text == null) throw new IllegalArgumentException("Enter comma-separated partition capacities");
         return java.util.Arrays.stream(text.split(",", -1)).map(SimulatorController::parsePartitionInteger).toList();
+    }
+
+    /** El quantum sólo se usa con RR: se parsea únicamente entonces; el rango lo valida el modelo. */
+    private int parseQuantum() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.RR) return SimulatorConfiguration.DEFAULT_QUANTUM;
+        return parsePartitionInteger(quantumField.getText());
+    }
+
+    private void updateQuantumControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesQuantum = schedulingPolicyBox.getValue() == SchedulingPolicyId.RR;
+        quantumRow.setVisible(usesQuantum);
+        quantumRow.setManaged(usesQuantum);
+        quantumField.setDisable(!configuring || !usesQuantum);
     }
 
     private void updateMemoryModeControls() {
@@ -528,6 +548,7 @@ public final class SimulatorController {
                 .map(configuration -> configuration.schedulingPolicy().name()).orElse("—"));
         snapshot.configuration().ifPresent(configuration -> {
             schedulingPolicyBox.setValue(configuration.schedulingPolicy());
+            quantumField.setText(Integer.toString(configuration.quantum()));
             userAllocationBox.setValue(configuration.userAllocationStrategy());
             memoryModeBox.setValue(configuration.memoryMode());
             configuration.paging().ifPresent(paging -> {
@@ -536,6 +557,7 @@ public final class SimulatorController {
             });
         });
         updateMemoryModeControls();
+        updateQuantumControls();
         partitionTable.getItems().setAll(snapshot.partitions());
         partitionTable.setVisible(!snapshot.partitions().isEmpty());
         partitionTable.setManaged(!snapshot.partitions().isEmpty());
@@ -612,6 +634,7 @@ public final class SimulatorController {
         updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
         schedulingPolicyBox.setValue(defaults.schedulingPolicy());
+        quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
         pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));

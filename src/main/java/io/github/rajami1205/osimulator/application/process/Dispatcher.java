@@ -100,4 +100,20 @@ public final class Dispatcher {
         pcbSynchronizer.sync(owner);
         owner = null;
     }
+
+    /**
+     * Expulsa al owner RUNNING de vuelta a READY: guarda el contexto, cambia estado, re-encola y libera
+     * ownership. No consume ticks ni selecciona sucesor.
+     */
+    public void preempt() {
+        if (owner == null || owner.state() != ProcessState.RUNNING) {
+            throw new IllegalStateException("Only a running owner can be preempted");
+        }
+        ProcessControlBlock preempted = owner;
+        preempted.replaceCpuContext(cpu.snapshot());
+        preempted.changeState(ProcessState.READY);
+        pcbSynchronizer.sync(preempted);
+        ready.enqueue(preempted.processId());
+        owner = null;
+    }
 }

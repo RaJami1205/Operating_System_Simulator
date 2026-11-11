@@ -18,4 +18,10 @@ public interface ProcessScheduler {
     default boolean shouldPreempt(ProcessControlBlock owner) {
         return false;
     }
+
+    /** Notifica que el proceso fue despachado a esta CPU. Default: sin efecto. */
+    default void onDispatched(int pid) { }
+
+    /** Notifica que el owner completó una instrucción. Default: sin efecto. */
+    default void onInstructionCompleted(int pid) { }
 }

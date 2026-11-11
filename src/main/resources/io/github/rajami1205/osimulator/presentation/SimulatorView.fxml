@@ -47,6 +47,10 @@
                             <Label text="Algorithm" styleClass="configuration-label"/>
                             <ComboBox fx:id="schedulingPolicyBox" prefWidth="130"/>
                         </HBox>
+                        <HBox fx:id="quantumRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Quantum" styleClass="configuration-label"/>
+                            <TextField fx:id="quantumField" prefWidth="60"/>
+                        </HBox>
                     </VBox>
                     <VBox spacing="10.0" styleClass="control-section">
                         <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>

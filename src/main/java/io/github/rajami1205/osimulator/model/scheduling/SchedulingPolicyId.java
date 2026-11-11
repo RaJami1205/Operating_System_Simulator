@@ -4,5 +4,6 @@ package io.github.rajami1205.osimulator.model.scheduling;
 public enum SchedulingPolicyId {
     FCFS,
     SPN,
-    SRT
+    SRT,
+    RR
 }

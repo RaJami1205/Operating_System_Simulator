@@ -20,6 +20,7 @@ public final class ProcessSchedulerFactory {
             case FCFS -> new FcfsProcessScheduler(cpuId, ready, processes);
             case SPN -> new SpnProcessScheduler(cpuId, ready, processes);
             case SRT -> new SrtProcessScheduler(cpuId, ready, processes);
+            case HRRN -> new HrrnProcessScheduler(cpuId, ready, processes);
             case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
         };
     }

@@ -19,6 +19,12 @@ public interface ProcessScheduler {
         return false;
     }
 
+    /**
+     * Informa el tiempo lógico vigente justo antes de que esta CPU elija candidato. Default: sin efecto;
+     * las políticas que dependen del tiempo (p. ej. HRRN) lo guardan para evaluar selectNext().
+     */
+    default void onSchedulingPoint(long now) { }
+
     /** Notifica que el proceso fue despachado a esta CPU. Default: sin efecto. */
     default void onDispatched(int pid) { }
 

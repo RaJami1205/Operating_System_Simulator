@@ -5,5 +5,6 @@ public enum SchedulingPolicyId {
     FCFS,
     SPN,
     SRT,
-    RR
+    RR,
+    HRRN
 }

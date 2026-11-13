@@ -15,6 +15,7 @@ import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
 import io.github.rajami1205.osimulator.application.process.SwapResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.execution.SimulationClock;
 import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
@@ -111,7 +112,7 @@ public final class SimulatorOrchestrator {
         ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
         CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources,
-                configuration.schedulingPolicy(), configuration.quantum());
+                configuration.schedulingPolicy(), configuration.quantum(), configuration.priority());
         var node = newTopology.node(CpuId.ZERO);
         ReadyQueue newReadyQueue = node.readyQueue();
         ProcessSwapService newSwap = new ProcessSwapService(newTopology, newMemory, newStorage, newProcesses, newResources);
@@ -156,8 +157,13 @@ public final class SimulatorOrchestrator {
     }
 
     public Job submitProgram(ProgramImage program, long arrivalTime) {
+        return submitProgram(program, arrivalTime, ProcessControlBlock.DEFAULT_PRIORITY);
+    }
+
+    /** Presenta trabajo con Arrival y prioridad de planificación (0..9, menor = más prioridad). */
+    public Job submitProgram(ProgramImage program, long arrivalTime, int priority) {
         requirePreparedState("submitProgram");
-        var job = jobSubmissionService.submit(program, arrivalTime);
+        var job = jobSubmissionService.submit(program, arrivalTime, priority);
         if (lifecycle.state() == SimulatorState.INITIALIZED) lifecycle.markProgramLoaded();
         return job;
     }

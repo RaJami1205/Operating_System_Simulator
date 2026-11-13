@@ -150,6 +150,10 @@ public final class MultiprocessRuntime {
         admitWaiting();
         settle();
         retryPendingPages();
+        // Todas las CPUs reciben el tiempo vigente antes de evaluar expulsión o elegir candidato.
+        for (var node : cpus) {
+            node.scheduler.onSchedulingPoint(simulationClock.current());
+        }
         for (var node : cpus) {
             Optional<ProcessControlBlock> currentOwner = node.dispatcher.owner();
             if (currentOwner.isPresent()) {
@@ -162,7 +166,6 @@ public final class MultiprocessRuntime {
         }
         for (var node : cpus) {
             if (node.dispatcher.owner().isEmpty()) {
-                node.scheduler.onSchedulingPoint(simulationClock.current());
                 node.scheduler.selectNext().ifPresent(pid -> {
                     node.dispatcher.dispatch(pid, simulationClock.current());
                     node.scheduler.onDispatched(pid);

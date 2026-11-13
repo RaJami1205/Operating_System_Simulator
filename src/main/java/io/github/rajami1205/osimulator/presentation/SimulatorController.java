@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
+import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
@@ -13,6 +14,7 @@ import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
 import io.github.rajami1205.osimulator.model.memory.PagingConfiguration;
 import java.util.Optional;
 import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
@@ -25,6 +27,7 @@ import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import static io.github.rajami1205.osimulator.presentation.DashboardTables.*;
@@ -54,6 +57,9 @@ public final class SimulatorController {
     @FXML private TextField pageSizeField;
     @FXML private HBox quantumRow;
     @FXML private TextField quantumField;
+    @FXML private VBox priorityRow;
+    @FXML private CheckBox preemptiveBox;
+    @FXML private TextField agingField;
     @FXML private ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode> pagingLoadModeBox;
     @FXML private TextArea pagingDetailsArea;
     @FXML private TableColumn<ProgramEntry, String> programLogicalColumn;
@@ -113,6 +119,7 @@ public final class SimulatorController {
     @FXML private Button resetButton;
     @FXML private TextField programPathField;
     @FXML private TextField arrivalTimeField;
+    @FXML private TextField priorityField;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
     @FXML private ListView<String> readyList;
@@ -193,7 +200,11 @@ public final class SimulatorController {
         schedulingPolicyBox.getItems().setAll(SchedulingPolicyId.values());
         schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
-        schedulingPolicyBox.valueProperty().addListener((o, before, after) -> updateQuantumControls());
+        restorePriorityConfigurationDefaults();
+        schedulingPolicyBox.valueProperty().addListener((o, before, after) -> {
+            updateQuantumControls();
+            updatePriorityControls();
+        });
         cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
         cpuCountBox.setValue(1);
         cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
@@ -269,7 +280,7 @@ public final class SimulatorController {
                 schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
                         ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty(),
-                parseQuantum())));
+                parseQuantum(), parsePriorityConfiguration())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
@@ -301,6 +312,46 @@ public final class SimulatorController {
     private int parseQuantum() {
         if (schedulingPolicyBox.getValue() != SchedulingPolicyId.RR) return SimulatorConfiguration.DEFAULT_QUANTUM;
         return parsePartitionInteger(quantumField.getText());
+    }
+
+    /** Preemptive y aging sólo se usan con PRIORITY; con otras políticas se envían los defaults. */
+    private PriorityConfiguration parsePriorityConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.PRIORITY) return PriorityConfiguration.defaults();
+        boolean preemptive = preemptiveBox.isSelected();
+        int agingInterval = parseAgingInterval(agingField.getText());
+        return new PriorityConfiguration(preemptive, agingInterval);
+    }
+
+    static int parseAgingInterval(String text) {
+        String value = text == null ? "" : text.strip();
+        if (!value.matches("[0-9]{1,2}")) {
+            throw new IllegalArgumentException("Aging interval must be an integer from "
+                    + PriorityConfiguration.MIN_AGING_INTERVAL + " to " + PriorityConfiguration.MAX_AGING_INTERVAL + ".");
+        }
+        return Integer.parseInt(value);
+    }
+
+    static int parsePriority(String text) {
+        String value = text == null ? "" : text.strip();
+        if (!value.matches("[0-9]")) {
+            throw new IllegalArgumentException("Priority must be an integer from "
+                    + ProcessControlBlock.MIN_PRIORITY + " to " + ProcessControlBlock.MAX_PRIORITY + ".");
+        }
+        return Integer.parseInt(value);
+    }
+
+    private void updatePriorityControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesPriority = schedulingPolicyBox.getValue() == SchedulingPolicyId.PRIORITY;
+        priorityRow.setVisible(usesPriority);
+        priorityRow.setManaged(usesPriority);
+        priorityRow.setDisable(!configuring || !usesPriority);
+    }
+
+    private void restorePriorityConfigurationDefaults() {
+        var defaults = PriorityConfiguration.defaults();
+        preemptiveBox.setSelected(defaults.preemptive());
+        agingField.setText(Integer.toString(defaults.agingInterval()));
     }
 
     private void updateQuantumControls() {
@@ -339,9 +390,10 @@ public final class SimulatorController {
         command(() -> {
             if (selectedProgramPath == null) throw new IllegalStateException("Select an ASM program first.");
             long arrival = parseArrivalTime(arrivalTimeField.getText());
+            int priority = parsePriority(priorityField.getText());
             var instructions = programImporter.importProgram(selectedProgramPath);
             var name = selectedProgramPath.getFileName().toString();
-            orchestrator.submitProgram(new ProgramImage(name, instructions), arrival);
+            orchestrator.submitProgram(new ProgramImage(name, instructions), arrival, priority);
             feedback = "Submitted " + name + ". Workload ready; load another program or Start.";
         });
     }
@@ -398,6 +450,7 @@ public final class SimulatorController {
         selectedProgramPath = null; selectedProcessId = null;
         programPathField.clear(); feedback = "";
         arrivalTimeField.setText("0");
+        priorityField.setText(Integer.toString(ProcessControlBlock.DEFAULT_PRIORITY));
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
     }
     /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
@@ -549,6 +602,8 @@ public final class SimulatorController {
         snapshot.configuration().ifPresent(configuration -> {
             schedulingPolicyBox.setValue(configuration.schedulingPolicy());
             quantumField.setText(Integer.toString(configuration.quantum()));
+            preemptiveBox.setSelected(configuration.priority().preemptive());
+            agingField.setText(Integer.toString(configuration.priority().agingInterval()));
             userAllocationBox.setValue(configuration.userAllocationStrategy());
             memoryModeBox.setValue(configuration.memoryMode());
             configuration.paging().ifPresent(paging -> {
@@ -558,6 +613,7 @@ public final class SimulatorController {
         });
         updateMemoryModeControls();
         updateQuantumControls();
+        updatePriorityControls();
         partitionTable.getItems().setAll(snapshot.partitions());
         partitionTable.setVisible(!snapshot.partitions().isEmpty());
         partitionTable.setManaged(!snapshot.partitions().isEmpty());
@@ -595,6 +651,7 @@ public final class SimulatorController {
         boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
         initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
         arrivalTimeField.setDisable(!loading);
+        priorityField.setDisable(!loading);
         loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
         stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);
@@ -635,6 +692,7 @@ public final class SimulatorController {
         var defaults = SimulatorConfiguration.defaults();
         schedulingPolicyBox.setValue(defaults.schedulingPolicy());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
+        restorePriorityConfigurationDefaults();
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
         pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));

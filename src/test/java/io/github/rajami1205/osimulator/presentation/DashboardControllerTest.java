@@ -10,6 +10,9 @@ import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguratio
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.job.Job;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
 import java.nio.file.Path;
 import java.time.*;
@@ -252,9 +255,9 @@ class DashboardControllerTest {
             if (capacity) f.widget("kernelMemorySlider", Slider.class).setValue(255);
             f.action("handleInitialize");
             if (capacity) f.load("large.asm", "INC", "INC");
-            f.widget("arrivalTimeField", TextField.class).setText("2"); f.load("future.asm", "INC");
+            f.loadWith("future.asm", "2", "0", "INC");
             assertEquals(2, f.simulator.jobs().getLast().arrivalTime());
-            f.action("handleStart"); f.enabled("arrivalTimeField", false); f.enabled("automaticButton", true);
+            f.action("handleStart"); f.enabled("programQueueTable", false); f.enabled("automaticButton", true);
             f.action("handleAutomatic");
             var timeline = (Timeline) get(f.controller, "automaticTimeline");
             try {
@@ -276,19 +279,100 @@ class DashboardControllerTest {
                     f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
                     assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Declared Burst (parsed instructions): 1"));
                 }
-                f.action("handleReset"); assertEquals("0", f.widget("arrivalTimeField", TextField.class).getText());
+                f.action("handleReset"); assertTrue(f.queue().getItems().isEmpty());
             } finally { timeline.stop(); }
         }
     }); }
 
+    private static Fixture initializedWith(SchedulingPolicyId policy) throws Exception {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(policy);
+        f.action("handleInitialize");
+        return f;
+    }
+
+    private static void register(Fixture f, String... names) {
+        for (String name : names) f.programs.put(name, new AsmParser().parse(List.of("INC")));
+    }
+
+    @Test void multipleProgramsLoadInTableOrderWithTheirArrivalAndPriority() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm", "B.asm", "C.asm");
+        f.controller.addProgramFiles(List.of(Path.of("C.asm"), Path.of("A.asm"), Path.of("B.asm"), Path.of("A.asm")));
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertEquals(List.of("A.asm", "B.asm", "C.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        assertTrue(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+
+        f.queue().getSelectionModel().select(2); f.action("handleMoveProgramUp");
+        assertEquals(List.of("A.asm", "C.asm", "B.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        assertEquals(1, f.queue().getSelectionModel().getSelectedIndex());
+        var rows = f.queue().getItems();
+        rows.get(0).arrivalProperty().set("0"); rows.get(0).priorityProperty().set("2");
+        rows.get(1).arrivalProperty().set("2"); rows.get(1).priorityProperty().set("0");
+        rows.get(2).arrivalProperty().set("1"); rows.get(2).priorityProperty().set("9");
+        f.action("handleLoadProgram");
+
+        var jobs = f.simulator.jobs();
+        assertEquals(List.of("A.asm", "C.asm", "B.asm"), jobs.stream().map(Job::programName).toList());
+        assertEquals(List.of(0L, 2L, 1L), jobs.stream().map(Job::arrivalTime).toList());
+        assertEquals(List.of(2, 0, 9), jobs.stream().map(Job::priority).toList());
+        assertTrue(f.queue().getItems().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Submitted 3 programs"));
+    }); }
+
+    @Test void anInvalidRowPublishesNothingAndKeepsTheList() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm", "B.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        f.queue().getItems().get(1).priorityProperty().set("10");
+        f.action("handleLoadProgram");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("B.asm: Priority must be an integer from 0 to 9"));
+        assertEquals(2, f.queue().getItems().size());
+        f.closeAlerts();
+        f.queue().getItems().get(1).priorityProperty().set("4");
+        f.action("handleLoadProgram");
+        assertEquals(List.of(0, 4), f.simulator.jobs().stream().map(Job::priority).toList());
+    }); }
+
+    @Test void priorityColumnIsHiddenAndIgnoredOutsidePriorityPolicy() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertFalse(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+        f.queue().getItems().getFirst().priorityProperty().set("not a number");
+        f.action("handleLoadProgram");
+        assertEquals(1, f.simulator.jobs().size());
+        assertEquals(ProcessControlBlock.DEFAULT_PRIORITY, f.simulator.jobs().getFirst().priority());
+    }); }
+
+    @Test void queueButtonsFollowSelectionBordersAndLifecycle() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        register(f, "A.asm", "B.asm");
+        f.enabled("loadProgramButton", false); f.enabled("removeProgramButton", false);
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        f.enabled("loadProgramButton", true);
+        f.enabled("moveProgramUpButton", false); f.enabled("moveProgramDownButton", false);
+        f.queue().getSelectionModel().select(0);
+        f.enabled("moveProgramUpButton", false); f.enabled("moveProgramDownButton", true); f.enabled("removeProgramButton", true);
+        f.queue().getSelectionModel().select(1);
+        f.enabled("moveProgramUpButton", true); f.enabled("moveProgramDownButton", false);
+        f.action("handleRemoveProgram");
+        assertEquals(List.of("A.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        f.action("handleLoadProgram");
+        f.action("handleStart");
+        for (String name : List.of("programQueueTable", "browseProgramButton", "moveProgramUpButton",
+                "moveProgramDownButton", "removeProgramButton", "loadProgramButton")) f.enabled(name, false);
+    }); }
+
     @Test void invalidArrivalDoesNotPublishProgramAndAllowsCorrection() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
-        f.widget("arrivalTimeField", TextField.class).setText("9223372036854775808");
-        f.load("invalid-arrival.asm", "INC");
+        f.loadWith("invalid-arrival.asm", "9223372036854775808", "0", "INC");
         assertTrue(f.simulator.jobs().isEmpty());
-        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Arrival Time must be an integer"));
-        f.closeAlerts(); f.widget("arrivalTimeField", TextField.class).setText("0"); f.action("handleLoadProgram");
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("invalid-arrival.asm: Arrival Time must be an integer"));
+        f.closeAlerts(); f.queue().getItems().getFirst().arrivalProperty().set("0"); f.action("handleLoadProgram");
         assertEquals(1, f.simulator.jobs().size());
+        assertTrue(f.queue().getItems().isEmpty());
     }); }
     @Test void manualIdleAdvancesTimeWhileAutomaticStopsAndRefreshIsFree() throws Exception { onFx(() -> {
         var f = new Fixture(); f.widget("kernelMemorySlider",Slider.class).setValue(255);
@@ -369,11 +453,23 @@ class DashboardControllerTest {
         }
         void action(String method) throws Exception { call(controller, method); }
         <T> T widget(String name, Class<T> type) throws Exception { return type.cast(get(controller, name)); }
-        void load(String path, String... lines) throws Exception {
-            Path selected = Path.of(path); programs.put(selected.getFileName().toString(), new AsmParser().parse(List.of(lines)));
-            set(controller, "selectedProgramPath", selected); widget("programPathField", TextField.class).setText(path);
+        /** Carga un único archivo con Arrival 0 y Priority 0, como una carga individual sobre la lista vacía. */
+        void load(String path, String... lines) throws Exception { loadWith(path, "0", "0", lines); }
+        /** Deja sólo este archivo en la lista, escribe su Arrival/Priority y presiona Load Programs. */
+        void loadWith(String path, String arrival, String priority, String... lines) throws Exception {
+            queue().getItems().clear();
+            ProgramLoadRow row = add(path, lines);
+            row.arrivalProperty().set(arrival); row.priorityProperty().set(priority);
             action("refresh"); action("handleLoadProgram");
         }
+        /** Agrega un archivo a la lista (como Browse) y registra su contenido para el importador falso. */
+        ProgramLoadRow add(String path, String... lines) throws Exception {
+            Path selected = Path.of(path); programs.put(selected.getFileName().toString(), new AsmParser().parse(List.of(lines)));
+            controller.addProgramFiles(List.of(selected));
+            return queue().getItems().getLast();
+        }
+        @SuppressWarnings("unchecked")
+        TableView<ProgramLoadRow> queue() throws Exception { return widget("programQueueTable", TableView.class); }
         void enabled(String name, boolean expected) throws Exception { assertEquals(expected, !widget(name, Control.class).isDisabled(), name); }
         void closeAlerts() { for (var window : List.copyOf(Window.getWindows())) window.hide(); }
     }
@@ -384,8 +480,11 @@ class DashboardControllerTest {
         rows.put("processTable", snapshot.processes()); rows.put("completedTable", snapshot.completedProcesses());
         rows.put("partitionTable", snapshot.partitions());
         int columns = 0;
-        assertEquals(7, Arrays.stream(SimulatorController.class.getDeclaredFields())
+        // 7 tablas de snapshot + programQueueTable (entrada de la sección PROGRAM, no datos del snapshot).
+        assertEquals(8, Arrays.stream(SimulatorController.class.getDeclaredFields())
                 .filter(field -> field.getType() == TableView.class).count());
+        assertTrue(f.queue().getSortOrder().isEmpty());
+        for (var column : f.queue().getColumns()) assertFalse(column.isSortable(), column.getId());
         for (var entry : rows.entrySet()) {
             TableView<?> table = f.widget(entry.getKey(), TableView.class);
             assertEquals(entry.getValue(), table.getItems(), entry.getKey());
@@ -501,7 +600,7 @@ class DashboardControllerTest {
         assertEquals(140, f.widget("kernelMemorySlider", Slider.class).getValue());
         assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
         assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
-        assertTrue(f.widget("programPathField", TextField.class).getText().isEmpty());
+        assertTrue(f.queue().getItems().isEmpty());
     }); }
     @Test void screenOutputAndRefreshRemainSessionOwned() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");

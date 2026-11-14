@@ -119,20 +119,21 @@
                     </VBox>
                     <VBox spacing="4.0" styleClass="control-section">
                         <Label text="PROGRAM" styleClass="section-title"/>
-                        <GridPane hgap="6.0" vgap="4.0">
-                            <columnConstraints>
-                                <ColumnConstraints percentWidth="38.0"/>
-                                <ColumnConstraints percentWidth="62.0" hgrow="ALWAYS"/>
-                            </columnConstraints>
-                            <Label text="Program file (.asm)" wrapText="true" styleClass="section-label"/>
-                            <TextField fx:id="programPathField" editable="false" maxWidth="Infinity" promptText="No program selected" styleClass="input-field" GridPane.columnIndex="1"/>
-                            <Label text="Arrival (logical s)" wrapText="true" styleClass="section-label" GridPane.rowIndex="2"/>
-                            <TextField fx:id="arrivalTimeField" text="0" maxWidth="Infinity" styleClass="input-field" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-                            <Label text="Priority (0-9)" wrapText="true" styleClass="section-label" GridPane.rowIndex="3"/>
-                            <TextField fx:id="priorityField" text="0" maxWidth="Infinity" styleClass="input-field" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
-                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
-                            <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Program" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-                        </GridPane>
+                        <HBox spacing="4.0">
+                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="secondary-button"/>
+                            <Button fx:id="moveProgramUpButton" onAction="#handleMoveProgramUp" text="▲" disable="true" styleClass="secondary-button"/>
+                            <Button fx:id="moveProgramDownButton" onAction="#handleMoveProgramDown" text="▼" disable="true" styleClass="secondary-button"/>
+                            <Button fx:id="removeProgramButton" onAction="#handleRemoveProgram" text="Remove" disable="true" styleClass="secondary-button"/>
+                        </HBox>
+                        <TableView fx:id="programQueueTable" editable="true" prefHeight="150.0" minHeight="90.0">
+                            <placeholder><Label text="Browse to add .asm programs" styleClass="section-label"/></placeholder>
+                            <columns>
+                                <TableColumn fx:id="programFileColumn" text="File" prefWidth="110" sortable="false"/>
+                                <TableColumn fx:id="programArrivalColumn" text="Arrival" prefWidth="60" sortable="false"/>
+                                <TableColumn fx:id="programPriorityColumn" text="Priority" prefWidth="60" sortable="false" visible="false"/>
+                            </columns>
+                        </TableView>
+                        <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Programs" disable="true" maxWidth="Infinity" styleClass="secondary-button"/>
                     </VBox>
                     <VBox spacing="4.0" styleClass="control-section">
                         <Label text="EXECUTION" styleClass="section-title"/>

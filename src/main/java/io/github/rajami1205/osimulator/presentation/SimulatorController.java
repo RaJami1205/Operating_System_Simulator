@@ -42,7 +42,6 @@ public final class SimulatorController {
     private final ProgramImporter programImporter;
     private Timeline automaticTimeline;
     private boolean automaticMode;
-    private Path selectedProgramPath;
     private Integer selectedProcessId;
     private SimulatorSnapshot view;
     private boolean renderingSelection;
@@ -111,15 +110,19 @@ public final class SimulatorController {
     @FXML private Button initializeButton;
     @FXML private Button browseProgramButton;
     @FXML private Button loadProgramButton;
+    @FXML private Button moveProgramUpButton;
+    @FXML private Button moveProgramDownButton;
+    @FXML private Button removeProgramButton;
+    @FXML private TableView<ProgramLoadRow> programQueueTable;
+    @FXML private TableColumn<ProgramLoadRow, String> programFileColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programArrivalColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programPriorityColumn;
     @FXML private Button startButton;
     @FXML private Button stepButton;
     @FXML private Button automaticButton;
     @FXML private Button pauseButton;
     @FXML private Button resumeButton;
     @FXML private Button resetButton;
-    @FXML private TextField programPathField;
-    @FXML private TextField arrivalTimeField;
-    @FXML private TextField priorityField;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
     @FXML private ListView<String> readyList;
@@ -264,6 +267,7 @@ public final class SimulatorController {
         regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case VIRTUAL_MEMORY -> "virtual-memory-row"; });
         column(jobIdColumn, v -> Integer.toString(v.jobId())); column(jobNameColumn, Job::programName); column(jobStateColumn, v -> v.state().name());
         column(jobArrivalColumn, v -> Long.toString(v.arrivalTime()));
+        configureProgramQueueTable();
         column(pidColumn, v -> Integer.toString(v.processId())); column(processStateColumn, v -> v.state().name());
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
         column(baseColumn, v -> v.base().map(Object::toString).orElse("\u2014")); column(limitColumn, v -> Integer.toString(v.limit()));
@@ -372,30 +376,196 @@ public final class SimulatorController {
         pageSizeField.setDisable(!configuring || mode != MemoryMode.PAGING);
         pagingLoadModeBox.setDisable(!configuring || mode != MemoryMode.PAGING);
     }
-    /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
+    /** Columnas de la lista de programas: nombre y celdas de texto siempre editables para Arrival/Priority. */
+    private void configureProgramQueueTable() {
+        programFileColumn.setCellValueFactory(cell ->
+                new javafx.beans.property.ReadOnlyStringWrapper(cell.getValue().fileName()));
+        programFileColumn.setCellFactory(column -> new TableCell<>() {
+            @Override protected void updateItem(String name, boolean empty) {
+                super.updateItem(name, empty);
+                boolean blank = empty || name == null;
+                setText(blank ? null : name);
+                setTooltip(blank ? null : new Tooltip(getTableRow().getItem() == null ? name
+                        : getTableRow().getItem().path().toString()));
+            }
+        });
+        programArrivalColumn.setCellValueFactory(cell -> cell.getValue().arrivalProperty());
+        programArrivalColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::arrivalProperty));
+        programPriorityColumn.setCellValueFactory(cell -> cell.getValue().priorityProperty());
+        programPriorityColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::priorityProperty));
+        programQueueTable.getSelectionModel().selectedIndexProperty()
+                .addListener((o, before, after) -> updateProgramQueueButtons());
+    }
+
+    /**
+     * Celda con un TextField enlazado a la propiedad de su fila: lo escrito se guarda al instante, sin
+     * depender de presionar Enter como TextFieldTableCell.
+     */
+    private static final class BoundTextFieldCell extends TableCell<ProgramLoadRow, String> {
+        private final java.util.function.Function<ProgramLoadRow, javafx.beans.property.StringProperty> property;
+        private final TextField field = new TextField();
+        private javafx.beans.property.StringProperty bound;
+
+        BoundTextFieldCell(java.util.function.Function<ProgramLoadRow, javafx.beans.property.StringProperty> property) {
+            this.property = property;
+            field.getStyleClass().add("input-field");
+            // Al enfocar el campo se selecciona su fila, para que ▲/▼/Remove actúen sobre ella.
+            field.focusedProperty().addListener((o, before, focused) -> {
+                if (focused && !isEmpty()) getTableView().getSelectionModel().select(getIndex());
+            });
+        }
+
+        @Override protected void updateItem(String value, boolean empty) {
+            super.updateItem(value, empty);
+            if (bound != null) {
+                field.textProperty().unbindBidirectional(bound);
+                bound = null;
+            }
+            ProgramLoadRow row = getTableRow() == null ? null : getTableRow().getItem();
+            if (empty || row == null) {
+                setGraphic(null);
+                return;
+            }
+            bound = property.apply(row);
+            field.textProperty().bindBidirectional(bound);
+            setGraphic(field);
+        }
+    }
+
+    /** Abre el selector múltiple de ASM y agrega los archivos elegidos a la lista de programas por cargar. */
     @FXML private void handleBrowseProgram() {
         if (browseProgramButton.isDisabled()) return;
         var chooser = new FileChooser();
-        chooser.setTitle("Select ASM program");
+        chooser.setTitle("Select ASM programs");
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Assembly files (*.asm)", "*.asm"));
-        var file = chooser.showOpenDialog(programPathField.getScene().getWindow());
-        if (file != null) { selectedProgramPath = file.toPath(); programPathField.setText(selectedProgramPath.toString()); }
+        var files = chooser.showOpenMultipleDialog(programQueueTable.getScene().getWindow());
+        if (files != null) addProgramFiles(files.stream().map(java.io.File::toPath).toList());
         refresh();
     }
+
     /**
-     * Importa ASM mediante ProgramImporter y hace submission de ProgramImage con nombre lógico; no admite
-     * ni ejecuta procesos.
+     * Agrega archivos al final de la lista, ordenados por nombre dentro de la misma selección (el orden del
+     * diálogo no está garantizado y el orden de carga decide el PID en empates). Ignora rutas ya listadas.
+     */
+    void addProgramFiles(List<Path> paths) {
+        var alreadyListed = new java.util.HashSet<Path>();
+        for (ProgramLoadRow row : programQueueTable.getItems()) alreadyListed.add(row.path().toAbsolutePath().normalize());
+        var sorted = new java.util.ArrayList<>(paths);
+        sorted.sort(java.util.Comparator.comparing((Path path) -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(Path::toString));
+        for (Path path : sorted) {
+            Path key = path.toAbsolutePath().normalize();
+            if (alreadyListed.add(key)) programQueueTable.getItems().add(new ProgramLoadRow(path));
+        }
+        updateProgramQueueButtons();
+    }
+
+    /** Sube una posición la fila seleccionada; el orden de la tabla es el orden de carga. */
+    @FXML private void handleMoveProgramUp() { moveSelectedProgram(-1); }
+
+    /** Baja una posición la fila seleccionada. */
+    @FXML private void handleMoveProgramDown() { moveSelectedProgram(1); }
+
+    private void moveSelectedProgram(int offset) {
+        var rows = programQueueTable.getItems();
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        int target = index + offset;
+        if (index < 0 || target < 0 || target >= rows.size()) return;
+        ProgramLoadRow moved = rows.remove(index);
+        rows.add(target, moved);
+        programQueueTable.getSelectionModel().select(target);
+        updateProgramQueueButtons();
+    }
+
+    /** Quita de la lista la fila seleccionada sin afectar Jobs ya cargados. */
+    @FXML private void handleRemoveProgram() {
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        if (index < 0) return;
+        programQueueTable.getItems().remove(index);
+        updateProgramQueueButtons();
+    }
+
+    /** Valor de una fila ya validado, listo para submitProgram. */
+    private record ValidatedProgram(ProgramLoadRow row, ProgramImage image, long arrival, int priority) { }
+
+    /**
+     * Carga todos los programas de la lista en el orden de la tabla. Primero valida Arrival/Priority e
+     * importa todos los ASM sin publicar nada; si algo falla no se carga ninguno. Luego hace submission
+     * fila por fila; si el backend rechaza una, las anteriores quedan cargadas y la fallida y las
+     * siguientes permanecen en la lista para corregirlas.
      */
     @FXML private void handleLoadProgram() {
         command(() -> {
-            if (selectedProgramPath == null) throw new IllegalStateException("Select an ASM program first.");
-            long arrival = parseArrivalTime(arrivalTimeField.getText());
-            int priority = parsePriority(priorityField.getText());
-            var instructions = programImporter.importProgram(selectedProgramPath);
-            var name = selectedProgramPath.getFileName().toString();
-            orchestrator.submitProgram(new ProgramImage(name, instructions), arrival, priority);
-            feedback = "Submitted " + name + ". Workload ready; load another program or Start.";
+            var rows = List.copyOf(programQueueTable.getItems());
+            if (rows.isEmpty()) throw new IllegalStateException("Browse to add at least one ASM program first.");
+            boolean usesPriority = usesPriorityColumn();
+            var validated = new java.util.ArrayList<ValidatedProgram>();
+            for (ProgramLoadRow row : rows) {
+                validated.add(validate(row, usesPriority));
+            }
+            int submitted = 0;
+            try {
+                for (ValidatedProgram program : validated) {
+                    orchestrator.submitProgram(program.image(), program.arrival(), program.priority());
+                    programQueueTable.getItems().remove(program.row());
+                    submitted++;
+                }
+            } catch (IllegalArgumentException | IllegalStateException | StorageException failure) {
+                String name = validated.get(submitted).row().fileName();
+                throw withFileName(name, failure);
+            } finally {
+                updateProgramQueueButtons();
+            }
+            feedback = "Submitted " + submitted + (submitted == 1 ? " program" : " programs")
+                    + ". Workload ready; load more programs or Start.";
         });
+    }
+
+    private ValidatedProgram validate(ProgramLoadRow row, boolean usesPriority) throws ProgramImportException {
+        String name = row.fileName();
+        try {
+            long arrival = parseArrivalTime(row.arrivalProperty().get());
+            int priority = usesPriority ? parsePriority(row.priorityProperty().get()) : ProcessControlBlock.DEFAULT_PRIORITY;
+            var instructions = programImporter.importProgram(row.path());
+            return new ValidatedProgram(row, new ProgramImage(name, instructions), arrival, priority);
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            throw withFileName(name, failure);
+        } catch (ProgramImportException failure) {
+            throw new IllegalArgumentException(name + ": " + failure.getMessage(), failure);
+        }
+    }
+
+    private static RuntimeException withFileName(String name, RuntimeException failure) {
+        String message = name + ": " + failure.getMessage();
+        if (failure instanceof IllegalStateException) return new IllegalStateException(message, failure);
+        return new IllegalArgumentException(message, failure);
+    }
+
+    /** La columna Priority sólo aplica a una sesión inicializada con la política PRIORITY. */
+    private boolean usesPriorityColumn() {
+        return view != null && view.configuration()
+                .map(configuration -> configuration.schedulingPolicy() == SchedulingPolicyId.PRIORITY)
+                .orElse(false);
+    }
+
+    private boolean loadingPrograms() {
+        if (view == null) return false;
+        var state = view.simulatorState();
+        return state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
+    }
+
+    private void updateProgramQueueButtons() {
+        boolean loading = loadingPrograms();
+        int size = programQueueTable.getItems().size();
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        boolean selected = index >= 0 && index < size;
+        programQueueTable.setDisable(!loading);
+        browseProgramButton.setDisable(!loading);
+        moveProgramUpButton.setDisable(!loading || !selected || index == 0);
+        moveProgramDownButton.setDisable(!loading || !selected || index == size - 1);
+        removeProgramButton.setDisable(!loading || !selected);
+        loadProgramButton.setDisable(!loading || size == 0);
+        programPriorityColumn.setVisible(usesPriorityColumn());
     }
     /** Parsing entero exacto; evita redondeos y efectos de carga ante entradas inválidas. */
     static long parseArrivalTime(String text) {
@@ -447,10 +617,8 @@ public final class SimulatorController {
     /** Detiene Timeline, limpia selección y delega Reset antes de restaurar defaults visuales. */
     @FXML private void handleReset() {
         stopAutomaticExecution();
-        selectedProgramPath = null; selectedProcessId = null;
-        programPathField.clear(); feedback = "";
-        arrivalTimeField.setText("0");
-        priorityField.setText(Integer.toString(ProcessControlBlock.DEFAULT_PRIORITY));
+        selectedProcessId = null;
+        programQueueTable.getItems().clear(); feedback = "";
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
     }
     /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
@@ -648,11 +816,9 @@ public final class SimulatorController {
             pagingDetailsArea.setText(text.toString());
         } else pagingDetailsArea.clear();
         cpuSelector.setDisable(snapshot.cpus().isEmpty());
-        boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
-        initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
-        arrivalTimeField.setDisable(!loading);
-        priorityField.setDisable(!loading);
-        loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
+        initializeButton.setDisable(!configuring);
+        updateProgramQueueButtons();
+        startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
         stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);
         resetButton.setDisable(false);

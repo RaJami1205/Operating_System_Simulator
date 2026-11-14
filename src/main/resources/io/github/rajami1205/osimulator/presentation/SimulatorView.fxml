@@ -51,6 +51,13 @@
                             <Label text="Quantum" styleClass="configuration-label"/>
                             <TextField fx:id="quantumField" prefWidth="60"/>
                         </HBox>
+                        <VBox fx:id="priorityRow" spacing="6" visible="false" managed="false">
+                            <CheckBox fx:id="preemptiveBox" text="Preemptive" styleClass="configuration-label"/>
+                            <HBox alignment="CENTER_LEFT" spacing="8">
+                                <Label text="Aging every N ticks (0 = off)" wrapText="true" styleClass="configuration-label"/>
+                                <TextField fx:id="agingField" prefWidth="60"/>
+                            </HBox>
+                        </VBox>
                     </VBox>
                     <VBox spacing="10.0" styleClass="control-section">
                         <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>
@@ -121,6 +128,8 @@
                             <TextField fx:id="programPathField" editable="false" maxWidth="Infinity" promptText="No program selected" styleClass="input-field" GridPane.columnIndex="1"/>
                             <Label text="Arrival (logical s)" wrapText="true" styleClass="section-label" GridPane.rowIndex="2"/>
                             <TextField fx:id="arrivalTimeField" text="0" maxWidth="Infinity" styleClass="input-field" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                            <Label text="Priority (0-9)" wrapText="true" styleClass="section-label" GridPane.rowIndex="3"/>
+                            <TextField fx:id="priorityField" text="0" maxWidth="Infinity" styleClass="input-field" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
                             <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
                             <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Program" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
                         </GridPane>

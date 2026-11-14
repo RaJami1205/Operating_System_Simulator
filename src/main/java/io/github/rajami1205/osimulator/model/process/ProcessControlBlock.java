@@ -28,6 +28,10 @@ public final class ProcessControlBlock {
     private LogicalProcessTimes logicalTimes;
     private ProcessState state = ProcessState.NEW;
     private CpuContext<Instruction> cpuContext;
+    /** Rango de prioridad de planificación: menor número = mayor prioridad. */
+    public static final int MIN_PRIORITY = 0;
+    public static final int MAX_PRIORITY = 9;
+    public static final int DEFAULT_PRIORITY = 0;
     private int priority;
     private Optional<PcbAddress> nextPcbAddress = Optional.empty();
     /** Valida y fija los metadatos del proceso con su PC inicial y estado NEW. */

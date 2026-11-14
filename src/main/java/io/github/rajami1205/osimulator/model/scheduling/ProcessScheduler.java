@@ -20,8 +20,9 @@ public interface ProcessScheduler {
     }
 
     /**
-     * Informa el tiempo lógico vigente justo antes de que esta CPU elija candidato. Default: sin efecto;
-     * las políticas que dependen del tiempo (p. ej. HRRN) lo guardan para evaluar selectNext().
+     * Informa el tiempo lógico vigente al inicio de la fase de scheduling, en todas las CPUs y antes de
+     * shouldPreempt/selectNext. Default: sin efecto; las políticas que dependen del tiempo (HRRN, aging de
+     * Priority) lo guardan para evaluar.
      */
     default void onSchedulingPoint(long now) { }
 

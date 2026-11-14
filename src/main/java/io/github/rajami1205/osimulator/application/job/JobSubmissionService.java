@@ -6,6 +6,7 @@ import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import java.util.Objects;
 
 /**
@@ -48,10 +49,15 @@ public final class JobSubmissionService {
 
     /** Valida Arrival antes de publicar el programa o reservar almacenamiento. */
     public Job submit(ProgramImage program, long arrivalTime) {
+        return submit(program, arrivalTime, ProcessControlBlock.DEFAULT_PRIORITY);
+    }
+
+    /** Valida Arrival y prioridad (en el Job) antes de publicar el programa o reservar almacenamiento. */
+    public Job submit(ProgramImage program, long arrivalTime, int priority) {
         Objects.requireNonNull(program, "program must not be null");
         validateProgramLength.accept(program.instructions().size());
         if (nextJobId > Integer.MAX_VALUE) throw new IllegalStateException("Job IDs exhausted");
-        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING, arrivalTime);
+        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING, arrivalTime, priority);
         if (jobs.find(job.jobId()).isPresent()) throw new IllegalStateException("Next Job ID is already in use");
         // Un fallo aquí no autoriza eliminar un programa que ya existía.
         storage.storeProgram(program.logicalName(), program.instructions());

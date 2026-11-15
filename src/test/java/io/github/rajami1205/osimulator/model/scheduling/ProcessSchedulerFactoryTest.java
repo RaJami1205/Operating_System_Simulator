@@ -43,6 +43,19 @@ class ProcessSchedulerFactoryTest {
         assertEquals(List.of(1, 2), zero.entries());
     }
 
+    @Test void createsGuaranteedSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var pcb = new ProcessControlBlock(1, 280, 3, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO);
+        pcb.changeState(ProcessState.READY);
+        table.register(pcb);
+        zero.enqueue(1);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.GUARANTEED, CpuId.ZERO, zero, table);
+        assertInstanceOf(GuaranteedProcessScheduler.class, scheduler);
+        assertEquals(Optional.of(1), scheduler.selectNext());
+        assertEquals(List.of(1), zero.entries());
+    }
+
     @Test void rejectsMissingDependencies() {
         var table = new ProcessTable(); var queue = new ReadyQueue(CpuId.ZERO, table);
         assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(null, CpuId.ZERO, queue, table));

@@ -5,6 +5,7 @@ import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
@@ -57,6 +58,8 @@ public final class SimulatorController {
     @FXML private HBox quantumRow;
     @FXML private TextField quantumField;
     @FXML private VBox priorityRow;
+    @FXML private HBox lotteryRow;
+    @FXML private TextField seedField;
     @FXML private CheckBox preemptiveBox;
     @FXML private TextField agingField;
     @FXML private ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode> pagingLoadModeBox;
@@ -117,6 +120,7 @@ public final class SimulatorController {
     @FXML private TableColumn<ProgramLoadRow, String> programFileColumn;
     @FXML private TableColumn<ProgramLoadRow, String> programArrivalColumn;
     @FXML private TableColumn<ProgramLoadRow, String> programPriorityColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programTicketsColumn;
     @FXML private Button startButton;
     @FXML private Button stepButton;
     @FXML private Button automaticButton;
@@ -152,6 +156,7 @@ public final class SimulatorController {
     @FXML private TableColumn<ProcessDetails, String> baseColumn;
     @FXML private TableColumn<ProcessDetails, String> limitColumn;
     @FXML private TableColumn<ProcessDetails, String> priorityColumn;
+    @FXML private TableColumn<ProcessDetails, String> ticketsColumn;
     @FXML private TableView<CompletedProcess> completedTable;
     @FXML private TableColumn<CompletedProcess, String> completedPidColumn;
     @FXML private TableColumn<CompletedProcess, String> completedPcColumn;
@@ -204,9 +209,11 @@ public final class SimulatorController {
         schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
         restorePriorityConfigurationDefaults();
+        seedField.clear();
         schedulingPolicyBox.valueProperty().addListener((o, before, after) -> {
             updateQuantumControls();
             updatePriorityControls();
+            updateLotteryControls();
         });
         cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
         cpuCountBox.setValue(1);
@@ -272,6 +279,7 @@ public final class SimulatorController {
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
         column(baseColumn, v -> v.base().map(Object::toString).orElse("\u2014")); column(limitColumn, v -> Integer.toString(v.limit()));
         column(priorityColumn, v -> Integer.toString(v.priority()));
+        column(ticketsColumn, v -> Integer.toString(v.tickets()));
         column(completedCpuTicksColumn, v -> Long.toString(v.accounting().cpuTicks()));
         column(completedPidColumn, v -> Integer.toString(v.processId())); column(completedPcColumn, v -> Integer.toString(v.finalContext().programCounter()));
         column(completedIrColumn, v -> v.finalContext().instructionRegister().orElse("\u2014"));
@@ -284,7 +292,7 @@ public final class SimulatorController {
                 schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
                         ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty(),
-                parseQuantum(), parsePriorityConfiguration())));
+                parseQuantum(), parsePriorityConfiguration(), parseLotteryConfiguration())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
@@ -312,9 +320,14 @@ public final class SimulatorController {
         return java.util.Arrays.stream(text.split(",", -1)).map(SimulatorController::parsePartitionInteger).toList();
     }
 
-    /** El quantum sólo se usa con RR: se parsea únicamente entonces; el rango lo valida el modelo. */
+    /** El quantum sólo se usa con RR y LOTTERY: se parsea únicamente entonces; el rango lo valida el modelo. */
+    private boolean policyUsesQuantum() {
+        var policy = schedulingPolicyBox.getValue();
+        return policy == SchedulingPolicyId.RR || policy == SchedulingPolicyId.LOTTERY;
+    }
+
     private int parseQuantum() {
-        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.RR) return SimulatorConfiguration.DEFAULT_QUANTUM;
+        if (!policyUsesQuantum()) return SimulatorConfiguration.DEFAULT_QUANTUM;
         return parsePartitionInteger(quantumField.getText());
     }
 
@@ -352,6 +365,51 @@ public final class SimulatorController {
         priorityRow.setDisable(!configuring || !usesPriority);
     }
 
+    /** La semilla sólo se usa con LOTTERY; vacía significa aleatoria (la sesión la resuelve). */
+    private LotteryConfiguration parseLotteryConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.LOTTERY) return LotteryConfiguration.defaults();
+        return parseSeed(seedField.getText());
+    }
+
+    static LotteryConfiguration parseSeed(String text) {
+        String value = text == null ? "" : text.strip();
+        if (value.isEmpty()) return LotteryConfiguration.defaults();
+        long seed;
+        try {
+            seed = Long.parseLong(value);
+        } catch (NumberFormatException failure) {
+            seed = -1;
+        }
+        if (seed < LotteryConfiguration.MIN_SEED || seed > LotteryConfiguration.MAX_SEED) {
+            throw new IllegalArgumentException("Seed must be an integer from " + LotteryConfiguration.MIN_SEED
+                    + " to " + LotteryConfiguration.MAX_SEED + ", or blank for a random seed.");
+        }
+        return LotteryConfiguration.withSeed(seed);
+    }
+
+    static int parseTickets(String text) {
+        String value = text == null ? "" : text.strip();
+        int tickets;
+        try {
+            tickets = Integer.parseInt(value);
+        } catch (NumberFormatException failure) {
+            tickets = -1;
+        }
+        if (tickets < ProcessControlBlock.MIN_TICKETS || tickets > ProcessControlBlock.MAX_TICKETS) {
+            throw new IllegalArgumentException("Tickets must be an integer from "
+                    + ProcessControlBlock.MIN_TICKETS + " to " + ProcessControlBlock.MAX_TICKETS + ".");
+        }
+        return tickets;
+    }
+
+    private void updateLotteryControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesLottery = schedulingPolicyBox.getValue() == SchedulingPolicyId.LOTTERY;
+        lotteryRow.setVisible(usesLottery);
+        lotteryRow.setManaged(usesLottery);
+        seedField.setDisable(!configuring || !usesLottery);
+    }
+
     private void restorePriorityConfigurationDefaults() {
         var defaults = PriorityConfiguration.defaults();
         preemptiveBox.setSelected(defaults.preemptive());
@@ -360,7 +418,7 @@ public final class SimulatorController {
 
     private void updateQuantumControls() {
         boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
-        boolean usesQuantum = schedulingPolicyBox.getValue() == SchedulingPolicyId.RR;
+        boolean usesQuantum = policyUsesQuantum();
         quantumRow.setVisible(usesQuantum);
         quantumRow.setManaged(usesQuantum);
         quantumField.setDisable(!configuring || !usesQuantum);
@@ -393,6 +451,8 @@ public final class SimulatorController {
         programArrivalColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::arrivalProperty));
         programPriorityColumn.setCellValueFactory(cell -> cell.getValue().priorityProperty());
         programPriorityColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::priorityProperty));
+        programTicketsColumn.setCellValueFactory(cell -> cell.getValue().ticketsProperty());
+        programTicketsColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::ticketsProperty));
         programQueueTable.getSelectionModel().selectedIndexProperty()
                 .addListener((o, before, after) -> updateProgramQueueButtons());
     }
@@ -415,20 +475,21 @@ public final class SimulatorController {
             });
         }
 
+        /**
+         * Cada tecla cambia la propiedad de la fila y JavaFX vuelve a llamar a updateItem en el siguiente
+         * layout. Sólo se re-enlaza si la celda pasó a mostrar otra fila: re-enlazar la misma propiedad
+         * reescribe el texto y devuelve el cursor al inicio, lo que invertía los dígitos ("10" → "01").
+         */
         @Override protected void updateItem(String value, boolean empty) {
             super.updateItem(value, empty);
-            if (bound != null) {
-                field.textProperty().unbindBidirectional(bound);
-                bound = null;
-            }
             ProgramLoadRow row = getTableRow() == null ? null : getTableRow().getItem();
-            if (empty || row == null) {
-                setGraphic(null);
-                return;
+            javafx.beans.property.StringProperty next = empty || row == null ? null : property.apply(row);
+            if (next != bound) {
+                if (bound != null) field.textProperty().unbindBidirectional(bound);
+                bound = next;
+                if (bound != null) field.textProperty().bindBidirectional(bound);
             }
-            bound = property.apply(row);
-            field.textProperty().bindBidirectional(bound);
-            setGraphic(field);
+            setGraphic(bound == null ? null : field);
         }
     }
 
@@ -486,7 +547,7 @@ public final class SimulatorController {
     }
 
     /** Valor de una fila ya validado, listo para submitProgram. */
-    private record ValidatedProgram(ProgramLoadRow row, ProgramImage image, long arrival, int priority) { }
+    private record ValidatedProgram(ProgramLoadRow row, ProgramImage image, long arrival, int priority, int tickets) { }
 
     /**
      * Carga todos los programas de la lista en el orden de la tabla. Primero valida Arrival/Priority e
@@ -499,14 +560,15 @@ public final class SimulatorController {
             var rows = List.copyOf(programQueueTable.getItems());
             if (rows.isEmpty()) throw new IllegalStateException("Browse to add at least one ASM program first.");
             boolean usesPriority = usesPriorityColumn();
+            boolean usesTickets = usesTicketsColumn();
             var validated = new java.util.ArrayList<ValidatedProgram>();
             for (ProgramLoadRow row : rows) {
-                validated.add(validate(row, usesPriority));
+                validated.add(validate(row, usesPriority, usesTickets));
             }
             int submitted = 0;
             try {
                 for (ValidatedProgram program : validated) {
-                    orchestrator.submitProgram(program.image(), program.arrival(), program.priority());
+                    orchestrator.submitProgram(program.image(), program.arrival(), program.priority(), program.tickets());
                     programQueueTable.getItems().remove(program.row());
                     submitted++;
                 }
@@ -521,13 +583,15 @@ public final class SimulatorController {
         });
     }
 
-    private ValidatedProgram validate(ProgramLoadRow row, boolean usesPriority) throws ProgramImportException {
+    private ValidatedProgram validate(ProgramLoadRow row, boolean usesPriority, boolean usesTickets)
+            throws ProgramImportException {
         String name = row.fileName();
         try {
             long arrival = parseArrivalTime(row.arrivalProperty().get());
             int priority = usesPriority ? parsePriority(row.priorityProperty().get()) : ProcessControlBlock.DEFAULT_PRIORITY;
+            int tickets = usesTickets ? parseTickets(row.ticketsProperty().get()) : ProcessControlBlock.DEFAULT_TICKETS;
             var instructions = programImporter.importProgram(row.path());
-            return new ValidatedProgram(row, new ProgramImage(name, instructions), arrival, priority);
+            return new ValidatedProgram(row, new ProgramImage(name, instructions), arrival, priority, tickets);
         } catch (IllegalArgumentException | IllegalStateException failure) {
             throw withFileName(name, failure);
         } catch (ProgramImportException failure) {
@@ -545,6 +609,13 @@ public final class SimulatorController {
     private boolean usesPriorityColumn() {
         return view != null && view.configuration()
                 .map(configuration -> configuration.schedulingPolicy() == SchedulingPolicyId.PRIORITY)
+                .orElse(false);
+    }
+
+    /** Tickets sólo aplican a una sesión inicializada con la política LOTTERY. */
+    private boolean usesTicketsColumn() {
+        return view != null && view.configuration()
+                .map(configuration -> configuration.schedulingPolicy() == SchedulingPolicyId.LOTTERY)
                 .orElse(false);
     }
 
@@ -566,6 +637,8 @@ public final class SimulatorController {
         removeProgramButton.setDisable(!loading || !selected);
         loadProgramButton.setDisable(!loading || size == 0);
         programPriorityColumn.setVisible(usesPriorityColumn());
+        programTicketsColumn.setVisible(usesTicketsColumn());
+        ticketsColumn.setVisible(usesTicketsColumn());
     }
     /** Parsing entero exacto; evita redondeos y efectos de carga ante entradas inválidas. */
     static long parseArrivalTime(String text) {
@@ -718,7 +791,7 @@ public final class SimulatorController {
     /** Muestra el detalle del PID seleccionado exclusivamente desde el read model actual. */
     private void renderSelectedProcess() {
         pcbDetailArea.setText(view.processes().stream().filter(p -> Objects.equals(selectedProcessId, p.processId()))
-                .findFirst().map(DashboardDetails::process).orElse("Select a process"));
+                .findFirst().map(process -> DashboardDetails.process(process, usesTicketsColumn())).orElse("Select a process"));
     }
     /** Muestra registros del CPU activo y tooltips, sin confundirlos con el contexto guardado del PCB. */
     private void renderCpu(java.util.Optional<CpuView> local) {
@@ -772,6 +845,8 @@ public final class SimulatorController {
             quantumField.setText(Integer.toString(configuration.quantum()));
             preemptiveBox.setSelected(configuration.priority().preemptive());
             agingField.setText(Integer.toString(configuration.priority().agingInterval()));
+            seedField.setText(configuration.lottery().seed().isPresent()
+                    ? Long.toString(configuration.lottery().seed().getAsLong()) : "");
             userAllocationBox.setValue(configuration.userAllocationStrategy());
             memoryModeBox.setValue(configuration.memoryMode());
             configuration.paging().ifPresent(paging -> {
@@ -782,6 +857,7 @@ public final class SimulatorController {
         updateMemoryModeControls();
         updateQuantumControls();
         updatePriorityControls();
+        updateLotteryControls();
         partitionTable.getItems().setAll(snapshot.partitions());
         partitionTable.setVisible(!snapshot.partitions().isEmpty());
         partitionTable.setManaged(!snapshot.partitions().isEmpty());
@@ -859,6 +935,7 @@ public final class SimulatorController {
         schedulingPolicyBox.setValue(defaults.schedulingPolicy());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
         restorePriorityConfigurationDefaults();
+        seedField.clear();
         memoryModeBox.setValue(defaults.memoryMode());
         partitionCountField.setText("1");
         pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));

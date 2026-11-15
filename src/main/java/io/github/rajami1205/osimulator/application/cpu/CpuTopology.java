@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.application.cpu;
 
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
@@ -31,7 +32,12 @@ public final class CpuTopology {
 
     public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
             SchedulingPolicyId policy, int quantum, PriorityConfiguration priority) {
-        this(createNodes(cpuCount, processes, memory, resources, policy, quantum, priority));
+        this(cpuCount, processes, memory, resources, policy, quantum, priority, LotteryConfiguration.defaults());
+    }
+
+    public CpuTopology(int cpuCount, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
+        this(createNodes(cpuCount, processes, memory, resources, policy, quantum, priority, lottery));
     }
 
     public CpuTopology(List<CpuNode> nodes) {
@@ -53,11 +59,12 @@ public final class CpuTopology {
     }
 
     private static List<CpuNode> createNodes(int count, ProcessTable table, MainMemory memory, ProcessResourceRegistry resources,
-            SchedulingPolicyId policy, int quantum, PriorityConfiguration priority) {
+            SchedulingPolicyId policy, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
         validateCount(count);
         Objects.requireNonNull(priority, "priority must not be null");
+        Objects.requireNonNull(lottery, "lottery must not be null");
         Objects.requireNonNull(policy, "policy must not be null");
-        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources, policy, quantum, priority)).toList();
+        return IntStream.range(0, count).mapToObj(id -> new CpuNode(new CpuId(id), table, memory, resources, policy, quantum, priority, lottery)).toList();
     }
 
     private static void validateCount(int count) {

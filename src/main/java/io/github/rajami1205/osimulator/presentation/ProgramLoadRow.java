@@ -15,6 +15,8 @@ final class ProgramLoadRow {
     private final StringProperty arrival = new SimpleStringProperty("0");
     private final StringProperty priority =
             new SimpleStringProperty(Integer.toString(ProcessControlBlock.DEFAULT_PRIORITY));
+    private final StringProperty tickets =
+            new SimpleStringProperty(Integer.toString(ProcessControlBlock.DEFAULT_TICKETS));
 
     ProgramLoadRow(Path path) {
         this.path = Objects.requireNonNull(path, "path must not be null");
@@ -27,4 +29,6 @@ final class ProgramLoadRow {
     StringProperty arrivalProperty() { return arrival; }
 
     StringProperty priorityProperty() { return priority; }
+
+    StringProperty ticketsProperty() { return tickets; }
 }

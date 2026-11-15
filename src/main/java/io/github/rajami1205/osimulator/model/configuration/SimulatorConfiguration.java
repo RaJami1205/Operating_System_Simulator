@@ -23,7 +23,8 @@ public record SimulatorConfiguration(
         Optional<FixedPartitionConfiguration> fixedPartitions,
         Optional<PagingConfiguration> paging,
         int quantum,
-        PriorityConfiguration priority
+        PriorityConfiguration priority,
+        LotteryConfiguration lottery
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -89,6 +90,24 @@ public record SimulatorConfiguration(
                 userAllocationStrategy, memoryMode, fixedPartitions, paging, quantum, PriorityConfiguration.defaults());
     }
 
+    /** Compatibilidad: Lottery con semilla aleatoria (sólo lo usa la política LOTTERY). */
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy,
+            UserAllocationStrategy userAllocationStrategy, MemoryMode memoryMode,
+            Optional<FixedPartitionConfiguration> fixedPartitions, Optional<PagingConfiguration> paging,
+            int quantum, PriorityConfiguration priority) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, schedulingPolicy,
+                userAllocationStrategy, memoryMode, fixedPartitions, paging, quantum, priority,
+                LotteryConfiguration.defaults());
+    }
+
+    /** Copia con otra configuración de Lottery (la sesión la usa para fijar la semilla resuelta). */
+    public SimulatorConfiguration withLottery(LotteryConfiguration lottery) {
+        return new SimulatorConfiguration(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount,
+                schedulingPolicy, userAllocationStrategy, memoryMode, fixedPartitions, paging, quantum, priority,
+                lottery);
+    }
+
     /**
      * Exige Main >= 256 y Kernel suficiente para cinco PCBs por CPU, además de Secondary >= 128 y reserva Virtual >= 64 e inferior al
      * total.
@@ -97,6 +116,7 @@ public record SimulatorConfiguration(
         Objects.requireNonNull(userAllocationStrategy, "userAllocationStrategy must not be null");
         Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(priority, "priority must not be null");
+        Objects.requireNonNull(lottery, "lottery must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         FixedPartitionConfiguration.validateMode(mainMemory, memoryMode, fixedPartitions);
         Objects.requireNonNull(paging);

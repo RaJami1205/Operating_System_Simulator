@@ -1,5 +1,7 @@
 package io.github.rajami1205.osimulator.application.simulator;
 
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.model.cpu.RegisterValue;
 import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
@@ -305,7 +307,16 @@ public record SimulatorSnapshot(
     public record ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
             Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
             List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
-            ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+            ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity, int tickets) {
+        /** Compatibilidad: tickets de Lottery por defecto (1). */
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, logicalTimes, cpuAffinity,
+                    ProcessControlBlock.DEFAULT_TICKETS);
+        }
         public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
                 Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
                 List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,

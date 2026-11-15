@@ -54,10 +54,15 @@ public final class JobSubmissionService {
 
     /** Valida Arrival y prioridad (en el Job) antes de publicar el programa o reservar almacenamiento. */
     public Job submit(ProgramImage program, long arrivalTime, int priority) {
+        return submit(program, arrivalTime, priority, ProcessControlBlock.DEFAULT_TICKETS);
+    }
+
+    /** Valida Arrival, prioridad y tickets (en el Job) antes de publicar el programa. */
+    public Job submit(ProgramImage program, long arrivalTime, int priority, int tickets) {
         Objects.requireNonNull(program, "program must not be null");
         validateProgramLength.accept(program.instructions().size());
         if (nextJobId > Integer.MAX_VALUE) throw new IllegalStateException("Job IDs exhausted");
-        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING, arrivalTime, priority);
+        var job = new Job((int) nextJobId, program.logicalName(), JobState.PENDING, arrivalTime, priority, tickets);
         if (jobs.find(job.jobId()).isPresent()) throw new IllegalStateException("Next Job ID is already in use");
         // Un fallo aquí no autoriza eliminar un programa que ya existía.
         storage.storeProgram(program.logicalName(), program.instructions());

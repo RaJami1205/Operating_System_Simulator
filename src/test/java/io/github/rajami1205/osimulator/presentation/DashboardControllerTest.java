@@ -365,6 +365,103 @@ class DashboardControllerTest {
                 "moveProgramDownButton", "removeProgramButton", "loadProgramButton")) f.enabled(name, false);
     }); }
 
+    /** Escribe carácter por carácter enviando eventos de teclado reales al campo, como en la aplicación. */
+    private static void typeAtCaret(TextField field, String text) {
+        field.requestFocus();
+        for (char character : text.toCharArray()) {
+            // Pulso de layout entre teclas, como en la ventana real (TableCell actualiza su item en el layout).
+            field.getScene().getRoot().applyCss(); field.getScene().getRoot().layout();
+            String typed = String.valueOf(character);
+            for (var type : List.of(javafx.scene.input.KeyEvent.KEY_PRESSED, javafx.scene.input.KeyEvent.KEY_TYPED,
+                    javafx.scene.input.KeyEvent.KEY_RELEASED)) {
+                boolean keyTyped = type == javafx.scene.input.KeyEvent.KEY_TYPED;
+                javafx.event.Event.fireEvent(field, new javafx.scene.input.KeyEvent(type, keyTyped ? typed : "",
+                        keyTyped ? "" : typed, keyTyped ? javafx.scene.input.KeyCode.UNDEFINED
+                        : javafx.scene.input.KeyCode.getKeyCode(typed), false, false, false, false));
+            }
+        }
+    }
+
+    @Test void typingSeveralDigitsInAQueueCellKeepsTheirOrder() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        f.root.applyCss(); f.root.layout();
+        var fields = f.queue().lookupAll(".text-field").stream()
+                .filter(TextField.class::isInstance).map(TextField.class::cast)
+                .filter(field -> field.getParent() instanceof TableCell<?, ?> cell && !cell.isEmpty()).toList();
+        assertEquals(2, fields.size(), "Arrival and Priority cells of the single row");
+        TextField arrival = fields.getFirst();
+        arrival.clear();
+        typeAtCaret(arrival, "125");
+        f.root.applyCss(); f.root.layout();
+        assertEquals("125", arrival.getText());
+        assertEquals("125", f.queue().getItems().getFirst().arrivalProperty().get());
+    }); }
+
+    @Test void lotteryShowsQuantumSeedAndTicketsAndLoadsTicketsPerProgram() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(SchedulingPolicyId.LOTTERY);
+        assertTrue(f.widget("quantumRow", javafx.scene.layout.HBox.class).isVisible());
+        assertTrue(f.widget("lotteryRow", javafx.scene.layout.HBox.class).isVisible());
+        assertEquals("", f.widget("seedField", TextField.class).getText());
+        f.action("handleInitialize");
+        String resolvedSeed = f.widget("seedField", TextField.class).getText();
+        assertEquals(Long.toString(f.simulator.configuration().orElseThrow().lottery().seed().getAsLong()), resolvedSeed);
+
+        register(f, "A.asm", "B.asm");
+        f.programs.put("A.asm", new AsmParser().parse(List.of("INC", "INC", "INC")));
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        assertTrue(f.widget("programTicketsColumn", TableColumn.class).isVisible());
+        assertFalse(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+        f.queue().getItems().get(0).ticketsProperty().set("101");
+        f.action("handleLoadProgram");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("A.asm: Tickets must be an integer from 1 to 100"));
+        f.closeAlerts();
+        f.queue().getItems().get(0).ticketsProperty().set("40");
+        f.action("handleLoadProgram");
+        assertEquals(List.of(40, 1), f.simulator.jobs().stream().map(Job::tickets).toList());
+
+        f.action("handleStart"); f.action("handleStep");
+        assertTrue(f.widget("ticketsColumn", TableColumn.class).isVisible());
+        @SuppressWarnings("unchecked") TableView<ProcessDetails> processes = f.widget("processTable", TableView.class);
+        processes.getSelectionModel().select(processes.getItems().stream().filter(p -> p.processId() == 1).findFirst().orElseThrow());
+        String detail = f.widget("pcbDetailArea", TextArea.class).getText();
+        assertTrue(detail.contains("Tickets: 40"), detail);
+        f.action("handleReset");
+        assertEquals("", f.widget("seedField", TextField.class).getText());
+    }); }
+
+    @Test void lotterySeedIsOptionalButMustBeAnInteger() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(SchedulingPolicyId.LOTTERY);
+        f.widget("seedField", TextField.class).setText("abc");
+        f.action("handleInitialize");
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Seed must be an integer from 1 to 999999"));
+        f.closeAlerts();
+        f.widget("seedField", TextField.class).setText("-3");
+        f.action("handleInitialize");
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.closeAlerts();
+        f.widget("seedField", TextField.class).setText(" 123 ");
+        f.action("handleInitialize");
+        assertEquals(123L, f.simulator.configuration().orElseThrow().lottery().seed().getAsLong());
+    }); }
+
+    @Test void ticketsAreHiddenAndIgnoredOutsideLottery() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        assertFalse(f.widget("lotteryRow", javafx.scene.layout.HBox.class).isVisible());
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertFalse(f.widget("programTicketsColumn", TableColumn.class).isVisible());
+        f.queue().getItems().getFirst().ticketsProperty().set("not a number");
+        f.action("handleLoadProgram");
+        assertEquals(ProcessControlBlock.DEFAULT_TICKETS, f.simulator.jobs().getFirst().tickets());
+        assertFalse(f.widget("ticketsColumn", TableColumn.class).isVisible());
+    }); }
+
     @Test void invalidArrivalDoesNotPublishProgramAndAllowsCorrection() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
         f.loadWith("invalid-arrival.asm", "9223372036854775808", "0", "INC");
@@ -494,7 +591,8 @@ class DashboardControllerTest {
                 columns++;
             }
         }
-        assertEquals(31, columns);
+        // +1 respecto de antes: columna Tickets de la tabla de procesos (visible sólo con LOTTERY).
+        assertEquals(32, columns);
     }
     @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
         var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());

@@ -174,7 +174,7 @@ final class SimulatorSnapshotMapper {
         return new ProcessDetails(pcb.processId(), pcb.state(), pcb.programCounter(),
                 resource.residence().suspended() ? Residency.SUSPENDED : Residency.RESIDENT, base, pcb.instructionCount(),
                 pcb.priority(), context(pcb.cpuContext()), pcb.stack().values(), pcb.openFiles().files().stream().sorted().toList(),
-                resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting(), pcb.logicalTimes(), pcb.cpuAffinity());
+                resource.address().address(), pcb.nextPcbAddress().map(PcbAddress::address), pcb.accounting(), pcb.logicalTimes(), pcb.cpuAffinity(), pcb.tickets());
     }
 
     /** Describe instrucciones y PCBs de forma segura; EmptyContent se representa como ausencia de texto. */

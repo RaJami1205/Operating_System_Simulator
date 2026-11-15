@@ -58,6 +58,10 @@
                                 <TextField fx:id="agingField" prefWidth="60"/>
                             </HBox>
                         </VBox>
+                        <HBox fx:id="lotteryRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Seed (blank = random)" wrapText="true" styleClass="configuration-label"/>
+                            <TextField fx:id="seedField" prefWidth="110"/>
+                        </HBox>
                     </VBox>
                     <VBox spacing="10.0" styleClass="control-section">
                         <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>
@@ -131,6 +135,7 @@
                                 <TableColumn fx:id="programFileColumn" text="File" prefWidth="110" sortable="false"/>
                                 <TableColumn fx:id="programArrivalColumn" text="Arrival" prefWidth="60" sortable="false"/>
                                 <TableColumn fx:id="programPriorityColumn" text="Priority" prefWidth="60" sortable="false" visible="false"/>
+                                <TableColumn fx:id="programTicketsColumn" text="Tickets" prefWidth="60" sortable="false" visible="false"/>
                             </columns>
                         </TableView>
                         <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Programs" disable="true" maxWidth="Infinity" styleClass="secondary-button"/>
@@ -271,6 +276,7 @@
                                             <TableColumn fx:id="baseColumn" text="Base" prefWidth="60"/>
                                             <TableColumn fx:id="limitColumn" text="Limit" prefWidth="60"/>
                                             <TableColumn fx:id="priorityColumn" text="Priority" prefWidth="65"/>
+                                            <TableColumn fx:id="ticketsColumn" text="Tickets" prefWidth="65" visible="false"/>
                                         </columns>
                                     </TableView>
                                     <TextArea fx:id="pcbDetailArea" editable="false" wrapText="true" text="Select a process" styleClass="detail-area"/>

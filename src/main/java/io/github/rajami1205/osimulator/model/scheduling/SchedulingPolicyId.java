@@ -7,5 +7,6 @@ public enum SchedulingPolicyId {
     SRT,
     RR,
     HRRN,
-    PRIORITY
+    PRIORITY,
+    LOTTERY
 }

@@ -33,6 +33,11 @@ public final class ProcessControlBlock {
     public static final int MAX_PRIORITY = 9;
     public static final int DEFAULT_PRIORITY = 0;
     private int priority;
+    /** Tickets de Lottery: rango y valor por defecto. Sólo viven en este objeto, no en la imagen Kernel. */
+    public static final int MIN_TICKETS = 1;
+    public static final int MAX_TICKETS = 100;
+    public static final int DEFAULT_TICKETS = 1;
+    private int tickets = DEFAULT_TICKETS;
     private Optional<PcbAddress> nextPcbAddress = Optional.empty();
     /** Valida y fija los metadatos del proceso con su PC inicial y estado NEW. */
     public ProcessControlBlock(
@@ -127,6 +132,8 @@ public final class ProcessControlBlock {
     public void recordLogicalFinish(long time) { logicalTimes = logicalTimes.finishedAt(time); }
     /** Consulta metadata de prioridad que FCFS no usa como criterio de selección. */
     public int priority() { return priority; }
+    /** Tickets de Lottery (1..100); no forman parte del layout PCB de 28 celdas. */
+    public int tickets() { return tickets; }
     /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */
     public Optional<PcbAddress> nextPcbAddress() { return nextPcbAddress; }
 
@@ -144,6 +151,12 @@ public final class ProcessControlBlock {
 
     /** Actualiza la metadata de prioridad sin reordenar ReadyQueue. */
     public void setPriority(int priority) { this.priority = priority; }
+    public void setTickets(int tickets) {
+        if (tickets < MIN_TICKETS || tickets > MAX_TICKETS) {
+            throw new IllegalArgumentException("Tickets must be between " + MIN_TICKETS + " and " + MAX_TICKETS);
+        }
+        this.tickets = tickets;
+    }
 
     /** Reemplaza el enlace opcional no nulo; la coordinación valida después su destino canónico. */
     public void setNextPcbAddress(Optional<PcbAddress> address) {

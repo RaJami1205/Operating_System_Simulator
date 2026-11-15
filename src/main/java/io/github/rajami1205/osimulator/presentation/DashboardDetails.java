@@ -50,10 +50,15 @@ final class DashboardDetails {
     }
     /** Compone el detalle de PCB guardado, residencia, recursos y accounting del snapshot seleccionado. */
     static String process(ProcessDetails value) {
+        return process(value, false);
+    }
+    /** Con Lottery agrega los tickets del proceso junto a la prioridad. */
+    static String process(ProcessDetails value, boolean showTickets) {
         return "PID " + value.processId() + " | " + value.state() + " | " + value.residency()
                 + "\nCPU Affinity: " + value.cpuAffinity().value()
                 + "\nBase: " + value.base().map(Object::toString).orElse("\u2014") + "   Limit: " + value.limit()
-                + "   Priority: " + value.priority() + "\nKernel PCB: " + value.kernelAddress()
+                + "   Priority: " + value.priority() + (showTickets ? "   Tickets: " + value.tickets() : "")
+                + "\nKernel PCB: " + value.kernelAddress()
                 + "   Next PCB: " + value.nextPcbAddress().map(Object::toString).orElse("\u2014")
                 + "\nSaved context (distinct from active CPU):\n" + context(value.savedContext())
                 + "\nStack (bottom to top): " + value.stack() + "\nOpen files: " + value.openFiles()

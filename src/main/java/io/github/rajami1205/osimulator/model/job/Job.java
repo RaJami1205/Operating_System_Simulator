@@ -4,7 +4,7 @@ import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import java.util.Objects;
 
 /** Referencia lógica al programa almacenado, sin duplicar metadata de storage. */
-public record Job(int jobId, String programName, JobState state, long arrivalTime, int priority) {
+public record Job(int jobId, String programName, JobState state, long arrivalTime, int priority, int tickets) {
     public Job(int jobId, String programName, JobState state) {
         this(jobId, programName, state, 0);
     }
@@ -12,12 +12,20 @@ public record Job(int jobId, String programName, JobState state, long arrivalTim
     public Job(int jobId, String programName, JobState state, long arrivalTime) {
         this(jobId, programName, state, arrivalTime, ProcessControlBlock.DEFAULT_PRIORITY);
     }
+
+    public Job(int jobId, String programName, JobState state, long arrivalTime, int priority) {
+        this(jobId, programName, state, arrivalTime, priority, ProcessControlBlock.DEFAULT_TICKETS);
+    }
     /** Exige identidad positiva, nombre no vacío y estado no nulo; no crea un proceso. */
     public Job {
         if (arrivalTime < 0) throw new IllegalArgumentException("Arrival Time must be nonnegative");
         if (priority < ProcessControlBlock.MIN_PRIORITY || priority > ProcessControlBlock.MAX_PRIORITY) {
             throw new IllegalArgumentException("Priority must be between " + ProcessControlBlock.MIN_PRIORITY
                     + " and " + ProcessControlBlock.MAX_PRIORITY);
+        }
+        if (tickets < ProcessControlBlock.MIN_TICKETS || tickets > ProcessControlBlock.MAX_TICKETS) {
+            throw new IllegalArgumentException("Tickets must be between " + ProcessControlBlock.MIN_TICKETS
+                    + " and " + ProcessControlBlock.MAX_TICKETS);
         }
         if (jobId <= 0) throw new IllegalArgumentException("Job ID must be positive");
         Objects.requireNonNull(programName, "programName must not be null");

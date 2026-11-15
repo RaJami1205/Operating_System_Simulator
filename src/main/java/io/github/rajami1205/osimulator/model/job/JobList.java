@@ -33,7 +33,7 @@ public final class JobList {
         Job job = find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
         if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
         var updated = new LinkedHashMap<>(jobs);
-        updated.put(jobId, new Job(jobId, job.programName(), JobState.ADMITTED, job.arrivalTime(), job.priority()));
+        updated.put(jobId, new Job(jobId, job.programName(), JobState.ADMITTED, job.arrivalTime(), job.priority(), job.tickets()));
         jobs = updated;
     }
 

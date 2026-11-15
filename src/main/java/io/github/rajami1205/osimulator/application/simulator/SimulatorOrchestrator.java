@@ -16,6 +16,8 @@ import io.github.rajami1205.osimulator.application.process.SwapResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.execution.SimulationClock;
 import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
@@ -102,6 +104,7 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
+        configuration = resolveLotterySeed(configuration);
         MainMemory newMemory = new MainMemory(configuration.mainMemory(), configuration.userAllocationStrategy(),
                 configuration.memoryMode(), configuration.fixedPartitions(), configuration.paging());
         ScreenDevice newScreen = new ScreenDevice();
@@ -112,7 +115,8 @@ public final class SimulatorOrchestrator {
         ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
         CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources,
-                configuration.schedulingPolicy(), configuration.quantum(), configuration.priority());
+                configuration.schedulingPolicy(), configuration.quantum(), configuration.priority(),
+                configuration.lottery());
         var node = newTopology.node(CpuId.ZERO);
         ReadyQueue newReadyQueue = node.readyQueue();
         ProcessSwapService newSwap = new ProcessSwapService(newTopology, newMemory, newStorage, newProcesses, newResources);
@@ -146,6 +150,18 @@ public final class SimulatorOrchestrator {
         this.configuration = configuration;
     }
 
+    /**
+     * Con Lottery y semilla vacía ("aleatoria") fija una semilla concreta una sola vez, para que la
+     * configuración publicada muestre la semilla usada y la corrida pueda repetirse.
+     */
+    private static SimulatorConfiguration resolveLotterySeed(SimulatorConfiguration configuration) {
+        boolean lottery = configuration.schedulingPolicy() == SchedulingPolicyId.LOTTERY;
+        if (!lottery || configuration.lottery().seed().isPresent()) return configuration;
+        long seedRange = LotteryConfiguration.MAX_SEED - LotteryConfiguration.MIN_SEED + 1;
+        long seed = LotteryConfiguration.MIN_SEED + new java.security.SecureRandom().nextLong(seedRange);
+        return configuration.withLottery(LotteryConfiguration.withSeed(seed));
+    }
+
     /** Configuración inmutable de la sesión, ausente antes de Initialize y después de Reset. */
     public Optional<SimulatorConfiguration> configuration() {
         return Optional.ofNullable(configuration);
@@ -162,8 +178,13 @@ public final class SimulatorOrchestrator {
 
     /** Presenta trabajo con Arrival y prioridad de planificación (0..9, menor = más prioridad). */
     public Job submitProgram(ProgramImage program, long arrivalTime, int priority) {
+        return submitProgram(program, arrivalTime, priority, ProcessControlBlock.DEFAULT_TICKETS);
+    }
+
+    /** Presenta trabajo con Arrival, prioridad (0..9) y tickets de Lottery (1..100). */
+    public Job submitProgram(ProgramImage program, long arrivalTime, int priority, int tickets) {
         requirePreparedState("submitProgram");
-        var job = jobSubmissionService.submit(program, arrivalTime, priority);
+        var job = jobSubmissionService.submit(program, arrivalTime, priority, tickets);
         if (lifecycle.state() == SimulatorState.INITIALIZED) lifecycle.markProgramLoaded();
         return job;
     }

@@ -118,6 +118,7 @@ public final class ProcessAdmissionService {
             backing = prepared.backing().orElse(null);
             // La prioridad del Job viaja al PCB antes de materializar su imagen Kernel.
             loaded.pcb().setPriority(job.priority());
+            loaded.pcb().setTickets(job.tickets());
             memory.materializePcb(kernel, loaded.pcb());
             var address = new PcbAddress(kernel.base());
             previous = processes.last().orElse(null);

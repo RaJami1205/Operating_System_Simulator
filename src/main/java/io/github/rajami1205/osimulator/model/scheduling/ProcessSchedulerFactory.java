@@ -1,10 +1,13 @@
 package io.github.rajami1205.osimulator.model.scheduling;
 
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
 import java.util.Objects;
+import java.util.SplittableRandom;
+import java.util.random.RandomGenerator;
 
 /** Construye un scheduler nuevo sobre los recursos canónicos de una CPU. */
 public final class ProcessSchedulerFactory {
@@ -22,13 +25,29 @@ public final class ProcessSchedulerFactory {
 
     public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId,
             ReadyQueue ready, ProcessTable processes, int quantum, PriorityConfiguration priority) {
+        return create(policy, cpuId, ready, processes, quantum, priority, LotteryConfiguration.defaults());
+    }
+
+    public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId, ReadyQueue ready,
+            ProcessTable processes, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
         return switch (Objects.requireNonNull(policy, "policy must not be null")) {
             case FCFS -> new FcfsProcessScheduler(cpuId, ready, processes);
             case SPN -> new SpnProcessScheduler(cpuId, ready, processes);
             case SRT -> new SrtProcessScheduler(cpuId, ready, processes);
             case HRRN -> new HrrnProcessScheduler(cpuId, ready, processes);
             case PRIORITY -> new PriorityProcessScheduler(cpuId, ready, processes, priority);
+            case LOTTERY -> new LotteryProcessScheduler(cpuId, ready, processes, quantum, lotteryRandom(lottery, cpuId));
             case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
         };
+    }
+
+    /**
+     * Un generador independiente por CPU, derivado de la semilla de la sesión: reproducible y sin que el
+     * sorteo de una CPU altere el de otra. Sin semilla (sólo construcción directa en tests) usa 0.
+     */
+    private static RandomGenerator lotteryRandom(LotteryConfiguration lottery, CpuId cpuId) {
+        Objects.requireNonNull(lottery, "lottery must not be null");
+        long sessionSeed = lottery.seed().orElse(0L);
+        return new SplittableRandom(sessionSeed + cpuId.value());
     }
 }

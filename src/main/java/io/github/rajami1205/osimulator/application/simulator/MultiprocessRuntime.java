@@ -3,6 +3,8 @@ package io.github.rajami1205.osimulator.application.simulator;
 import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.*;
+import io.github.rajami1205.osimulator.application.statistics.CpuTimelineView;
+import io.github.rajami1205.osimulator.application.statistics.ExecutionTimeline;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.execution.*;
@@ -49,6 +51,7 @@ public final class MultiprocessRuntime {
     private long lastAdmissionTime = -1;
     private List<RuntimeStepResult.CpuResult> lastCpuResults = List.of();
     private PageInService pageIns;
+    private final ExecutionTimeline timeline;
 
     public MultiprocessRuntime(CpuTopology topology, ExecutionEngine engine, MainMemory memory,
             SimulatedFileSystem filesystem, ScreenDevice screen, ProcessCompletionService completion,
@@ -100,7 +103,25 @@ public final class MultiprocessRuntime {
         this.table = Objects.requireNonNull(table);
         this.simulationClock = Objects.requireNonNull(simulationClock);
         this.realClock = Objects.requireNonNull(realClock);
+        timeline = new ExecutionTimeline(this.cpus.stream().map(LocalCpu::id).toList());
         reconsiderAllSwaps();
+    }
+
+    /** Gantt acumulado de la sesión: un slot por CPU por cada segundo lógico transcurrido. */
+    public List<CpuTimelineView> timeline() { return timeline.views(); }
+
+    /** Registra el tick que acaba de cerrar el reloj: PID ejecutado por CPU o vacío si estuvo ociosa. */
+    private void recordTimelineTick(List<RuntimeStepResult.CpuResult> tickOutcomes) {
+        List<Optional<Integer>> slots = new ArrayList<>();
+        for (var node : cpus) {
+            Optional<Integer> executedPid = tickOutcomes.stream()
+                    .filter(outcome -> outcome.cpuId().equals(node.id))
+                    .filter(outcome -> outcome.outcome() == RuntimeStepResult.CpuOutcome.EXECUTED)
+                    .findFirst()
+                    .flatMap(RuntimeStepResult.CpuResult::processId);
+            slots.add(executedPid);
+        }
+        timeline.record(slots);
     }
 
     public void start() {
@@ -185,6 +206,7 @@ public final class MultiprocessRuntime {
         }
         if (participants.isEmpty()) {
             simulationClock.advance();
+            recordTimelineTick(List.of());
             admitWaiting();
             settle();
             return idleResult(status());
@@ -234,7 +256,12 @@ public final class MultiprocessRuntime {
         }
         lastCpuResults = List.copyOf(outcomes);
         // Único commit global, también si una CPU posterior falla; overflow ya prevalidado.
-        if (committed || failure == null && outcomes.stream().anyMatch(o -> o.outcome() == RuntimeStepResult.CpuOutcome.WAITING_FOR_PAGE)) simulationClock.advance();
+        boolean pageWaitOnly = failure == null
+                && outcomes.stream().anyMatch(o -> o.outcome() == RuntimeStepResult.CpuOutcome.WAITING_FOR_PAGE);
+        if (committed || pageWaitOnly) {
+            simulationClock.advance();
+            recordTimelineTick(outcomes);
+        }
         // Cleanup posterior: nunca cambia participantes ni oculta la excepción original.
         for (var participant : finished) {
             try {

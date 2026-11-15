@@ -320,10 +320,11 @@ public final class SimulatorController {
         return java.util.Arrays.stream(text.split(",", -1)).map(SimulatorController::parsePartitionInteger).toList();
     }
 
-    /** El quantum sólo se usa con RR y LOTTERY: se parsea únicamente entonces; el rango lo valida el modelo. */
+    /** El quantum sólo se usa con RR, LOTTERY y SELFISH_RR: se parsea únicamente entonces; el rango lo valida el modelo. */
     private boolean policyUsesQuantum() {
         var policy = schedulingPolicyBox.getValue();
-        return policy == SchedulingPolicyId.RR || policy == SchedulingPolicyId.LOTTERY;
+        return policy == SchedulingPolicyId.RR || policy == SchedulingPolicyId.LOTTERY
+                || policy == SchedulingPolicyId.SELFISH_RR;
     }
 
     private int parseQuantum() {

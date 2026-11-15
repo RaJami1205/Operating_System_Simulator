@@ -56,6 +56,14 @@ class ProcessSchedulerFactoryTest {
         assertEquals(List.of(1), zero.entries());
     }
 
+    @Test void createsSelfishRoundRobinSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.SELFISH_RR, CpuId.ZERO, zero, table, 3);
+        assertInstanceOf(SelfishRoundRobinProcessScheduler.class, scheduler);
+        assertEquals(Optional.empty(), scheduler.selectNext());
+    }
+
     @Test void rejectsMissingDependencies() {
         var table = new ProcessTable(); var queue = new ReadyQueue(CpuId.ZERO, table);
         assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(null, CpuId.ZERO, queue, table));

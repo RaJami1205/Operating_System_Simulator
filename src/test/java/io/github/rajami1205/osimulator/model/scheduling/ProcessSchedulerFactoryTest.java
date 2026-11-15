@@ -64,6 +64,14 @@ class ProcessSchedulerFactoryTest {
         assertEquals(Optional.empty(), scheduler.selectNext());
     }
 
+    @Test void createsMlfqSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.MLFQ, CpuId.ZERO, zero, table);
+        assertInstanceOf(MlfqProcessScheduler.class, scheduler);
+        assertEquals(Optional.empty(), scheduler.selectNext());
+    }
+
     @Test void rejectsMissingDependencies() {
         var table = new ProcessTable(); var queue = new ReadyQueue(CpuId.ZERO, table);
         assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(null, CpuId.ZERO, queue, table));

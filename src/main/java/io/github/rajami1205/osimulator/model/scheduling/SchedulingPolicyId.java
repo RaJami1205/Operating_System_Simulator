@@ -10,5 +10,6 @@ public enum SchedulingPolicyId {
     PRIORITY,
     LOTTERY,
     GUARANTEED,
-    SELFISH_RR
+    SELFISH_RR,
+    MLFQ
 }

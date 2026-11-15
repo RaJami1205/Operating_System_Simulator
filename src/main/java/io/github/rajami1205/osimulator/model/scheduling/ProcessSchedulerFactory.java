@@ -39,6 +39,7 @@ public final class ProcessSchedulerFactory {
             case LOTTERY -> new LotteryProcessScheduler(cpuId, ready, processes, quantum, lotteryRandom(lottery, cpuId));
             case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
             case GUARANTEED -> new GuaranteedProcessScheduler(cpuId, ready, processes);
+            case SELFISH_RR -> new SelfishRoundRobinProcessScheduler(cpuId, ready, processes, quantum);
         };
     }
 

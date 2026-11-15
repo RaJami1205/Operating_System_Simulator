@@ -53,9 +53,9 @@ class SimulatorConfigurationTest {
         assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, null));
         assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN, SchedulingPolicyId.SRT,
                         SchedulingPolicyId.RR, SchedulingPolicyId.HRRN, SchedulingPolicyId.PRIORITY,
-                        SchedulingPolicyId.LOTTERY, SchedulingPolicyId.GUARANTEED),
+                        SchedulingPolicyId.LOTTERY, SchedulingPolicyId.GUARANTEED, SchedulingPolicyId.SELFISH_RR),
                 java.util.List.of(SchedulingPolicyId.values()));
-        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("SELFISH_RR"));
+        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("MLFQ"));
         assertEquals(2, explicit.quantum());
         for (int invalid : new int[] {0, 11, -1}) {
             assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1,

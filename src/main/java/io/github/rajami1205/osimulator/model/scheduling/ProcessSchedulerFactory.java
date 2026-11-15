@@ -40,6 +40,7 @@ public final class ProcessSchedulerFactory {
             case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
             case GUARANTEED -> new GuaranteedProcessScheduler(cpuId, ready, processes);
             case SELFISH_RR -> new SelfishRoundRobinProcessScheduler(cpuId, ready, processes, quantum);
+            case MLFQ -> new MlfqProcessScheduler(cpuId, ready, processes);
         };
     }
 

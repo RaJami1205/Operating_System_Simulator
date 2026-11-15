@@ -3,6 +3,7 @@ package io.github.rajami1205.osimulator.application.simulator;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
 import io.github.rajami1205.osimulator.model.cpu.RegisterValue;
 import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
@@ -44,8 +45,36 @@ public record SimulatorSnapshot(
         List<CpuView> cpus,
         List<RuntimeStepResult.CpuResult> lastCpuResults,
         List<PartitionView> partitions,
-        PagingView paging
+        PagingView paging,
+        Optional<RunStatistics> statistics,
+        List<RunStatistics> runHistory
 ) {
+    /** Compatibilidad con snapshots previos a las estadísticas: sin estadísticas ni historial. */
+    public SimulatorSnapshot(SimulatorState simulatorState, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> currentInstruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults, List<PartitionView> partitions,
+            PagingView paging) {
+        this(simulatorState, cpu, currentInstruction, process, program, memory, runtimeStatus, ownerPid,
+                configuration, jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage,
+                screenOutput, cpuTicks, nextInstructionPhysicalAddress, addressTranslationError,
+                simulationTimeSeconds, cpus, lastCpuResults, partitions, paging, Optional.empty(), List.of());
+    }
+
+    /** Copia con las estadísticas de la ejecución en curso y el historial acumulado. */
+    public SimulatorSnapshot withStatistics(Optional<RunStatistics> currentStatistics, List<RunStatistics> history) {
+        return new SimulatorSnapshot(simulatorState, cpu, currentInstruction, process, program, memory,
+                runtimeStatus, ownerPid, configuration, jobs, processes, readyQueue, suspendedReadyQueue,
+                completedProcesses, storage, screenOutput, cpuTicks, nextInstructionPhysicalAddress,
+                addressTranslationError, simulationTimeSeconds, cpus, lastCpuResults, partitions, paging,
+                currentStatistics, history);
+    }
+
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
             List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
@@ -190,6 +219,8 @@ public record SimulatorSnapshot(
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
         Objects.requireNonNull(paging);
+        Objects.requireNonNull(statistics, "statistics must not be null");
+        runHistory = List.copyOf(runHistory);
         partitions = List.copyOf(partitions);
         cpus = List.copyOf(cpus);
         lastCpuResults = List.copyOf(lastCpuResults);

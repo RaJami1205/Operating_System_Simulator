@@ -5,6 +5,8 @@ import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
+import java.util.ArrayList;
 import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
@@ -129,6 +131,33 @@ public final class SimulatorController {
     @FXML private Button resetButton;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
+    @FXML private ComboBox<String> statisticsRunBox;
+    @FXML private TableView<StatisticsText.ProcessRow> statisticsTable;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsPidColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsCpuColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsArrivalColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsServiceColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsStartColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsFinishColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsTurnaroundColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsRatioColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsResponseColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsWaitColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsExecutedColumn;
+    @FXML private TextArea statisticsSummaryArea;
+    @FXML private TableView<StatisticsText.HistoryRow> runHistoryTable;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyRunColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyAlgorithmColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyCpusColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyStartColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyEndColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyIdleColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyTurnaroundColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyRatioColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyUtilizationColumn;
+    /** Evita que el refresco del selector de ejecución dispare su propio listener. */
+    private boolean renderingStatisticsSelection;
+    private static final String CURRENT_RUN_LABEL = "Current execution";
     @FXML private ListView<String> readyList;
     @FXML private ListView<String> suspendedList;
     @FXML private ListView<String> screenList;
@@ -247,6 +276,9 @@ public final class SimulatorController {
                         + "\nCPU Affinity: " + after.cpuAffinity().value()
                         + DashboardDetails.logical(after.logicalTimes(), after.declaredBurst())
                         + DashboardDetails.accounting(after.accounting())));
+        statisticsRunBox.getSelectionModel().selectedIndexProperty().addListener((o, before, after) -> {
+            if (!renderingStatisticsSelection && view != null) renderStatistics(view);
+        });
         refresh();
     }
     /**
@@ -283,6 +315,64 @@ public final class SimulatorController {
         column(completedCpuTicksColumn, v -> Long.toString(v.accounting().cpuTicks()));
         column(completedPidColumn, v -> Integer.toString(v.processId())); column(completedPcColumn, v -> Integer.toString(v.finalContext().programCounter()));
         column(completedIrColumn, v -> v.finalContext().instructionRegister().orElse("\u2014"));
+        configureStatisticsTables();
+    }
+
+    private void configureStatisticsTables() {
+        column(statisticsPidColumn, StatisticsText.ProcessRow::pid);
+        column(statisticsCpuColumn, StatisticsText.ProcessRow::cpu);
+        column(statisticsArrivalColumn, StatisticsText.ProcessRow::arrival);
+        column(statisticsServiceColumn, StatisticsText.ProcessRow::serviceTime);
+        column(statisticsStartColumn, StatisticsText.ProcessRow::start);
+        column(statisticsFinishColumn, StatisticsText.ProcessRow::finish);
+        column(statisticsTurnaroundColumn, StatisticsText.ProcessRow::turnaround);
+        column(statisticsRatioColumn, StatisticsText.ProcessRow::normalizedTurnaround);
+        column(statisticsResponseColumn, StatisticsText.ProcessRow::response);
+        column(statisticsWaitColumn, StatisticsText.ProcessRow::waitingTime);
+        column(statisticsExecutedColumn, StatisticsText.ProcessRow::executed);
+        column(historyRunColumn, StatisticsText.HistoryRow::run);
+        column(historyAlgorithmColumn, StatisticsText.HistoryRow::algorithm);
+        column(historyCpusColumn, StatisticsText.HistoryRow::cpus);
+        column(historyStartColumn, StatisticsText.HistoryRow::start);
+        column(historyEndColumn, StatisticsText.HistoryRow::end);
+        column(historyIdleColumn, StatisticsText.HistoryRow::idle);
+        column(historyTurnaroundColumn, StatisticsText.HistoryRow::meanTurnaround);
+        column(historyRatioColumn, StatisticsText.HistoryRow::meanNormalizedTurnaround);
+        column(historyUtilizationColumn, StatisticsText.HistoryRow::utilization);
+        statisticsTable.getSortOrder().clear();
+        runHistoryTable.getSortOrder().clear();
+    }
+
+    /**
+     * Muestra la ejecuci\u00f3n elegida en el selector (la actual o una del historial) y el historial acumulado.
+     * Conserva la selecci\u00f3n entre refrescos; s\u00f3lo lee el snapshot.
+     */
+    private void renderStatistics(SimulatorSnapshot snapshot) {
+        List<RunStatistics> history = snapshot.runHistory();
+        List<String> labels = new ArrayList<>();
+        labels.add(CURRENT_RUN_LABEL);
+        for (RunStatistics run : history) {
+            labels.add(StatisticsText.runLabel(run));
+        }
+
+        int previousIndex = statisticsRunBox.getSelectionModel().getSelectedIndex();
+        int selectedIndex = previousIndex >= 0 && previousIndex < labels.size() ? previousIndex : 0;
+        renderingStatisticsSelection = true;
+        try {
+            if (!statisticsRunBox.getItems().equals(labels)) {
+                statisticsRunBox.getItems().setAll(labels);
+            }
+            statisticsRunBox.getSelectionModel().select(selectedIndex);
+        } finally {
+            renderingStatisticsSelection = false;
+        }
+
+        Optional<RunStatistics> shown = selectedIndex == 0
+                ? snapshot.statistics()
+                : Optional.of(history.get(selectedIndex - 1));
+        statisticsTable.getItems().setAll(shown.map(StatisticsText::processRows).orElse(List.of()));
+        statisticsSummaryArea.setText(shown.map(StatisticsText::summary).orElse("No statistics yet"));
+        runHistoryTable.getItems().setAll(StatisticsText.historyRows(history));
     }
     /** Recoge capacidades enteras de sliders y delega validación/inicialización al Orchestrator. */
     @FXML private void handleInitialize() {
@@ -771,6 +861,7 @@ public final class SimulatorController {
         if (selected != null) snapshot.completedProcesses().stream().filter(p -> p.processId() == selected.processId()).findFirst()
                 .ifPresent(p -> completedTable.getSelectionModel().select(p));
         if (completedTable.getSelectionModel().getSelectedItem() == null) completedDetailArea.setText("Select a completed process");
+        renderStatistics(snapshot);
         statusLabel.setText(feedback.isBlank() ? statusText(snapshot) : feedback + " | " + statusText(snapshot));
         ioStatusLabel.setText(statusText(snapshot));
         updateControls(snapshot);

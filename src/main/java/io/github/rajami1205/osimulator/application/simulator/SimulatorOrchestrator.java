@@ -34,8 +34,11 @@ import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguratio
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import java.util.ArrayList;
 import java.util.List;
 import java.time.Clock;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
+import io.github.rajami1205.osimulator.application.statistics.StatisticsCalculator;
 import io.github.rajami1205.osimulator.model.execution.CpuTickCounter;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
@@ -81,6 +84,10 @@ public final class SimulatorOrchestrator {
     private CpuTickCounter tickCounter;
     private SimulationClock simulationClock;
     private final Clock realClock;
+    /** Ejecuciones terminadas de esta instancia de la app; Reset no las borra (resultados acumulativos). */
+    private final List<RunStatistics> runHistory = new ArrayList<>();
+    /** Estadísticas congeladas de la ejecución actual una vez que llegó a FINISHED. */
+    private RunStatistics finishedRun;
 
     /** Recibe loader y engine; usa Clock del sistema por defecto o el Clock inyectado para accounting real. */
     public SimulatorOrchestrator(
@@ -320,9 +327,37 @@ public final class SimulatorOrchestrator {
         catch (RuntimeException failure) { throw runtimeFailure(failure); }
     }
 
-    /** Marca FINISHED únicamente si el runtime agotó el workload y lifecycle sigue RUNNING. */
+    /**
+     * Marca FINISHED únicamente si el runtime agotó el workload y lifecycle sigue RUNNING; en esa transición
+     * congela las estadísticas de la ejecución y las agrega al historial acumulado.
+     */
     private void finishIfComplete(RuntimeStatus status) {
-        if (status == RuntimeStatus.FINISHED && lifecycle.state() == SimulatorState.RUNNING) lifecycle.finishExecution();
+        if (status == RuntimeStatus.FINISHED && lifecycle.state() == SimulatorState.RUNNING) {
+            lifecycle.finishExecution();
+            int runNumber = runHistory.size() + 1;
+            finishedRun = computeStatistics(true).withRunNumber(runNumber);
+            runHistory.add(finishedRun);
+        }
+    }
+
+    /**
+     * Estadísticas de la ejecución actual: parciales (sólo procesos terminados) mientras corre y congeladas
+     * al llegar a FINISHED. Vacío sin sesión inicializada.
+     */
+    public Optional<RunStatistics> statistics() {
+        if (finishedRun != null) return Optional.of(finishedRun);
+        if (runtime == null || configuration == null || simulationClock == null) return Optional.empty();
+        return Optional.of(computeStatistics(false));
+    }
+
+    /** Ejecuciones terminadas desde que se abrió la app, en orden; sobreviven a Reset. */
+    public List<RunStatistics> runHistory() {
+        return List.copyOf(runHistory);
+    }
+
+    private RunStatistics computeStatistics(boolean complete) {
+        return StatisticsCalculator.compute(configuration.schedulingPolicy(), simulationClock.current(), complete,
+                completedProcesses(), runtime.timeline());
     }
 
     /** Marca ERROR global y conserva el error de ejecución o envuelve la causa de coordinación. */
@@ -382,6 +417,7 @@ public final class SimulatorOrchestrator {
         simulationClock = null;
         compatibilitySequence = 0;
         configuration = null;
+        finishedRun = null;
     }
 
     /**
@@ -400,7 +436,7 @@ public final class SimulatorOrchestrator {
                 simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()),
                 runtime == null ? List.of() : runtime.lastCpuResults());
         if (snapshot.simulatorState() == SimulatorState.ERROR) lifecycle.markError();
-        return snapshot;
+        return snapshot.withStatistics(statistics(), runHistory());
     }
 
     /** Delega el texto descriptivo de memoria al mapper sin exponer entidades mutables. */

@@ -577,11 +577,17 @@ class DashboardControllerTest {
         rows.put("processTable", snapshot.processes()); rows.put("completedTable", snapshot.completedProcesses());
         rows.put("partitionTable", snapshot.partitions());
         int columns = 0;
-        // 7 tablas de snapshot + programQueueTable (entrada de la sección PROGRAM, no datos del snapshot).
-        assertEquals(8, Arrays.stream(SimulatorController.class.getDeclaredFields())
+        // 7 tablas de snapshot + programQueueTable (entrada de la sección PROGRAM, no datos del snapshot)
+        // + 2 tablas de la pestaña Statistics (filas formateadas, verificadas en StatisticsTextTest).
+        assertEquals(10, Arrays.stream(SimulatorController.class.getDeclaredFields())
                 .filter(field -> field.getType() == TableView.class).count());
         assertTrue(f.queue().getSortOrder().isEmpty());
         for (var column : f.queue().getColumns()) assertFalse(column.isSortable(), column.getId());
+        for (String statisticsTable : List.of("statisticsTable", "runHistoryTable")) {
+            TableView<?> table = f.widget(statisticsTable, TableView.class);
+            assertTrue(table.getSortOrder().isEmpty(), statisticsTable);
+            for (var column : table.getColumns()) assertFalse(column.isSortable(), column.getId());
+        }
         for (var entry : rows.entrySet()) {
             TableView<?> table = f.widget(entry.getKey(), TableView.class);
             assertEquals(entry.getValue(), table.getItems(), entry.getKey());
@@ -844,7 +850,7 @@ class DashboardControllerTest {
         var upper = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Processes"))).findFirst().orElseThrow();
         var lower = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Completed"))).findFirst().orElseThrow();
         assertEquals(List.of("Workload", "Processes"), upper.getTabs().stream().map(Tab::getText).toList());
-        assertEquals(List.of("Main Memory", "Secondary Storage", "Active Program", "I/O", "Completed"), lower.getTabs().stream().map(Tab::getText).toList());
+        assertEquals(List.of("Main Memory", "Secondary Storage", "Active Program", "I/O", "Completed", "Statistics"), lower.getTabs().stream().map(Tab::getText).toList());
         for (int[] size : List.of(new int[]{1100,650},new int[]{1280,720},new int[]{1920,1080})) {
             f.root.resize(size[0],size[1]);
             for (String lifecycle : List.of("CONFIGURING","INITIALIZED","PROGRAM_LOADED","RUNNING","PAUSED","FINISHED","ERROR")) {

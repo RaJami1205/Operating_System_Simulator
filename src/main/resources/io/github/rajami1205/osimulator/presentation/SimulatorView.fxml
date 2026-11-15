@@ -366,6 +366,57 @@
                                 <TextArea fx:id="completedDetailArea" editable="false" wrapText="true" text="Select a completed process" styleClass="detail-area"/>
                             </SplitPane>
                         </Tab>
+                        <Tab text="Statistics">
+                            <VBox spacing="6">
+                                <HBox alignment="CENTER_LEFT" spacing="8">
+                                    <Label text="Execution" styleClass="configuration-label"/>
+                                    <ComboBox fx:id="statisticsRunBox" prefWidth="280"/>
+                                </HBox>
+                                <!-- Divisor vertical arrastrable: arriba la ejecución elegida, abajo los resultados acumulados. -->
+                                <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="dashboard-split" VBox.vgrow="ALWAYS">
+                                <SplitPane dividerPositions="0.6" styleClass="dashboard-split" minHeight="60">
+                                    <TableView fx:id="statisticsTable" minHeight="60.0">
+                                        <placeholder>
+                                            <Label text="No completed processes yet" styleClass="empty-state"/>
+                                        </placeholder>
+                                        <columns>
+                                            <TableColumn fx:id="statisticsPidColumn" text="PID" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsCpuColumn" text="CPU" prefWidth="50"/>
+                                            <TableColumn fx:id="statisticsArrivalColumn" text="Arrival" prefWidth="65"/>
+                                            <TableColumn fx:id="statisticsServiceColumn" text="Ts" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsStartColumn" text="Start" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsFinishColumn" text="Finish" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsTurnaroundColumn" text="Tr" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsRatioColumn" text="Tr/Ts" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsResponseColumn" text="Response" prefWidth="75"/>
+                                            <TableColumn fx:id="statisticsWaitColumn" text="Wait" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsExecutedColumn" text="Executed" prefWidth="75"/>
+                                        </columns>
+                                    </TableView>
+                                    <TextArea fx:id="statisticsSummaryArea" editable="false" wrapText="false" text="No statistics yet" styleClass="detail-area"/>
+                                </SplitPane>
+                                <VBox spacing="4" minHeight="80">
+                                <Label text="ACCUMULATED RESULTS (finished executions)" styleClass="panel-header"/>
+                                <TableView fx:id="runHistoryTable" prefHeight="200" minHeight="60" VBox.vgrow="ALWAYS">
+                                    <placeholder>
+                                        <Label text="No finished executions yet" styleClass="empty-state"/>
+                                    </placeholder>
+                                    <columns>
+                                        <TableColumn fx:id="historyRunColumn" text="Run" prefWidth="55"/>
+                                        <TableColumn fx:id="historyAlgorithmColumn" text="Algorithm" prefWidth="110"/>
+                                        <TableColumn fx:id="historyCpusColumn" text="CPUs" prefWidth="55"/>
+                                        <TableColumn fx:id="historyStartColumn" text="Start" prefWidth="55"/>
+                                        <TableColumn fx:id="historyEndColumn" text="End" prefWidth="55"/>
+                                        <TableColumn fx:id="historyIdleColumn" text="Idle" prefWidth="55"/>
+                                        <TableColumn fx:id="historyTurnaroundColumn" text="Average Tr" prefWidth="85"/>
+                                        <TableColumn fx:id="historyRatioColumn" text="Average Tr/Ts" prefWidth="100"/>
+                                        <TableColumn fx:id="historyUtilizationColumn" text="Utilization" prefWidth="85"/>
+                                    </columns>
+                                </TableView>
+                                </VBox>
+                                </SplitPane>
+                            </VBox>
+                        </Tab>
                     </tabs>
                 </TabPane>
             </SplitPane>

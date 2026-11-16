@@ -15,6 +15,66 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorkloadArrivalsTest {
+    @Test void editedArrivalControlsAdmissionAndFinalStatistics() {
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        submit("first", 5, "INC", "INC");
+        submit("second", 1, "INC");
+        var before = simulator.snapshot();
+        simulator.updateJobArrival(1, 1);
+        var edited = simulator.snapshot();
+        assertEquals(before.storage(), edited.storage());
+        assertEquals(before.memory(), edited.memory());
+        assertTrue(edited.processes().isEmpty());
+        assertEquals(0, time());
+        simulator.start();
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        simulator.pause();
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        simulator.resume();
+        for (int i = 0; i < 4; i++) simulator.step();
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        var completed = simulator.completedProcesses();
+        assertEquals(2, completed.getFirst().declaredBurst());
+        assertEquals(1, completed.getFirst().logicalTimes().arrivalTime());
+        var stats = simulator.statistics().orElseThrow().processes();
+        assertEquals(2, stats.getFirst().turnaround());
+        assertEquals(1.0, stats.getFirst().normalizedTurnaround());
+        assertEquals(2, stats.getLast().response());
+        assertEquals(2, stats.getLast().waitingTime());
+        simulator.reset();
+        assertTrue(simulator.jobs().isEmpty());
+    }
+
+    @Test void affinityIsAssignedInEditedAdmissionOrder() {
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(512, 280), 512, 64, 2));
+        submit("first", 0, "INC");
+        submit("second", 0, "INC", "INC");
+        simulator.updateJobArrival(1, 1);
+        simulator.start();
+        var firstAdmitted = simulator.snapshot().processes().getFirst();
+        assertEquals(2, firstAdmitted.limit());
+        simulator.step();
+        var secondAdmitted = simulator.snapshot().processes().getLast();
+        assertEquals(1, secondAdmitted.logicalTimes().arrivalTime());
+        assertNotEquals(firstAdmitted.cpuAffinity(), secondAdmitted.cpuAffinity());
+    }
+
+    @Test void admittedBeforeStartAndFailedSessionRejectEdits() {
+        simulator.initialize(SimulatorConfiguration.defaults());
+        submit("fault", 0, "POP BX");
+        submit("later", 2, "INC");
+        simulator.attemptNextAdmission().orElseThrow();
+        assertEquals(SimulatorState.PROGRAM_LOADED, simulator.snapshot().simulatorState());
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(1, 2));
+        simulator.start();
+        assertThrows(ExecutionEngineException.class, simulator::step);
+        assertEquals(SimulatorState.ERROR, simulator.snapshot().simulatorState());
+        assertThrows(IllegalStateException.class, () -> simulator.updateJobArrival(2, 0));
+    }
+
     private final SimulatorOrchestrator simulator = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine());
     private ProgramImage image(String name, String... lines) { return new ProgramImage(name, new AsmParser().parse(List.of(lines))); }
     private void submit(String name, long arrival, String... lines) { simulator.submitProgram(image(name, lines), arrival); }

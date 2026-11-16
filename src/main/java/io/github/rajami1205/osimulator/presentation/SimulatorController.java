@@ -19,6 +19,7 @@ import java.util.Optional;
 import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.job.Job;
+import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
@@ -306,6 +307,7 @@ public final class SimulatorController {
         regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case VIRTUAL_MEMORY -> "virtual-memory-row"; });
         column(jobIdColumn, v -> Integer.toString(v.jobId())); column(jobNameColumn, Job::programName); column(jobStateColumn, v -> v.state().name());
         column(jobArrivalColumn, v -> Long.toString(v.arrivalTime()));
+        jobArrivalColumn.setCellFactory(column -> new ArrivalCell());
         configureProgramQueueTable();
         column(pidColumn, v -> Integer.toString(v.processId())); column(processStateColumn, v -> v.state().name());
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
@@ -731,6 +733,49 @@ public final class SimulatorController {
         programTicketsColumn.setVisible(usesTicketsColumn());
         ticketsColumn.setVisible(usesTicketsColumn());
     }
+    private final class ArrivalCell extends TableCell<Job, String> {
+        @Override public void updateIndex(int index) {
+            if (isEditing() && index != getIndex()) jobsTable.edit(-1, null);
+            super.updateIndex(index);
+        }
+
+        @Override public void startEdit() {
+            Job job = getTableRow().getItem();
+            if (job == null || job.state() != JobState.PENDING || !jobsTable.isEditable()) return;
+            super.startEdit();
+            if (!isEditing()) return;
+            TextField editor = new TextField(getItem());
+            editor.setOnAction(event -> {
+                if (!isEditing() || getGraphic() != editor) return;
+                boolean current = getTableRow().getItem() == job
+                        && orchestrator.jobs().stream().anyMatch(candidate -> candidate == job);
+                jobsTable.edit(-1, null);
+                if (current) command(() -> orchestrator.updateJobArrival(job.jobId(), parseArrivalTime(editor.getText())));
+            });
+            editor.setOnKeyPressed(event -> {
+                if (event.getCode() == javafx.scene.input.KeyCode.ESCAPE) jobsTable.edit(-1, null);
+            });
+            setText(null);
+            setGraphic(editor);
+            editor.requestFocus();
+            editor.selectAll();
+        }
+
+        @Override public void cancelEdit() {
+            super.cancelEdit();
+            setGraphic(null);
+            setText(getItem());
+        }
+
+        @Override protected void updateItem(String value, boolean empty) {
+            super.updateItem(value, empty);
+            if (!isEditing()) {
+                setGraphic(null);
+                setText(empty ? null : value);
+            }
+        }
+    }
+
     /** Parsing entero exacto; evita redondeos y efectos de carga ante entradas inválidas. */
     static long parseArrivalTime(String text) {
         final long arrival;
@@ -742,7 +787,10 @@ public final class SimulatorController {
         return arrival;
     }
     /** Solicita Start al Orchestrator a través de la frontera común de errores y refresh. */
-    @FXML private void handleStart() { command(orchestrator::start); }
+    @FXML private void handleStart() {
+        jobsTable.edit(-1, null);
+        command(orchestrator::start);
+    }
     /** Ejecuta la misma ruta de un tick usada por Automatic. */
     @FXML private void handleStep() { executeSingleStep(); }
     /** Activa Timeline si hay trabajo ejecutable o una llegada futura pendiente. */
@@ -780,6 +828,7 @@ public final class SimulatorController {
     }
     /** Detiene Timeline, limpia selección y delega Reset antes de restaurar defaults visuales. */
     @FXML private void handleReset() {
+        jobsTable.edit(-1, null);
         stopAutomaticExecution();
         selectedProcessId = null;
         programQueueTable.getItems().clear(); feedback = "";
@@ -850,6 +899,8 @@ public final class SimulatorController {
         opcodeValueLabel.setText(local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::opcode).orElse("\u2014"));
         value(operandValueLabel, local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::operand).orElse("\u2014"));
         executionStatusLabel.setText(statusText(snapshot));
+        jobsTable.edit(-1, null);
+        jobsTable.setEditable(snapshot.simulatorState() == SimulatorState.PROGRAM_LOADED);
         jobsTable.getItems().setAll(snapshot.jobs());
         renderProcesses(snapshot);
         programTable.getItems().setAll(local.map(CpuView::program).orElse(List.of())); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());

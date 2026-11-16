@@ -201,6 +201,11 @@ public final class SimulatorOrchestrator {
         return jobList == null ? List.of() : jobList.entries();
     }
 
+    public void updateJobArrival(int jobId, long arrivalTime) {
+        requireState("updateJobArrival", SimulatorState.PROGRAM_LOADED);
+        jobList.updatePendingArrival(jobId, arrivalTime);
+    }
+
     /**
      * Intenta admitir el primer Job en estado preparado; convierte fallos internos de admisión en ERROR de
      * sesión.

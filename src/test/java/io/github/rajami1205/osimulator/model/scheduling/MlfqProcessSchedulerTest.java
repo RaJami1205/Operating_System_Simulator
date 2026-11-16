@@ -8,6 +8,24 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MlfqProcessSchedulerTest {
+    @Test void discardedDemotionCanRetryAtOriginalLevelAndQuantum() {
+        arrive(1);
+        arrive(2);
+        point();
+        dispatch(1);
+        complete(1, 1);
+        assertTrue(scheduler.shouldPreempt(pcb(1)));
+        scheduler.preparePreemptionCommit(pcb(1)); // Dispatcher failed before commit.
+        assertTrue(scheduler.shouldPreempt(pcb(1)), "one completed instruction still expires level zero");
+        preempt(1);
+        assertEquals(Optional.of(2), scheduler.selectNext());
+        dispatch(2);
+        complete(2, 1);
+        assertEquals(Optional.of(1), pointAndPreempt(2));
+        dispatch(1);
+        complete(1, 1);
+        assertFalse(scheduler.shouldPreempt(pcb(1)), "confirmed demotion starts a level-one quantum");
+    }
 
     private final ProcessTable table = new ProcessTable(10);
     private final ReadyQueue queue = new ReadyQueue(CpuId.ZERO, table);
@@ -36,8 +54,10 @@ class MlfqProcessSchedulerTest {
     }
 
     private void preempt(int pid) {
+        var confirm = scheduler.preparePreemptionCommit(pcb(pid));
         pcb(pid).changeState(ProcessState.READY);
         queue.enqueue(pid);
+        confirm.run();
     }
 
     private void complete(int pid, int instructions) {

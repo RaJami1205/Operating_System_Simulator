@@ -21,6 +21,30 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MultiCpuRuntimeTest {
+    @Test void secondPreemptionFailurePreservesFirstTransitionWithoutRecordingAnInterval() {
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(1024, 280), 2048, 256, 2,
+                io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.RR, UserAllocationStrategy.FIRST_FIT));
+        for (int i = 0; i < 4; i++) submit(0, "INC", "INC", "INC", "INC");
+        simulator.start();
+        simulator.step();
+        simulator.step();
+        var runtime = field(simulator, "runtime", MultiprocessRuntime.class);
+        var timeline = runtime.timeline();
+        var owner = pcb(2);
+        var saved = owner.cpuContext();
+        set(owner, "nextPcbAddress", null);
+        assertThrows(NullPointerException.class, runtime::step);
+        assertTrue(node(0).dispatcher().owner().isEmpty());
+        assertEquals(List.of(3, 1), node(0).readyQueue().entries());
+        assertSame(owner, node(1).dispatcher().owner().orElseThrow());
+        assertEquals(ProcessState.RUNNING, owner.state());
+        assertSame(saved, owner.cpuContext());
+        assertEquals(List.of(4), node(1).readyQueue().entries());
+        assertEquals(timeline, runtime.timeline());
+        assertEquals(2, field(simulator, "simulationClock", SimulationClock.class).current());
+        assertEquals(2, node(0).tickCounter().current());
+        assertEquals(2, node(1).tickCounter().current());
+    }
     @ParameterizedTest @ValueSource(ints = {1, 2, 3, 4, 5})
     void selectedStrategyUsesOneSharedUserRegionAcrossAllCpus(int count) {
         for (var strategy : UserAllocationStrategy.values()) {

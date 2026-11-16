@@ -181,7 +181,9 @@ public final class MultiprocessRuntime {
                 ProcessControlBlock ownerPcb = currentOwner.get();
                 boolean preemptionRequested = node.scheduler.shouldPreempt(ownerPcb);
                 if (preemptionRequested) {
+                    var confirm = node.scheduler.preparePreemptionCommit(ownerPcb);
                     node.dispatcher.preempt();
+                    confirm.run();
                 }
             }
         }

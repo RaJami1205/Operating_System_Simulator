@@ -236,9 +236,9 @@
                                             <Label text="No jobs" styleClass="empty-state"/>
                                         </placeholder>
                                         <columns>
-                                            <TableColumn fx:id="jobIdColumn" text="Job ID" prefWidth="70"/>
-                                            <TableColumn fx:id="jobNameColumn" text="Program" prefWidth="220"/>
-                                            <TableColumn fx:id="jobStateColumn" text="State" prefWidth="100"/>
+                                            <TableColumn fx:id="jobIdColumn" editable="false" text="Job ID" prefWidth="70"/>
+                                            <TableColumn fx:id="jobNameColumn" editable="false" text="Program" prefWidth="220"/>
+                                            <TableColumn fx:id="jobStateColumn" editable="false" text="State" prefWidth="100"/>
                                             <TableColumn fx:id="jobArrivalColumn" text="Arrival (s)" prefWidth="110"/>
                                         </columns>
                                     </TableView>

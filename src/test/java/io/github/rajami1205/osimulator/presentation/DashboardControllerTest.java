@@ -31,6 +31,56 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @SuppressWarnings("unchecked")
+    private static TextField editArrival(Fixture f, int row) throws Exception {
+        TableView<Job> table = f.widget("jobsTable", TableView.class);
+        TableColumn<Job, String> column = f.widget("jobArrivalColumn", TableColumn.class);
+        table.scrollTo(row);
+        f.root.applyCss();
+        f.root.layout();
+        table.edit(row, column);
+        return table.lookupAll(".table-cell").stream().map(TableCell.class::cast)
+                .filter(cell -> cell.getIndex() == row && cell.getTableColumn() == column)
+                .map(cell -> (TextField) cell.getGraphic()).findFirst().orElseThrow();
+    }
+
+    @Test void workloadEditsSecondJobAndRestoresInvalidInput() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        f.load("second.asm", "INC");
+        for (String value : List.of("17", "-1", "abc", "9223372036854775808")) {
+            var editor = editArrival(f, 1);
+            editor.setText(value);
+            editor.fireEvent(new javafx.event.ActionEvent());
+            assertEquals(List.of(0L, 17L), f.simulator.jobs().stream().map(Job::arrivalTime).toList());
+            if (!value.equals("17")) {
+                assertTrue(f.widget("statusLabel", Label.class).getText().contains("Arrival Time"));
+                f.closeAlerts();
+            }
+        }
+        assertEquals("17", editArrival(f, 1).getText());
+    }); }
+
+    @Test void lateEditorCannotChangeStartedOrReplacementSession() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        var stale = editArrival(f, 0);
+        stale.setText("20");
+        f.action("handleReset");
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        var current = editArrival(f, 0);
+        stale.fireEvent(new javafx.event.ActionEvent());
+        assertEquals(0, f.simulator.jobs().getFirst().arrivalTime());
+        current.setText("30");
+        f.action("handleStart");
+        current.fireEvent(new javafx.event.ActionEvent());
+        assertEquals(0, f.simulator.jobs().getFirst().arrivalTime());
+        assertFalse(f.widget("jobsTable", TableView.class).isEditable());
+    }); }
+
     @Test void demandControlsShowAbsentPcAndAutomaticContinuesThroughReplacement() throws Exception { onFx(() -> {
         var f = new Fixture();
         @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);

@@ -2,7 +2,6 @@ package io.github.rajami1205.osimulator.model.execution;
 
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 
@@ -43,7 +42,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 class ExecutionEngineTest {
     private final ScreenDevice screen = new ScreenDevice();
     private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
-    private final KeyboardDevice keyboard = new KeyboardDevice();
 
     private static final int USER_START_ADDRESS = 32;
     // Retain original handles supplied by each fixture; never reconstruct allocation identities.
@@ -91,7 +89,7 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(state, pcb.state()),
-                () -> assertEquals(0, pcb.programCounter())
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE, pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
@@ -105,7 +103,7 @@ class ExecutionEngineTest {
         writeAt(memory, 90, new LoadInstruction(RegisterName.DX));
         CpuRegisters<Instruction> cpu = populatedCpu();
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, state);
-        pcb.setProgramCounter(pcb.instructionCount());
+        pcb.setProgramCounter(ProcessControlBlock.LOGICAL_CODE_BASE + pcb.instructionCount());
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
@@ -119,7 +117,7 @@ class ExecutionEngineTest {
         assertAll(
                 () -> assertEquals(state, pcb.state()),
                 () -> assertEquals(
-                        pcb.instructionCount(),
+                        ProcessControlBlock.LOGICAL_CODE_BASE + pcb.instructionCount(),
                         pcb.programCounter()
                 )
         );
@@ -143,7 +141,7 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(ProcessState.READY, pcb.state()),
-                () -> assertEquals(0, pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
@@ -167,26 +165,22 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
-                () -> assertEquals(0, pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
 
     @Test
-    void shouldHandleLogicalEndMarkerBeforeAnyMemoryAccess() {
+    void terminalMarkerStillRequiresCanonicalAllocation() {
         MainMemory memory = createMemory();
         CpuRegisters<Instruction> cpu = populatedCpu();
-        CpuState before = snapshotCpu(cpu);
-        // No allocation exists and Base lies beyond physical memory.
+        var before = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(1000, 2, ProcessState.READY);
-        pcb.setProgramCounter(2);
-
-        completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
-
-        assertEquals(ProcessState.TERMINATED, pcb.state());
-        assertEquals(2, cpu.programCounter());
-        assertEquals(2, pcb.programCounter());
-        assertCpuDataAndInstructionState(before, cpu);
+        pcb.setProgramCounter(4098);
+        assertThrows(ExecutionEngineException.class,
+                () -> completeInstruction(new ExecutionEngine(), memory, cpu, pcb));
+        assertEquals(before, snapshotCpu(cpu));
+        assertEquals(ProcessState.READY, pcb.state());
     }
 
     @ParameterizedTest
@@ -195,8 +189,7 @@ class ExecutionEngineTest {
             ProcessState state
     ) {
         MainMemory memory = createMemory();
-        Instruction unrelatedInstruction = new AddInstruction(RegisterName.DX);
-        writeAt(memory, 90, unrelatedInstruction);
+        allocations.put(memory, memory.allocateUser(memory.configuration().userPositions()));
         CpuRegisters<Instruction> cpu = populatedCpu();
         CpuState cpuBeforeExecution = snapshotCpu(cpu);
         ProcessControlBlock pcb = createPcb(
@@ -204,14 +197,14 @@ class ExecutionEngineTest {
                 memory.configuration().userPositions(),
                 state
         );
-        pcb.setProgramCounter(pcb.instructionCount());
+        pcb.setProgramCounter(pcb.logicalCodeRange().endExclusive().value());
         List<MemoryContent> memoryBeforeExecution = snapshotMemory(memory);
 
         completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
-                () -> assertEquals(pcb.instructionCount(), cpu.programCounter()),
-                () -> assertEquals(pcb.instructionCount(), pcb.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().endExclusive().value(), cpu.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().endExclusive().value(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state())
         );
         assertCpuDataAndInstructionState(cpuBeforeExecution, cpu);
@@ -238,7 +231,7 @@ class ExecutionEngineTest {
         assertEquals(cpuBeforeExecution, snapshotCpu(cpu));
         assertAll(
                 () -> assertEquals(state, pcb.state()),
-                () -> assertEquals(0, pcb.programCounter())
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter())
         );
         assertMemoryMatchesSnapshot(memory, memoryBeforeExecution);
     }
@@ -266,8 +259,8 @@ class ExecutionEngineTest {
         assertOnlyRegisterChanged(destination, -5, cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(9, cpu.accumulator()),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -295,8 +288,8 @@ class ExecutionEngineTest {
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -323,8 +316,8 @@ class ExecutionEngineTest {
         assertOnlyRegisterChanged(destination, 40, cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(40, cpu.accumulator()),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -359,8 +352,8 @@ class ExecutionEngineTest {
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -395,8 +388,8 @@ class ExecutionEngineTest {
         assertGeneralRegistersMatchSnapshot(cpuBeforeExecution, cpu);
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -416,14 +409,14 @@ class ExecutionEngineTest {
         cpu.writeRegister(RegisterName.AX, 10);
         cpu.loadInstructionRegister(firstInstruction);
         ProcessControlBlock pcb = createPcb(USER_START_ADDRESS, 2, ProcessState.RUNNING);
-        pcb.setProgramCounter(1);
+        pcb.setProgramCounter(pcb.logicalCodeRange().base().value() + 1);
 
         completeInstruction(new ExecutionEngine(), memory, cpu, pcb);
 
         assertAll(
                 () -> assertEquals(15, cpu.accumulator()),
-                () -> assertEquals(2, cpu.programCounter()),
-                () -> assertEquals(2, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 2, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 2, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(finalInstruction, cpu.instructionRegister().orElseThrow())
         );
@@ -440,8 +433,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(17, cpu.readRegister(RegisterName.DX)),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -460,8 +453,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(60, cpu.accumulator()),
-                () -> assertEquals(pcb.instructionCount(), cpu.programCounter()),
-                () -> assertEquals(pcb.instructionCount(), pcb.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().endExclusive().value(), cpu.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().endExclusive().value(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -503,8 +496,8 @@ class ExecutionEngineTest {
         assertAll(
                 () -> assertEquals(expectedAccumulator, cpu.accumulator()),
                 () -> assertEquals(sourceValue, cpu.readRegister(RegisterName.AX)),
-                () -> assertEquals(1, cpu.programCounter()),
-                () -> assertEquals(1, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, pcb.state()),
                 () -> assertSame(instruction, cpu.instructionRegister().orElseThrow())
         );
@@ -542,8 +535,8 @@ class ExecutionEngineTest {
                         exception.getCause()
                 ),
                 () -> assertEquals(initialAccumulator, cpu.accumulator()),
-                () -> assertEquals(0, cpu.programCounter()),
-                () -> assertEquals(0, pcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE, cpu.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter()),
                 () -> assertEquals(ProcessState.RUNNING, pcb.state()),
                 () -> assertSame(
                         failingInstruction,
@@ -677,8 +670,8 @@ class ExecutionEngineTest {
 
         assertAll(
                 () -> assertEquals(-6, successfulCpu.readRegister(RegisterName.CX)),
-                () -> assertEquals(1, successfulCpu.programCounter()),
-                () -> assertEquals(1, successfulPcb.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, successfulCpu.programCounter()),
+                () -> assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, successfulPcb.programCounter()),
                 () -> assertEquals(ProcessState.TERMINATED, successfulPcb.state()),
                 () -> assertSame(
                         successfulInstruction,
@@ -749,8 +742,8 @@ class ExecutionEngineTest {
         var engine = new ExecutionEngine();
         completeInstruction(engine, memory, cpu, pcb);
         assertEquals(7, cpu.readRegister(RegisterName.AX));
-        assertEquals(1, cpu.programCounter());
-        assertEquals(1, pcb.programCounter());
+        assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, cpu.programCounter());
+        assertEquals(ProcessControlBlock.LOGICAL_CODE_BASE + 1, pcb.programCounter());
         assertEquals(ProcessState.TERMINATED, pcb.state());
         assertSame(instruction, memory.readInstruction(pcb.memoryBounds(), 0));
         assertEquals(34, memory.allocateUser(1).base());
@@ -764,8 +757,7 @@ class ExecutionEngineTest {
 
     // Semantic regression helper: completes an instruction through the public tick API only.
     private void completeInstruction(ExecutionEngine engine, MainMemory memory, CpuRegisters<Instruction> cpu, ProcessControlBlock pcb) {
-        var progress = new ExecutionProgress();
-        while (engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, allocations.get(memory)) == TickResult.IN_PROGRESS) { }
+        engine.executeTick(filesystem, screen, memory, cpu, pcb, allocations.get(memory));
     }
 
     private void writeAt(MainMemory memory, int address, Instruction instruction) {
@@ -798,7 +790,7 @@ class ExecutionEngineTest {
                 programStartAddress,
                 instructionCount
         );
-        pcb.setProgramCounter(0);
+        pcb.setProgramCounter(pcb.logicalCodeRange().base().value());
         pcb.changeState(state);
         return pcb;
     }
@@ -895,8 +887,8 @@ class ExecutionEngineTest {
             ProcessState expectedState
     ) {
         assertAll(
-                () -> assertEquals(expectedProgramCounter, cpu.programCounter()),
-                () -> assertEquals(expectedProgramCounter, pcb.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().base().value() + expectedProgramCounter, cpu.programCounter()),
+                () -> assertEquals(pcb.logicalCodeRange().base().value() + expectedProgramCounter, pcb.programCounter()),
                 () -> assertEquals(expectedState, pcb.state()),
                 () -> assertSame(
                         expectedInstruction,

@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProcessResourceRegistryTest {
     @Test void validatesTypedResourcesAndProtectsCanonicalPublication() {
         var memory=new MainMemory(new MemoryConfiguration(128,32));
-        var kernel=memory.allocateKernel(1);var user=memory.allocateUser(2);
+        var kernel=memory.allocateKernel(io.github.rajami1205.osimulator.model.memory.PcbField.PCB_SIZE);var user=memory.allocateUser(2);
         var resources=new ProcessResources(kernel,new PcbAddress(kernel.base()),new UserImageResidence.Resident(user));
         var registry=new ProcessResourceRegistry();registry.register(1,resources);
         assertSame(resources,registry.find(1).orElseThrow());
@@ -22,14 +22,14 @@ class ProcessResourceRegistryTest {
         assertThrows(IllegalStateException.class,()->registry.replace(1,other,resources));
         assertSame(resources,registry.find(1).orElseThrow());
     }
-    @Test void relocationRequiresSuspensionAndPreservesExtentAndLogicalPc() {
-        var pcb=new ProcessControlBlock(1,32,3);pcb.setProgramCounter(3);
+    @Test void relocationRequiresSuspensionAndPreservesExtentAndLogicalTerminalPc() {
+        var pcb=new ProcessControlBlock(1,32,3);pcb.setProgramCounter(4099);
         assertThrows(IllegalStateException.class,()->pcb.relocateSuspended(new ProcessMemoryBounds(40,3)));
         pcb.changeState(ProcessState.BLOCKED_SUSPENDED);
         assertThrows(IllegalStateException.class,()->pcb.relocateSuspended(new ProcessMemoryBounds(40,2)));
         pcb.relocateSuspended(new ProcessMemoryBounds(40,3));
         assertThrows(IllegalStateException.class,pcb::memoryBounds);assertEquals(3,pcb.instructionCount());
         pcb.changeState(ProcessState.BLOCKED);assertEquals(new ProcessMemoryBounds(40,3),pcb.memoryBounds());
-        assertEquals(3,pcb.programCounter());
+        assertEquals(4099,pcb.programCounter());
     }
 }

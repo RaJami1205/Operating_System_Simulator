@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.model.scheduling;
 
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import java.util.Optional;
 
 /** Selecciona un candidato sin consumir membresía READY ni realizar dispatch. */
@@ -9,4 +10,29 @@ public interface ProcessScheduler {
      * CPU.
      */
     Optional<Integer> selectNext();
+
+    /**
+     * Indica si el owner actual debe ser expulsado antes del próximo dispatch.
+     * El default es false; las políticas preemptivas sobreescriben este método.
+     */
+    default boolean shouldPreempt(ProcessControlBlock owner) {
+        return false;
+    }
+
+    /** After an affirmative decision, prepare policy changes. Discard on failure;
+     * on success the action may only assign already prepared state. */
+    default Runnable preparePreemptionCommit(ProcessControlBlock owner) { return () -> {}; }
+
+    /**
+     * Informa el tiempo lógico vigente al inicio de la fase de scheduling, en todas las CPUs y antes de
+     * shouldPreempt/selectNext. Default: sin efecto; las políticas que dependen del tiempo (HRRN, aging de
+     * Priority) lo guardan para evaluar.
+     */
+    default void onSchedulingPoint(long now) { }
+
+    /** Notifica que el proceso fue despachado a esta CPU. Default: sin efecto. */
+    default void onDispatched(int pid) { }
+
+    /** Notifica que el owner completó una instrucción. Default: sin efecto. */
+    default void onInstructionCompleted(int pid) { }
 }

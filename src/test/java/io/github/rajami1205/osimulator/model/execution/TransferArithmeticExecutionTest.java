@@ -2,7 +2,6 @@ package io.github.rajami1205.osimulator.model.execution;
 
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 
@@ -19,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class TransferArithmeticExecutionTest {
     private final ScreenDevice screen = new ScreenDevice();
     private final SimulatedFileSystem filesystem = new SimulatedFileSystem(new SecondaryStorage(128, 64));
-    private final KeyboardDevice keyboard = new KeyboardDevice();
     private final ExecutionEngine engine = new ExecutionEngine();
 
     private CpuRegisters<Instruction> cpu() {
@@ -34,14 +32,13 @@ class TransferArithmeticExecutionTest {
         var memory = new MainMemory(new MemoryConfiguration(128, 32));
         var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
         var pcb = pcbLoaded.pcb();
-        var progress = new ExecutionProgress();
         var flags = cpu.conditionFlags();
-        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
-        assertEquals(1, cpu.programCounter());
-        assertEquals(1, pcb.programCounter());
+        assertEquals(TickResult.PROGRAM_FINISHED, engine.executeTick(filesystem, screen, memory, cpu, pcb, pcbLoaded.userAllocation()));
+        assertEquals(4097, cpu.programCounter());
+        assertEquals(4097, pcb.programCounter());
         assertSame(instruction, cpu.instructionRegister().orElseThrow());
         assertEquals(flags, cpu.conditionFlags());
-        assertTrue(progress.isIdle());
+
     }
 
     @Test
@@ -108,14 +105,13 @@ class TransferArithmeticExecutionTest {
             var memory = new MainMemory(new MemoryConfiguration(128, 32));
             var pcbLoaded = new ProgramLoader().loadWithAllocation(memory, 1, List.of(instruction));
         var pcb = pcbLoaded.pcb();
-            var progress = new ExecutionProgress();
             cpu.loadInstructionRegister(instruction);
             var before = cpu.snapshot();
-            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, pcbLoaded.userAllocation()));
+            var failure = assertThrows(ExecutionEngineException.class, () -> engine.executeTick(filesystem, screen, memory, cpu, pcb, pcbLoaded.userAllocation()));
             assertInstanceOf(InvalidRegisterValueException.class, failure.getCause());
-            assertEquals(before, cpu.snapshot());
-            assertEquals(0, pcb.programCounter());
-            assertTrue(progress.isIdle());
+            assertEquals(before.withProgramCounter(4096), cpu.snapshot());
+            assertEquals(4096, pcb.programCounter());
+
         }
     }
 }

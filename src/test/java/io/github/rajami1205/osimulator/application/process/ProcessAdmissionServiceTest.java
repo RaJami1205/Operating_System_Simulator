@@ -15,7 +15,129 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessAdmissionServiceTest {
-    private final MainMemory memory = new MainMemory(new MemoryConfiguration(128, 32));
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = MemoryMode.class, names = {"FIXED_EQUAL", "FIXED_UNEQUAL"})
+    void fixedLateFailureReturnsPartitionAndPreservesLinksAndJob(MemoryMode mode) throws Exception {
+        var fixed = mode == MemoryMode.FIXED_EQUAL ? FixedPartitionConfiguration.equal(3)
+                : FixedPartitionConfiguration.unequal(List.of(40, 24, 32));
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.NEXT_FIT, mode, Optional.of(fixed));
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 2); submit(2, 3); service.admit(1);
+        var first = table.find(1).orElseThrow(); var before = registry.entries();
+        var occupancy = memory.partitions();
+        var failure = failJobPublication(null);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(2)));
+        assertEquals(occupancy, memory.partitions()); assertEquals(before, registry.entries());
+        assertEquals(List.of(first), table.entries()); assertEquals(List.of(1), queue.entries());
+        assertTrue(first.nextPcbAddress().isEmpty()); assertEquals(JobState.PENDING, jobs.find(2).orElseThrow().state());
+        assertEquals(new AdmissionResult.Admitted(2), service.admit(2));
+        assertEquals(2, memory.partitions().stream().filter(FixedPartition.Occupancy::occupied).count());
+        assertEquals(3, table.find(2).orElseThrow().instructionCount());
+        memory.validatePcbAllocation(registry.find(2).orElseThrow().kernel(), table.find(2).orElseThrow());
+    }
+
+    @Test void fixedAdmissionRejectsImpossibleEvenWhenKernelUnavailableAndWaitsForOccupiedPartition() {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.FIRST_FIT,
+                MemoryMode.FIXED_EQUAL, Optional.of(FixedPartitionConfiguration.equal(12)));
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 9); submit(2, 8);
+        var kernel = memory.allocateKernel(140);
+        assertThrows(io.github.rajami1205.osimulator.model.memory.exception.IncompatibleProgramException.class, () -> service.admit(1));
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY), service.admit(2));
+        memory.release(kernel);
+        var handles = new ArrayList<MemoryAllocation>();
+        for (int i = 0; i < 12; i++) handles.add(memory.allocateUser(1));
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(2));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        memory.release(handles.getFirst());
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(2));
+        assertEquals(140, table.find(1).orElseThrow().memoryBounds().base());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(UserAllocationStrategy.class)
+    void lateFailureRestoresStrategyStateAndRetryCommits(UserAllocationStrategy strategy) throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 2); submit(2, 3);
+        service.admit(1);
+        var first = table.find(1).orElseThrow();
+        var original = registry.entries();
+        var failure = failJobPublication(null);
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(2)));
+        assertEquals(original, registry.entries());
+        assertEquals(List.of(first), table.entries()); assertEquals(List.of(1), queue.entries());
+        assertTrue(first.nextPcbAddress().isEmpty());
+        assertEquals(JobState.PENDING, jobs.find(2).orElseThrow().state());
+        assertTrue(memory.isEmpty(142)); assertTrue(memory.isEmpty(28));
+        assertEquals(new AdmissionResult.Admitted(2), service.admit(2));
+        assertEquals(142, table.find(2).orElseThrow().memoryBounds().base());
+        assertEquals(145, memory.allocateUser(1).base());
+        memory.validatePcbAllocation(registry.find(1).orElseThrow().kernel(), first);
+    }
+
+    @Test void nextFitLoaderWriteFailureRestoresCursorBeforeAdmissionRetry() throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.NEXT_FIT);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 3);
+        var prefix = memory.allocateUser(7);
+        var faults = MemoryFaults.install(memory, "user");
+        faults.writeFailure = new IllegalStateException("write failed");
+        assertSame(faults.writeFailure, assertThrows(IllegalStateException.class, () -> service.admit(1)));
+        assertEquals(1, faults.releases);
+        faults.writeFailure = null;
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1));
+        assertEquals(147, table.find(1).orElseThrow().memoryBounds().base());
+        memory.release(prefix);
+        assertEquals(150, memory.allocateUser(1).base());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(UserAllocationStrategy.class)
+    void allStrategiesPreserveUserShortageWaitingAndRetry(UserAllocationStrategy strategy) {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var service = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        submit(1, 50);
+        var first = memory.allocateUser(32); memory.allocateUser(32);
+        var last = memory.allocateUser(32); memory.release(first); memory.release(last);
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(1));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        assertEquals(JobState.PENDING, jobs.find(1).orElseThrow().state());
+        var wholeKernel = memory.allocateKernel(140); memory.release(wholeKernel);
+        memory.clearUserSpace();
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1));
+        assertEquals(140, table.find(1).orElseThrow().memoryBounds().base());
+    }
+    @Test
+    void configuredCapacityAdmitsTwentyFiveCanonicalBlocksAndWaitsWithoutResources() {
+        var configuration = new io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration(
+                new MemoryConfiguration(1024, 700), 512, 64, 5);
+        var memory = new MainMemory(configuration.mainMemory());
+        var table = new ProcessTable(configuration.maxProcesses());
+        var registry = new ProcessResourceRegistry();
+        var topology = new io.github.rajami1205.osimulator.application.cpu.CpuTopology(5, table, memory, registry);
+        var service = new ProcessAdmissionService(topology, jobs, storage, memory, table, new ProgramLoader(), registry);
+        for (int pid = 1; pid <= 26; pid++) submit(pid, 1);
+        for (int pid = 1; pid <= 25; pid++) {
+            assertEquals(new AdmissionResult.Admitted(pid), service.admit(pid));
+            var pcb = table.find(pid).orElseThrow();
+            assertEquals((pid - 1) % 5, pcb.cpuAffinity().value());
+            var resource = registry.find(pid).orElseThrow();
+            assertEquals(PcbField.PCB_SIZE, resource.kernel().size());
+            memory.validatePcbAllocation(resource.kernel(), pcb);
+            if (pid > 1) assertEquals(Optional.of(resource.address()), table.find(pid - 1).orElseThrow().nextPcbAddress());
+        }
+        var beforeQueue = topology.nodes().stream().map(node -> node.readyQueue().entries()).toList();
+        for (var node : topology.nodes()) assertEquals(5, table.countForCpu(node.id()));
+        var beforeResources = registry.entries();
+        assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.RESIDENT_CAPACITY_REACHED), service.admit(26));
+        assertEquals(JobState.PENDING, jobs.find(26).orElseThrow().state());
+        assertEquals(beforeQueue, topology.nodes().stream().map(node -> node.readyQueue().entries()).toList());
+        assertEquals(beforeResources, registry.entries());
+        assertTrue(memory.isEmpty(725));
+        assertTrue(table.find(25).orElseThrow().nextPcbAddress().isEmpty());
+    }
+
+    private final MainMemory memory = new MainMemory(new MemoryConfiguration(236, 140));
     private final SecondaryStorage storage = new SecondaryStorage(512, 64);
     private final JobList jobs = new JobList();
     private final ProcessTable table = new ProcessTable();
@@ -29,6 +151,22 @@ class ProcessAdmissionServiceTest {
         jobs.add(new Job(jobId, "p" + jobId, JobState.PENDING));
     }
 
+    @Test void directAdmissionCannotBypassArrivalAndPublishesSuccessfulLogicalAdmission() {
+        storage.storeProgram("future", List.of(instruction));
+        jobs.add(new Job(1, "future", JobState.PENDING, 5));
+        assertThrows(IllegalStateException.class, () -> service.admit(1));
+        assertThrows(IllegalStateException.class, () -> service.admit(1, 4));
+        assertThrows(IllegalArgumentException.class, () -> service.admit(1, -1));
+        assertTrue(table.entries().isEmpty()); assertTrue(registry.entries().isEmpty());
+        assertTrue(queue.entries().isEmpty());
+        var kernel = memory.allocateKernel(140); var user = memory.allocateUser(96);
+        assertInstanceOf(AdmissionResult.Waiting.class, service.admit(1, 5));
+        memory.release(kernel); memory.release(user);
+        assertEquals(new AdmissionResult.Admitted(1), service.admit(1, 7));
+        assertEquals(LogicalProcessTimes.admitted(5, 7), table.find(1).orElseThrow().logicalTimes());
+        assertEquals(5, jobs.find(1).orElseThrow().arrivalTime());
+    }
+
     @Test
     void admitsCanonicalReadyPcbsWithIndependentIdsAndPhysicalKernelLinks() throws Exception {
         for (int i = 1; i <= 3; i++) {
@@ -36,28 +174,28 @@ class ProcessAdmissionServiceTest {
             assertEquals(new AdmissionResult.Admitted(i), service.admit(i * 10));
             var pcb = table.find(i).orElseThrow();
             assertEquals(ProcessState.READY, pcb.state());
-            assertEquals(0, pcb.programCounter());
-            assertEquals(new ProcessMemoryBounds(32 + (i - 1) * 2, 2), pcb.memoryBounds());
-            assertSame(pcb, assertInstanceOf(PcbContent.class, memory.read(i - 1)).pcb());
+            assertEquals(pcb.logicalCodeRange().base().value(), pcb.programCounter());
+            assertEquals(new ProcessMemoryBounds(140 + (i - 1) * 2, 2), pcb.memoryBounds());
+            assertTrue(assertInstanceOf(PcbContent.class, memory.read((i - 1) * 28)).belongsTo(pcb));
             assertSame(instruction, memory.readInstruction(pcb.memoryBounds(), 0));
             assertSame(instruction, memory.readInstruction(pcb.memoryBounds(), 1));
             assertEquals(Collections.nCopies(2, instruction), storage.readProgram("p" + i * 10));
             assertEquals(JobState.ADMITTED, jobs.find(i * 10).orElseThrow().state());
-            if (i > 1) assertEquals(Optional.of(new PcbAddress(i - 1)), table.find(i - 1).orElseThrow().nextPcbAddress());
+            if (i > 1) assertEquals(Optional.of(new PcbAddress((i - 1) * 28)), table.find(i - 1).orElseThrow().nextPcbAddress());
             assertTrue(pcb.nextPcbAddress().isEmpty());
             var resource = resources().get(i);
-            assertEquals(new PcbAddress(i - 1), resourcePart(resource, "address"));
-            assertEquals(1, ((MemoryAllocation) resourcePart(resource, "kernel")).size());
+            assertEquals(new PcbAddress((i - 1) * 28), resourcePart(resource, "address"));
+            assertEquals(28, ((MemoryAllocation) resourcePart(resource, "kernel")).size());
         }
-        assertTrue(memory.isEmpty(3));
+        assertTrue(memory.isEmpty(84));
         assertEquals(List.of(1, 2, 3), queue.entries());
         // Actual release proves these are the original active tokens, not reconstructed bounds.
         for (var resource : resources().values()) {
             memory.release((MemoryAllocation) resourcePart(resource, "user"));
             memory.release((MemoryAllocation) resourcePart(resource, "kernel"));
         }
-        assertEquals(32, memory.allocateUser(96).base());
-        assertEquals(0, memory.allocateKernel(32).base());
+        assertEquals(140, memory.allocateUser(96).base());
+        assertEquals(0, memory.allocateKernel(140).base());
     }
 
     @Test
@@ -79,12 +217,12 @@ class ProcessAdmissionServiceTest {
     @Test
     void kernelShortageWaitsAndRetryUsesSameId() {
         submit(20, 1);
-        var occupied = memory.allocateKernel(32);
+        var occupied = memory.allocateKernel(140);
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_KERNEL_MEMORY), service.admit(20));
         assertTrue(queue.entries().isEmpty());
         assertTrue(table.entries().isEmpty());
         assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
-        assertTrue(memory.isEmpty(32));
+        assertTrue(memory.isEmpty(140));
         memory.release(occupied);
         assertEquals(new AdmissionResult.Admitted(1), service.admit(20));
     }
@@ -100,7 +238,7 @@ class ProcessAdmissionServiceTest {
         assertEquals(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY), service.admit(8));
         assertTrue(queue.entries().isEmpty());
         assertEquals(JobState.PENDING, jobs.find(8).orElseThrow().state());
-        var kernel = memory.allocateKernel(32);
+        var kernel = memory.allocateKernel(140);
         assertEquals(0, kernel.base());
         memory.release(kernel);
         memory.release(middle);
@@ -133,8 +271,8 @@ class ProcessAdmissionServiceTest {
         assertThrows(IllegalStateException.class, () -> service.admit(2));
         assertEquals(JobState.PENDING, jobs.find(2).orElseThrow().state());
         assertEquals(1, table.size());
-        assertEquals(1, memory.allocateKernel(31).base());
-        assertEquals(33, memory.allocateUser(95).base());
+        assertEquals(28, memory.allocateKernel(112).base());
+        assertEquals(141, memory.allocateUser(95).base());
     }
 
     @Test
@@ -153,12 +291,12 @@ class ProcessAdmissionServiceTest {
         assertEquals(Set.of(1), resources().keySet());
         assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
         assertEquals(Collections.nCopies(3, instruction), storage.readProgram("p20"));
-        assertTrue(memory.isEmpty(1));
-        assertTrue(memory.isEmpty(34));
+        assertTrue(memory.isEmpty(28));
+        assertTrue(memory.isEmpty(142));
         assertEquals(new AdmissionResult.Admitted(2), service.admit(20));
         assertEquals(List.of(1, 2), queue.entries());
-        assertEquals(Optional.of(new PcbAddress(1)), first.nextPcbAddress());
-        assertEquals(34, table.find(2).orElseThrow().memoryBounds().base());
+        assertEquals(Optional.of(new PcbAddress(28)), first.nextPcbAddress());
+        assertEquals(142, table.find(2).orElseThrow().memoryBounds().base());
     }
 
     @Test
@@ -170,8 +308,8 @@ class ProcessAdmissionServiceTest {
         assertSame(failure, assertThrows(IllegalStateException.class, () -> service.admit(1)));
         assertTrue(queue.entries().isEmpty());
         assertEquals(1, faults.releases);
-        assertEquals(0, memory.allocateKernel(32).base());
-        assertEquals(32, memory.allocateUser(96).base());
+        assertEquals(0, memory.allocateKernel(140).base());
+        assertEquals(140, memory.allocateUser(96).base());
         assertTrue(resources().isEmpty());
         assertEquals(1, counter());
     }
@@ -188,9 +326,9 @@ class ProcessAdmissionServiceTest {
         assertEquals(1, kernel.releases);
         assertTrue(table.entries().isEmpty());
         assertTrue(resources().isEmpty());
-        assertTrue(memory.isEmpty(32));
-        assertEquals(32, memory.allocateUser(96).base());
-        assertEquals(0, memory.allocateKernel(32).base());
+        assertTrue(memory.isEmpty(140));
+        assertEquals(140, memory.allocateUser(96).base());
+        assertEquals(0, memory.allocateKernel(140).base());
     }
 
     @Test
@@ -224,9 +362,9 @@ class ProcessAdmissionServiceTest {
         assertTrue(table.entries().isEmpty());
         assertTrue(resources().isEmpty());
         assertTrue(memory.isEmpty(0));
-        assertTrue(memory.isEmpty(32));
-        assertEquals(0, memory.allocateKernel(32).base());
-        assertEquals(32, memory.allocateUser(96).base());
+        assertTrue(memory.isEmpty(140));
+        assertEquals(0, memory.allocateKernel(140).base());
+        assertEquals(140, memory.allocateUser(96).base());
         assertEquals(JobState.PENDING, jobs.find(1).orElseThrow().state());
         assertEquals(1, counter());
     }
@@ -241,7 +379,7 @@ class ProcessAdmissionServiceTest {
         assertSame(user.writeFailure, failure);
         assertArrayEquals(new Throwable[]{user.releaseFailure}, failure.getSuppressed());
         assertEquals(1, user.releases);
-        assertEquals(0, memory.allocateKernel(32).base());
+        assertEquals(0, memory.allocateKernel(140).base());
         assertEquals(1, counter());
     }
 
@@ -278,12 +416,12 @@ class ProcessAdmissionServiceTest {
         assertEquals(Set.of(1), resources().keySet());
         assertEquals(JobState.PENDING, jobs.find(20).orElseThrow().state());
         assertEquals(2, counter());
-        assertTrue(memory.isEmpty(1));
-        assertTrue(memory.isEmpty(33));
+        assertTrue(memory.isEmpty(28));
+        assertTrue(memory.isEmpty(141));
         queue.remove(2);
         assertEquals(new AdmissionResult.Admitted(2), service.admit(20));
         assertEquals(List.of(1, 2), queue.entries());
-        assertEquals(33, table.find(2).orElseThrow().memoryBounds().base());
+        assertEquals(141, table.find(2).orElseThrow().memoryBounds().base());
         assertThrows(IllegalStateException.class, () -> service.admit(20));
         assertEquals(List.of(1, 2), queue.entries());
     }

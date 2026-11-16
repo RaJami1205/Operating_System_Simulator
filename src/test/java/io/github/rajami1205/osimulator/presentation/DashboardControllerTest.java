@@ -6,8 +6,13 @@ import io.github.rajami1205.osimulator.application.program.exception.ProgramImpo
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
 import io.github.rajami1205.osimulator.infrastructure.asm.AsmParser;
+import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
+import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.job.Job;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
 import java.nio.file.Path;
 import java.time.*;
@@ -26,6 +31,571 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void mlfqQuantaValidateFreezeAndReset() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        var policy = f.widget("schedulingPolicyBox", ComboBox.class);
+        var row = f.widget("mlfqRow", javafx.scene.layout.HBox.class);
+        var field = f.widget("mlfqField", TextField.class);
+        assertFalse(row.isVisible());
+        assertFalse(row.isManaged());
+        policy.setValue(SchedulingPolicyId.MLFQ);
+        assertTrue(row.isVisible());
+        assertTrue(row.isManaged());
+        assertEquals("1,2,4", field.getText());
+        for (String invalid : List.of("", "1", "1,2,3,4,5,6", "0,2", "1,11", "-1,2", "x,2", "1,,2", "1,2147483648")) {
+            field.setText(invalid);
+            f.action("handleInitialize");
+            assertTrue(f.simulator.configuration().isEmpty());
+            assertTrue(f.widget("statusLabel", Label.class).getText().contains("MLFQ"));
+            f.closeAlerts();
+        }
+        field.setText(" 5, 3 ");
+        f.action("handleInitialize");
+        assertTrue(field.isDisabled());
+        assertEquals(List.of(5, 3), f.simulator.snapshot().configuration().orElseThrow().mlfq().levelQuanta());
+        assertEquals("5,3", field.getText());
+        f.action("handleReset");
+        policy.setValue(SchedulingPolicyId.MLFQ);
+        assertEquals("1,2,4", field.getText());
+        field.setText("invalid");
+        policy.setValue(SchedulingPolicyId.FCFS);
+        f.action("handleInitialize");
+        assertEquals(SchedulingPolicyId.FCFS, f.simulator.configuration().orElseThrow().schedulingPolicy());
+    }); }
+
+    @SuppressWarnings("unchecked")
+    private static TextField editArrival(Fixture f, int row) throws Exception {
+        TableView<Job> table = f.widget("jobsTable", TableView.class);
+        TableColumn<Job, String> column = f.widget("jobArrivalColumn", TableColumn.class);
+        table.scrollTo(row);
+        f.root.applyCss();
+        f.root.layout();
+        table.edit(row, column);
+        return table.lookupAll(".table-cell").stream().map(TableCell.class::cast)
+                .filter(cell -> cell.getIndex() == row && cell.getTableColumn() == column)
+                .map(cell -> (TextField) cell.getGraphic()).findFirst().orElseThrow();
+    }
+
+    @Test void workloadEditsSecondJobAndRestoresInvalidInput() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        f.load("second.asm", "INC");
+        for (String value : List.of("17", "-1", "abc", "9223372036854775808")) {
+            var editor = editArrival(f, 1);
+            editor.setText(value);
+            editor.fireEvent(new javafx.event.ActionEvent());
+            assertEquals(List.of(0L, 17L), f.simulator.jobs().stream().map(Job::arrivalTime).toList());
+            if (!value.equals("17")) {
+                assertTrue(f.widget("statusLabel", Label.class).getText().contains("Arrival Time"));
+                f.closeAlerts();
+            }
+        }
+        assertEquals("17", editArrival(f, 1).getText());
+    }); }
+
+    @Test void lateEditorCannotChangeStartedOrReplacementSession() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        var stale = editArrival(f, 0);
+        stale.setText("20");
+        f.action("handleReset");
+        f.action("handleInitialize");
+        f.load("first.asm", "INC");
+        var current = editArrival(f, 0);
+        stale.fireEvent(new javafx.event.ActionEvent());
+        assertEquals(0, f.simulator.jobs().getFirst().arrivalTime());
+        current.setText("30");
+        f.action("handleStart");
+        current.fireEvent(new javafx.event.ActionEvent());
+        assertEquals(0, f.simulator.jobs().getFirst().arrivalTime());
+        assertFalse(f.widget("jobsTable", TableView.class).isEditable());
+    }); }
+
+    @Test void demandControlsShowAbsentPcAndAutomaticContinuesThroughReplacement() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        @SuppressWarnings("unchecked") var loadMode = (ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode>) f.widget("pagingLoadModeBox", ComboBox.class);
+        assertEquals(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, loadMode.getValue());
+        mode.setValue(io.github.rajami1205.osimulator.model.memory.MemoryMode.PAGING);
+        f.enabled("pagingLoadModeBox", true); loadMode.setValue(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.DEMAND);
+        f.widget("kernelMemorySlider", Slider.class).setValue(252);
+        f.action("handleInitialize"); f.enabled("pagingLoadModeBox", false); f.enabled("pageSizeField", false);
+        f.load("demand.asm", "INC", "INC", "INC", "INC", "INC", "INC"); f.action("handleStart");
+        assertTrue(f.simulator.snapshot().paging().frames().stream().noneMatch(FrameView::occupied));
+        assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("Not Present"));
+        var timeline = (Timeline) get(f.controller, "automaticTimeline");
+        try {
+            f.action("handleAutomatic");
+            for (int i = 0; i < 4; i++) timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            var before = f.simulator.snapshot();
+            assertTrue(before.cpus().getFirst().nextInstructionPhysicalAddress().isEmpty());
+            assertNotEquals("ERROR", f.widget("pcValueLabel", Label.class).getText());
+            assertOperationalOrdering(f, before);
+            timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            assertEquals(Optional.of(RuntimeStatus.RUNNABLE), f.simulator.snapshot().runtimeStatus());
+            assertEquals(javafx.animation.Animation.Status.RUNNING, timeline.getStatus());
+            assertEquals(5, f.simulator.snapshot().cpus().getFirst().cpuTicks());
+            assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("EVICTION_COMMITTED"));
+            assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("CLOCK Hand: 0"));
+            assertTrue(f.widget("pagingDetailsArea", TextArea.class).getText().contains("R 1"));
+            timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            assertEquals(Optional.of(RuntimeStatus.FINISHED), f.simulator.snapshot().runtimeStatus());
+            assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
+            f.enabled("automaticButton", false); f.enabled("stepButton", false);
+            assertEquals(6, f.simulator.snapshot().cpus().getFirst().cpuTicks());
+            assertFalse(f.widget("pagingDetailsArea", TextArea.class).getText().contains("Pending Page-In"));
+            f.action("handleReset");
+            assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+            assertEquals(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, loadMode.getValue());
+        } finally { timeline.stop(); }
+    }); }
+    @Test void pagingControlsRenderSelectedCpuAndLockConfigurationUntilReset() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+        count.setValue(2); f.widget("mainMemorySlider", Slider.class).setValue(1024);
+        mode.setValue(io.github.rajami1205.osimulator.model.memory.MemoryMode.PAGING);
+        f.enabled("pageSizeField", true); f.widget("pageSizeField", TextField.class).setText("3.5");
+        f.action("handleInitialize"); f.closeAlerts(); assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.widget("pageSizeField", TextField.class).setText("3"); f.action("handleInitialize");
+        f.enabled("pageSizeField", false); f.enabled("memoryModeBox", false);
+        f.load("zero.asm", "INC", "INC", "INC", "INC"); f.load("one.asm", "INC", "INC", "INC", "INC");
+        f.action("handleStart"); f.action("handleStep");
+        @SuppressWarnings("unchecked") var selector = (ComboBox<Integer>) f.widget("cpuSelector", ComboBox.class);
+        for (int id : List.of(0, 1, 0)) {
+            selector.setValue(id); var cpu = f.simulator.snapshot().cpus().get(id);
+            assertEquals(cpu.nextInstructionPhysicalAddress().orElseThrow().toString(), f.widget("pcValueLabel", Label.class).getText());
+            assertEquals(cpu.program(), f.widget("programTable", TableView.class).getItems());
+        }
+        assertTrue(f.widget("pagingDetailsArea", TextArea.class).isVisible());
+        assertFalse(f.widget("pagingDetailsArea", TextArea.class).getText().isBlank());
+        assertTrue(f.widget("programLogicalColumn", TableColumn.class).isVisible());
+        assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleReset");
+        assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+        assertEquals("4", f.widget("pageSizeField", TextField.class).getText());
+        assertFalse(f.widget("pagingDetailsArea", TextArea.class).isVisible());
+        assertTrue(f.simulator.snapshot().paging().frames().isEmpty());
+    }); }
+    @Test void fixedControlsValidateExactIntegersAndLayoutsAndRenderPartitions() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var mode = (ComboBox<io.github.rajami1205.osimulator.model.memory.MemoryMode>) f.widget("memoryModeBox", ComboBox.class);
+        var equal = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_EQUAL;
+        var unequal = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_UNEQUAL;
+        f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", false);
+        mode.setValue(equal); f.enabled("userAllocationBox", false); f.enabled("partitionCountField", true);
+        f.widget("partitionCountField", TextField.class).setText("3"); // USER 116 no divisible.
+        f.action("handleInitialize"); f.closeAlerts();
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.widget("partitionCountField", TextField.class).setText("4"); f.action("handleInitialize");
+        assertEquals(4, f.simulator.snapshot().partitions().size());
+        f.enabled("memoryModeBox", false); f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", false);
+        assertEquals(f.simulator.snapshot().partitions(), f.widget("partitionTable", TableView.class).getItems());
+        f.load("fixed.asm", "INC", "INC"); f.action("handleStart");
+        assertTrue(f.simulator.snapshot().partitions().getFirst().occupied());
+        assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handlePause"); f.enabled("memoryModeBox", false); f.action("handleResume");
+        f.action("handleStep"); f.action("handleStep"); f.action("handleReset");
+        assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, mode.getValue());
+        f.enabled("userAllocationBox", true); assertFalse(f.widget("partitionTable", TableView.class).isVisible());
+        mode.setValue(unequal); f.enabled("partitionCountField", false); f.enabled("partitionCapacitiesField", true);
+        f.widget("partitionCapacitiesField", TextField.class).setText("32, 32, 52"); f.action("handleInitialize");
+        assertEquals(List.of(32, 32, 52), f.simulator.snapshot().partitions().stream().map(PartitionView::capacity).toList());
+        f.enabled("partitionCapacitiesField", false); f.action("handleReset");
+        assertTrue(f.widget("partitionCapacitiesField", TextField.class).getText().isEmpty());
+    }); }
+
+    @Test void partitionInputRejectsFractionsSignsOverflowAndEmptyElements() {
+        assertEquals(List.of(32, 48, 64), SimulatorController.parsePartitionCapacities("32, 48,64"));
+        assertEquals(Integer.MAX_VALUE, SimulatorController.parsePartitionInteger("2147483647"));
+        for (String invalid : List.of("0", "-1", "+1", "1.0", "1e2", "NaN", "2147483648", "")) {
+            assertThrows(IllegalArgumentException.class, () -> SimulatorController.parsePartitionInteger(invalid));
+        }
+        for (String invalid : List.of("32,", ",32", "32,,64", "", "32,-1")) {
+            assertThrows(IllegalArgumentException.class, () -> SimulatorController.parsePartitionCapacities(invalid));
+        }
+    }
+    @Test void allocationSelectorConfiguresSessionLocksAndResetsToFirstFit() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var selector =
+                (ComboBox<io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy>) f.widget("userAllocationBox", ComboBox.class);
+        var strategies = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.values();
+        assertEquals(List.of(strategies), selector.getItems());
+        assertEquals(strategies[0], selector.getValue());
+        assertEquals(List.of("First-Fit", "Next-Fit", "Best-Fit"),
+                selector.getItems().stream().map(selector.getConverter()::toString).toList());
+        for (var strategy : strategies) {
+            f.enabled("userAllocationBox", true); selector.setValue(strategy);
+            f.action("handleInitialize");
+            var frozen = f.simulator.snapshot();
+            assertEquals(strategy, frozen.configuration().orElseThrow().userAllocationStrategy());
+            f.enabled("userAllocationBox", false);
+            f.load("strategy.asm", "INC", "INC"); f.action("handleStart");
+            f.enabled("userAllocationBox", false);
+            f.action("handlePause"); f.enabled("userAllocationBox", false);
+            f.action("handleResume"); f.action("handleStep"); f.action("handleStep");
+            f.enabled("userAllocationBox", false);
+            f.action("handleReset"); f.enabled("userAllocationBox", true);
+            assertEquals(strategies[0], selector.getValue());
+            assertEquals(strategy, frozen.configuration().orElseThrow().userAllocationStrategy());
+        }
+    }); }
+    @Test void cpuCountAdjustsMemoryRangesAndResetRestoresDefaults() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+        for (int n : List.of(5, 2, 4, 1, 3)) {
+            count.setValue(n);
+            var main = f.widget("mainMemorySlider", Slider.class);
+            var kernel = f.widget("kernelMemorySlider", Slider.class);
+            assertEquals(Math.max(256, 140 * n + 1), main.getMin());
+            assertEquals(1024, main.getMax()); assertEquals(140 * n, kernel.getMin());
+            assertEquals(main.getValue() - 1, kernel.getMax());
+            assertTrue(kernel.getValue() >= kernel.getMin());
+            f.action("handleInitialize");
+            assertEquals(n, f.simulator.snapshot().cpus().size());
+            f.enabled("cpuCountBox", false);
+            f.action("handleReset");
+            assertEquals(1, count.getValue()); assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        }
+    }); }
+
+    @Test void schedulingPolicySelectorOffersOnlyImplementedPoliciesAndFreezesAfterInitialize() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        @SuppressWarnings("unchecked") var policy = (ComboBox<io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId>)
+                f.widget("schedulingPolicyBox", ComboBox.class);
+        var badge = f.widget("schedulingPolicyLabel", Label.class);
+        assertEquals(List.of(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.values()), policy.getItems());
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS, policy.getValue());
+        assertEquals("—", badge.getText());
+        f.enabled("schedulingPolicyBox", true);
+        policy.setValue(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.SPN);
+        f.action("handleInitialize");
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.SPN,
+                f.simulator.configuration().orElseThrow().schedulingPolicy());
+        f.enabled("schedulingPolicyBox", false);
+        assertEquals("SPN", badge.getText());
+        f.action("handleReset");
+        f.enabled("schedulingPolicyBox", true);
+        assertEquals(io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId.FCFS, policy.getValue());
+        assertEquals("—", badge.getText());
+    }); }
+
+    @Test void selectorDisplaysEntireLocalCpuAndManualMatchesAutomatic() throws Exception { onFx(() -> {
+        List<SimulatorSnapshot.CpuView> manual = null;
+        for (boolean automatic : List.of(false, true)) {
+            var f = new Fixture();
+            @SuppressWarnings("unchecked") var count = (ComboBox<Integer>) f.widget("cpuCountBox", ComboBox.class);
+            count.setValue(2); f.widget("mainMemorySlider", Slider.class).setValue(1024);
+            f.action("handleInitialize");
+            f.load("zero.asm", "MOV AX, 11", "LOAD AX");
+            f.load("one.asm", "MOV AX, 22", "LOAD AX");
+            f.load("next-zero.asm", "INC"); f.load("next-one.asm", "INC");
+            f.action("handleStart");
+            var timeline = (Timeline) get(f.controller, "automaticTimeline");
+            try {
+                if (automatic) {
+                    f.action("handleAutomatic");
+                    timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                } else f.action("handleStep");
+                var snapshot = f.simulator.snapshot();
+                assertEquals(1, snapshot.simulationTimeSeconds().orElseThrow());
+                if (automatic) assertEquals(manual, snapshot.cpus()); else manual = snapshot.cpus();
+                @SuppressWarnings("unchecked") var selector = (ComboBox<Integer>) f.widget("cpuSelector", ComboBox.class);
+                for (int id : List.of(1, 0, 1)) {
+                    selector.setValue(id);
+                    var cpu = snapshot.cpus().get(id);
+                    assertEquals(Integer.toString(cpu.cpu().ax()), f.widget("axValueLabel", Label.class).getText());
+                    assertEquals(cpu.nextInstructionPhysicalAddress().orElseThrow().toString(), f.widget("pcValueLabel", Label.class).getText());
+                    assertEquals(cpu.cpu().instructionRegister().orElseThrow(), f.widget("irValueLabel", Label.class).getText());
+                    assertEquals(cpu.currentInstruction().orElseThrow().semanticInstruction(), f.widget("currentInstructionLabel", Label.class).getText());
+                    assertEquals("1", f.widget("cpuTicksLabel", Label.class).getText());
+                    assertEquals(cpu.program(), f.widget("programTable", TableView.class).getItems());
+                    assertEquals(cpu.readyQueue().stream().map(pid -> "PID " + pid).toList(), f.widget("readyList", ListView.class).getItems());
+                    assertEquals(cpu.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList(), f.widget("suspendedList", ListView.class).getItems());
+                    assertTrue(f.widget("ownerValueLabel", Label.class).getText().contains("CPU " + id + ": PID " + (id + 1)));
+                    assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: " + cpu.cpu().programCounter()));
+                    assertEquals(snapshot, f.simulator.snapshot());
+                }
+            } finally { timeline.stop(); }
+        }
+    }); }
+
+    @Test void arrivalInputUsesExactLongParsingAndRejectsInvalidValues() {
+        assertEquals(0, SimulatorController.parseArrivalTime("0"));
+        assertEquals(Long.MAX_VALUE, SimulatorController.parseArrivalTime("9223372036854775807"));
+        for (String text : List.of("-1", "", "1.5", "NaN", "9223372036854775808")) {
+            assertTrue(assertThrows(IllegalArgumentException.class,
+                    () -> SimulatorController.parseArrivalTime(text)).getMessage().contains("Arrival Time"));
+        }
+    }
+
+    @Test void automaticFollowsFutureArrivalsAndStopsWhenOnlyCapacityRemains() throws Exception { onFx(() -> {
+        for (boolean capacity : List.of(false, true)) {
+            var f = new Fixture();
+            if (capacity) f.widget("kernelMemorySlider", Slider.class).setValue(255);
+            f.action("handleInitialize");
+            if (capacity) f.load("large.asm", "INC", "INC");
+            f.loadWith("future.asm", "2", "0", "INC");
+            assertEquals(2, f.simulator.jobs().getLast().arrivalTime());
+            f.action("handleStart"); f.enabled("programQueueTable", false); f.enabled("automaticButton", true);
+            f.action("handleAutomatic");
+            var timeline = (Timeline) get(f.controller, "automaticTimeline");
+            try {
+                assertEquals(javafx.animation.Animation.Status.RUNNING, timeline.getStatus());
+                assertTrue(f.widget("runtimeStatusLabel", Label.class).getText().contains("Next Arrival: 2 s"));
+                timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                f.action("handlePause"); f.action("handleResume");
+                assertEquals(javafx.animation.Animation.Status.RUNNING, timeline.getStatus());
+                timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                assertEquals(2, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                assertEquals(0, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(capacity ? javafx.animation.Animation.Status.STOPPED : javafx.animation.Animation.Status.RUNNING,
+                        timeline.getStatus());
+                if (!capacity) {
+                    timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+                    assertEquals(3, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+                    assertEquals(javafx.animation.Animation.Status.STOPPED, timeline.getStatus());
+                    f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
+                    assertTrue(f.widget("completedDetailArea", TextArea.class).getText().contains("Declared Burst (parsed instructions): 1"));
+                }
+                f.action("handleReset"); assertTrue(f.queue().getItems().isEmpty());
+            } finally { timeline.stop(); }
+        }
+    }); }
+
+    private static Fixture initializedWith(SchedulingPolicyId policy) throws Exception {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(policy);
+        f.action("handleInitialize");
+        return f;
+    }
+
+    private static void register(Fixture f, String... names) {
+        for (String name : names) f.programs.put(name, new AsmParser().parse(List.of("INC")));
+    }
+
+    @Test void multipleProgramsLoadInTableOrderWithTheirArrivalAndPriority() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm", "B.asm", "C.asm");
+        f.controller.addProgramFiles(List.of(Path.of("C.asm"), Path.of("A.asm"), Path.of("B.asm"), Path.of("A.asm")));
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertEquals(List.of("A.asm", "B.asm", "C.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        assertTrue(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+
+        f.queue().getSelectionModel().select(2); f.action("handleMoveProgramUp");
+        assertEquals(List.of("A.asm", "C.asm", "B.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        assertEquals(1, f.queue().getSelectionModel().getSelectedIndex());
+        var rows = f.queue().getItems();
+        rows.get(0).arrivalProperty().set("0"); rows.get(0).priorityProperty().set("2");
+        rows.get(1).arrivalProperty().set("2"); rows.get(1).priorityProperty().set("0");
+        rows.get(2).arrivalProperty().set("1"); rows.get(2).priorityProperty().set("9");
+        f.action("handleLoadProgram");
+
+        var jobs = f.simulator.jobs();
+        assertEquals(List.of("A.asm", "C.asm", "B.asm"), jobs.stream().map(Job::programName).toList());
+        assertEquals(List.of(0L, 2L, 1L), jobs.stream().map(Job::arrivalTime).toList());
+        assertEquals(List.of(2, 0, 9), jobs.stream().map(Job::priority).toList());
+        assertTrue(f.queue().getItems().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Submitted 3 programs"));
+    }); }
+
+    @Test void anInvalidRowPublishesNothingAndKeepsTheList() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm", "B.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        f.queue().getItems().get(1).priorityProperty().set("10");
+        f.action("handleLoadProgram");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("B.asm: Priority must be an integer from 0 to 9"));
+        assertEquals(2, f.queue().getItems().size());
+        f.closeAlerts();
+        f.queue().getItems().get(1).priorityProperty().set("4");
+        f.action("handleLoadProgram");
+        assertEquals(List.of(0, 4), f.simulator.jobs().stream().map(Job::priority).toList());
+    }); }
+
+    @Test void priorityColumnIsHiddenAndIgnoredOutsidePriorityPolicy() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertFalse(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+        f.queue().getItems().getFirst().priorityProperty().set("not a number");
+        f.action("handleLoadProgram");
+        assertEquals(1, f.simulator.jobs().size());
+        assertEquals(ProcessControlBlock.DEFAULT_PRIORITY, f.simulator.jobs().getFirst().priority());
+    }); }
+
+    @Test void queueButtonsFollowSelectionBordersAndLifecycle() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        register(f, "A.asm", "B.asm");
+        f.enabled("loadProgramButton", false); f.enabled("removeProgramButton", false);
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        f.enabled("loadProgramButton", true);
+        f.enabled("moveProgramUpButton", false); f.enabled("moveProgramDownButton", false);
+        f.queue().getSelectionModel().select(0);
+        f.enabled("moveProgramUpButton", false); f.enabled("moveProgramDownButton", true); f.enabled("removeProgramButton", true);
+        f.queue().getSelectionModel().select(1);
+        f.enabled("moveProgramUpButton", true); f.enabled("moveProgramDownButton", false);
+        f.action("handleRemoveProgram");
+        assertEquals(List.of("A.asm"), f.queue().getItems().stream().map(ProgramLoadRow::fileName).toList());
+        f.action("handleLoadProgram");
+        f.action("handleStart");
+        for (String name : List.of("programQueueTable", "browseProgramButton", "moveProgramUpButton",
+                "moveProgramDownButton", "removeProgramButton", "loadProgramButton")) f.enabled(name, false);
+    }); }
+
+    /** Escribe carácter por carácter enviando eventos de teclado reales al campo, como en la aplicación. */
+    private static void typeAtCaret(TextField field, String text) {
+        field.requestFocus();
+        for (char character : text.toCharArray()) {
+            // Pulso de layout entre teclas, como en la ventana real (TableCell actualiza su item en el layout).
+            field.getScene().getRoot().applyCss(); field.getScene().getRoot().layout();
+            String typed = String.valueOf(character);
+            for (var type : List.of(javafx.scene.input.KeyEvent.KEY_PRESSED, javafx.scene.input.KeyEvent.KEY_TYPED,
+                    javafx.scene.input.KeyEvent.KEY_RELEASED)) {
+                boolean keyTyped = type == javafx.scene.input.KeyEvent.KEY_TYPED;
+                javafx.event.Event.fireEvent(field, new javafx.scene.input.KeyEvent(type, keyTyped ? typed : "",
+                        keyTyped ? "" : typed, keyTyped ? javafx.scene.input.KeyCode.UNDEFINED
+                        : javafx.scene.input.KeyCode.getKeyCode(typed), false, false, false, false));
+            }
+        }
+    }
+
+    @Test void typingSeveralDigitsInAQueueCellKeepsTheirOrder() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.PRIORITY);
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        f.root.applyCss(); f.root.layout();
+        var fields = f.queue().lookupAll(".text-field").stream()
+                .filter(TextField.class::isInstance).map(TextField.class::cast)
+                .filter(field -> field.getParent() instanceof TableCell<?, ?> cell && !cell.isEmpty()).toList();
+        assertEquals(2, fields.size(), "Arrival and Priority cells of the single row");
+        TextField arrival = fields.getFirst();
+        arrival.clear();
+        typeAtCaret(arrival, "125");
+        f.root.applyCss(); f.root.layout();
+        assertEquals("125", arrival.getText());
+        assertEquals("125", f.queue().getItems().getFirst().arrivalProperty().get());
+    }); }
+
+    @Test void lotteryShowsQuantumSeedAndTicketsAndLoadsTicketsPerProgram() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(SchedulingPolicyId.LOTTERY);
+        assertTrue(f.widget("quantumRow", javafx.scene.layout.HBox.class).isVisible());
+        assertTrue(f.widget("lotteryRow", javafx.scene.layout.HBox.class).isVisible());
+        assertEquals("", f.widget("seedField", TextField.class).getText());
+        f.action("handleInitialize");
+        String resolvedSeed = f.widget("seedField", TextField.class).getText();
+        assertEquals(Long.toString(f.simulator.configuration().orElseThrow().lottery().seed().getAsLong()), resolvedSeed);
+
+        register(f, "A.asm", "B.asm");
+        f.programs.put("A.asm", new AsmParser().parse(List.of("INC", "INC", "INC")));
+        f.controller.addProgramFiles(List.of(Path.of("A.asm"), Path.of("B.asm")));
+        assertTrue(f.widget("programTicketsColumn", TableColumn.class).isVisible());
+        assertFalse(f.widget("programPriorityColumn", TableColumn.class).isVisible());
+        f.queue().getItems().get(0).ticketsProperty().set("101");
+        f.action("handleLoadProgram");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("A.asm: Tickets must be an integer from 1 to 100"));
+        f.closeAlerts();
+        f.queue().getItems().get(0).ticketsProperty().set("40");
+        f.action("handleLoadProgram");
+        assertEquals(List.of(40, 1), f.simulator.jobs().stream().map(Job::tickets).toList());
+
+        f.action("handleStart"); f.action("handleStep");
+        assertTrue(f.widget("ticketsColumn", TableColumn.class).isVisible());
+        @SuppressWarnings("unchecked") TableView<ProcessDetails> processes = f.widget("processTable", TableView.class);
+        processes.getSelectionModel().select(processes.getItems().stream().filter(p -> p.processId() == 1).findFirst().orElseThrow());
+        String detail = f.widget("pcbDetailArea", TextArea.class).getText();
+        assertTrue(detail.contains("Tickets: 40"), detail);
+        f.action("handleReset");
+        assertEquals("", f.widget("seedField", TextField.class).getText());
+    }); }
+
+    @Test void lotterySeedIsOptionalButMustBeAnInteger() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.widget("schedulingPolicyBox", ComboBox.class).setValue(SchedulingPolicyId.LOTTERY);
+        f.widget("seedField", TextField.class).setText("abc");
+        f.action("handleInitialize");
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("Seed must be an integer from 1 to 999999"));
+        f.closeAlerts();
+        f.widget("seedField", TextField.class).setText("-3");
+        f.action("handleInitialize");
+        assertEquals(SimulatorState.CONFIGURING, f.simulator.snapshot().simulatorState());
+        f.closeAlerts();
+        f.widget("seedField", TextField.class).setText(" 123 ");
+        f.action("handleInitialize");
+        assertEquals(123L, f.simulator.configuration().orElseThrow().lottery().seed().getAsLong());
+    }); }
+
+    @Test void ticketsAreHiddenAndIgnoredOutsideLottery() throws Exception { onFx(() -> {
+        var f = initializedWith(SchedulingPolicyId.FCFS);
+        assertFalse(f.widget("lotteryRow", javafx.scene.layout.HBox.class).isVisible());
+        register(f, "A.asm");
+        f.controller.addProgramFiles(List.of(Path.of("A.asm")));
+        assertFalse(f.widget("programTicketsColumn", TableColumn.class).isVisible());
+        f.queue().getItems().getFirst().ticketsProperty().set("not a number");
+        f.action("handleLoadProgram");
+        assertEquals(ProcessControlBlock.DEFAULT_TICKETS, f.simulator.jobs().getFirst().tickets());
+        assertFalse(f.widget("ticketsColumn", TableColumn.class).isVisible());
+    }); }
+
+    @Test void invalidArrivalDoesNotPublishProgramAndAllowsCorrection() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        f.loadWith("invalid-arrival.asm", "9223372036854775808", "0", "INC");
+        assertTrue(f.simulator.jobs().isEmpty());
+        assertTrue(f.widget("statusLabel", Label.class).getText().contains("invalid-arrival.asm: Arrival Time must be an integer"));
+        f.closeAlerts(); f.queue().getItems().getFirst().arrivalProperty().set("0"); f.action("handleLoadProgram");
+        assertEquals(1, f.simulator.jobs().size());
+        assertTrue(f.queue().getItems().isEmpty());
+    }); }
+    @Test void manualIdleAdvancesTimeWhileAutomaticStopsAndRefreshIsFree() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.widget("kernelMemorySlider",Slider.class).setValue(255);
+        f.action("handleInitialize");
+        assertTrue(f.widget("runtimeStatusLabel",Label.class).getText().contains("Simulation Time: 0 s"));
+        f.load("clock.asm","INC","INC"); f.action("handleStart"); f.action("handleAutomatic");
+        var timeline=(Timeline)get(f.controller,"automaticTimeline");
+        try {
+            assertEquals(javafx.animation.Animation.Status.STOPPED,timeline.getStatus());
+            timeline.getKeyFrames().getFirst().getOnFinished().handle(new javafx.event.ActionEvent());
+            assertEquals(0,f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            f.enabled("stepButton",true); f.enabled("automaticButton",false);
+            f.action("handleStep"); f.action("refresh");
+            assertEquals(1,f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            assertEquals(0,f.simulator.snapshot().cpuTicks().orElseThrow());
+            assertTrue(f.widget("runtimeStatusLabel",Label.class).getText().contains("Simulation Time: 1 s"));
+            f.action("handlePause"); f.enabled("stepButton",false); f.action("handleResume");
+            assertEquals(1,f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+            f.action("handleReset"); assertTrue(f.simulator.snapshot().simulationTimeSeconds().isEmpty());
+        } finally { timeline.stop(); }
+    }); }
+    @Test void cpuDisplayUsesTranslatedNextAddressAndClearlyLabelsLogicalHistory() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        f.action("handleInitialize");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        f.load("logical.asm", "ADD AX", "INC"); f.action("handleStart");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        f.action("handleStep");
+        assertEquals("141", f.widget("pcValueLabel", Label.class).getText());
+        assertTrue(f.widget("cpuOwnerLabel", Label.class).getText().contains("Logical PC: 4097"));
+        f.action("handleStep");
+        assertEquals("\u2014", f.widget("pcValueLabel", Label.class).getText());
+        assertTrue(DashboardDetails.context(f.simulator.snapshot().completedProcesses().getFirst().finalContext())
+                .contains("Logical PC: 4098"));
+        f.action("handleReset"); f.action("handleInitialize");
+        f.load("invalid.asm", "ADD AX", "INC"); f.action("handleStart"); f.action("handleStep");
+        var resources = (io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry) get(f.simulator, "processResources");
+        var resident = (io.github.rajami1205.osimulator.application.process.UserImageResidence.Resident)
+                resources.find(1).orElseThrow().residence();
+        ((io.github.rajami1205.osimulator.model.memory.MainMemory) get(f.simulator, "memory")).release(resident.allocation());
+        f.action("refresh");
+        assertEquals("ERROR", f.widget("pcValueLabel", Label.class).getText());
+        assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
+    }); }
     @BeforeAll static void toolkit() {
         assumeTrue(!System.getProperty("os.name").toLowerCase().contains("linux") || System.getenv("DISPLAY") != null);
         try { Platform.startup(() -> Platform.setImplicitExit(false)); } catch (IllegalStateException alreadyStarted) { }
@@ -62,22 +632,144 @@ class DashboardControllerTest {
         }
         void action(String method) throws Exception { call(controller, method); }
         <T> T widget(String name, Class<T> type) throws Exception { return type.cast(get(controller, name)); }
-        void load(String path, String... lines) throws Exception {
-            Path selected = Path.of(path); programs.put(selected.getFileName().toString(), new AsmParser().parse(List.of(lines)));
-            set(controller, "selectedProgramPath", selected); widget("programPathField", TextField.class).setText(path);
+        /** Carga un único archivo con Arrival 0 y Priority 0, como una carga individual sobre la lista vacía. */
+        void load(String path, String... lines) throws Exception { loadWith(path, "0", "0", lines); }
+        /** Deja sólo este archivo en la lista, escribe su Arrival/Priority y presiona Load Programs. */
+        void loadWith(String path, String arrival, String priority, String... lines) throws Exception {
+            queue().getItems().clear();
+            ProgramLoadRow row = add(path, lines);
+            row.arrivalProperty().set(arrival); row.priorityProperty().set(priority);
             action("refresh"); action("handleLoadProgram");
         }
+        /** Agrega un archivo a la lista (como Browse) y registra su contenido para el importador falso. */
+        ProgramLoadRow add(String path, String... lines) throws Exception {
+            Path selected = Path.of(path); programs.put(selected.getFileName().toString(), new AsmParser().parse(List.of(lines)));
+            controller.addProgramFiles(List.of(selected));
+            return queue().getItems().getLast();
+        }
+        @SuppressWarnings("unchecked")
+        TableView<ProgramLoadRow> queue() throws Exception { return widget("programQueueTable", TableView.class); }
         void enabled(String name, boolean expected) throws Exception { assertEquals(expected, !widget(name, Control.class).isDisabled(), name); }
         void closeAlerts() { for (var window : List.copyOf(Window.getWindows())) window.hide(); }
     }
+    private static void assertOperationalOrdering(Fixture f, SimulatorSnapshot snapshot) throws Exception {
+        var rows = new LinkedHashMap<String, List<?>>();
+        rows.put("memoryTable", snapshot.memory()); rows.put("storageTable", snapshot.storage());
+        rows.put("programTable", snapshot.program()); rows.put("jobsTable", snapshot.jobs());
+        rows.put("processTable", snapshot.processes()); rows.put("completedTable", snapshot.completedProcesses());
+        rows.put("partitionTable", snapshot.partitions());
+        int columns = 0;
+        // 7 tablas de snapshot + programQueueTable (entrada de la sección PROGRAM, no datos del snapshot)
+        // + 2 tablas de la pestaña Statistics (filas formateadas, verificadas en StatisticsTextTest).
+        assertEquals(10, Arrays.stream(SimulatorController.class.getDeclaredFields())
+                .filter(field -> field.getType() == TableView.class).count());
+        assertTrue(f.queue().getSortOrder().isEmpty());
+        for (var column : f.queue().getColumns()) assertFalse(column.isSortable(), column.getId());
+        for (String statisticsTable : List.of("statisticsTable", "runHistoryTable")) {
+            TableView<?> table = f.widget(statisticsTable, TableView.class);
+            assertTrue(table.getSortOrder().isEmpty(), statisticsTable);
+            for (var column : table.getColumns()) assertFalse(column.isSortable(), column.getId());
+        }
+        for (var entry : rows.entrySet()) {
+            TableView<?> table = f.widget(entry.getKey(), TableView.class);
+            assertEquals(entry.getValue(), table.getItems(), entry.getKey());
+            assertTrue(table.getSortOrder().isEmpty(), entry.getKey());
+            for (var column : table.getColumns()) {
+                assertFalse(column.isSortable(), column.getId());
+                columns++;
+            }
+        }
+        // +1 respecto de antes: columna Tickets de la tabla de procesos (visible sólo con LOTTERY).
+        assertEquals(32, columns);
+    }
+    @Test void operationalTablesKeepPhysicalOrderingAcrossRefreshAndReset() throws Exception { onFx(() -> {
+        var f = new Fixture(); assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleInitialize");
+        f.load("z-first.asm", "MOV AX, 2", "INC", "ADD AX"); f.load("a-second.asm", "INC");
+        f.action("handleStart"); f.action("handleStep");
+        var snapshot = f.simulator.snapshot();
+        assertEquals(List.of("z-first.asm", "a-second.asm"), snapshot.jobs().stream().map(j -> j.programName()).toList());
+        for (int i = 0; i < snapshot.memory().size(); i++) assertEquals(i, snapshot.memory().get(i).address());
+        for (int i = 0; i < snapshot.storage().size(); i++) assertEquals(i, snapshot.storage().get(i).address());
+        assertTrue(snapshot.memory().size() > 100); assertTrue(snapshot.storage().size() > 100);
+        int base = snapshot.process().orElseThrow().startAddress();
+        assertEquals(List.of(new ProgramEntry(base, "MOV AX, 2"), new ProgramEntry(base + 1, "INC"),
+                new ProgramEntry(base + 2, "ADD AX")), snapshot.program());
+        for (int refresh = 0; refresh < 3; refresh++) {
+            f.action("refresh"); assertOperationalOrdering(f, snapshot);
+        }
+        f.action("handleReset"); assertOperationalOrdering(f, f.simulator.snapshot());
+        f.action("handleInitialize"); assertOperationalOrdering(f, f.simulator.snapshot());
+    }); }
+    @Test void renderPreservesNonPidAdmissionAndCompletionOrderAndSelection() throws Exception { onFx(() -> {
+        var f = new Fixture(); f.action("handleInitialize");
+        var initial = f.simulator.snapshot();
+        var cpu = initial.cpu().orElseThrow();
+        var accounting = io.github.rajami1205.osimulator.model.process.ProcessAccounting.initial();
+        var times = io.github.rajami1205.osimulator.model.process.LogicalProcessTimes.admitted(0, 0);
+        // Read-model fixture: admission order is 9 then 2; completion history is 8 then 1.
+        var processes = List.of(9, 2).stream().map(pid -> new ProcessDetails(pid,
+                io.github.rajami1205.osimulator.model.process.ProcessState.READY, 0, Residency.RESIDENT,
+                Optional.of(32), 1, 0, cpu, List.of(), List.of(), 0, Optional.empty(), accounting, times)).toList();
+        var completed = List.of(new CompletedProcess(8, cpu, accounting, times, 1), new CompletedProcess(1, cpu, accounting, times, 1));
+        var snapshot = new SimulatorSnapshot(initial.simulatorState(), initial.cpu(), initial.currentInstruction(),
+                initial.process(), initial.program(), initial.memory(), initial.runtimeStatus(), initial.ownerPid(),
+                initial.configuration(), initial.jobs(), processes, initial.readyQueue(), initial.suspendedReadyQueue(),
+                completed, initial.storage(), initial.screenOutput(), initial.cpuTicks(), initial.nextInstructionPhysicalAddress(), initial.addressTranslationError());
+        var render = SimulatorController.class.getDeclaredMethod("render", SimulatorSnapshot.class); render.setAccessible(true);
+        render.invoke(f.controller, snapshot);
+        f.widget("processTable", TableView.class).getSelectionModel().select(1);
+        f.widget("completedTable", TableView.class).getSelectionModel().select(0);
+        for (int refresh = 0; refresh < 3; refresh++) {
+            render.invoke(f.controller, snapshot); assertOperationalOrdering(f, snapshot);
+            assertEquals(2, get(f.controller, "selectedProcessId"));
+            assertEquals(completed.getFirst(), f.widget("completedTable", TableView.class).getSelectionModel().getSelectedItem());
+        }
+    }); }
+    @Test void sessionMemoryRangesClampInitializeAndResetConsistently() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        var main = f.widget("mainMemorySlider", Slider.class);
+        var kernel = f.widget("kernelMemorySlider", Slider.class);
+        assertEquals(256, main.getMin()); assertEquals(1024, main.getMax());
+        assertEquals(140, kernel.getMin()); assertEquals(255, kernel.getMax());
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        assertEquals("256 – 1024", f.widget("mainMemoryRange", Label.class).getText());
+        assertEquals("140 – 255", f.widget("kernelMemoryRange", Label.class).getText());
+        main.setValue(128); kernel.setValue(32);
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        main.setValue(512); kernel.setValue(400);
+        assertEquals(511, kernel.getMax());
+        main.setValue(256);
+        assertEquals(255, kernel.getMax()); assertEquals(255, kernel.getValue());
+        assertEquals("255", f.widget("kernelMemoryValue", Label.class).getText());
+        main.setValue(512); kernel.setValue(300);
+        f.widget("secondaryStorageSlider", Slider.class).setValue(1024);
+        f.widget("virtualMemorySlider", Slider.class).setValue(128);
+        f.action("handleInitialize");
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(512, 300), 1024, 128),
+                f.simulator.snapshot().configuration().orElseThrow());
+        assertTrue(main.isDisabled()); assertTrue(kernel.isDisabled());
+        f.action("handleReset");
+        assertEquals(256, main.getValue()); assertEquals(140, kernel.getValue());
+        assertEquals(255, kernel.getMax());
+        assertEquals("256", f.widget("mainMemoryValue", Label.class).getText());
+        assertEquals("140", f.widget("kernelMemoryValue", Label.class).getText());
+        assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
+        assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
+        assertFalse(main.isDisabled()); assertFalse(kernel.isDisabled());
+        f.action("handleInitialize");
+        assertEquals(SimulatorConfiguration.defaults(), f.simulator.snapshot().configuration().orElseThrow());
+    }); }
     @Test void fxmlInjectionHandlersAndRepeatedBasenameLoading() throws Exception { onFx(() -> {
         var f = new Fixture();
         for (var field : SimulatorController.class.getDeclaredFields()) if (field.isAnnotationPresent(FXML.class)) {
             field.setAccessible(true); var value = field.get(f.controller); assertNotNull(value, field.getName());
             if (value instanceof Button button) assertNotNull(button.getOnAction(), field.getName());
         }
-        assertNotNull(f.widget("keyboardField", TextField.class).getOnAction());
-        f.enabled("initializeButton", true); f.enabled("browseProgramButton", false); f.enabled("keyboardSendButton", false);
+        String fxml = new String(SimulatorController.class.getResourceAsStream("SimulatorView.fxml").readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(fxml.contains("keyboard")); assertFalse(fxml.contains("pendingList"));
+        assertNotNull(f.widget("screenList",ListView.class)); assertNotNull(f.widget("ioStatusLabel",Label.class));
+        f.enabled("initializeButton", true); f.enabled("browseProgramButton", false);
         f.action("handleInitialize"); f.enabled("browseProgramButton", true); f.enabled("loadProgramButton", false);
         f.load("folder/one.asm", "INC"); f.load("other/two.asm", "ADD AX");
         assertEquals(List.of("one.asm", "two.asm"), f.simulator.snapshot().jobs().stream().map(j -> j.programName()).toList());
@@ -87,38 +779,30 @@ class DashboardControllerTest {
         f.load("broken.asm"); assertTrue(f.widget("statusLabel", Label.class).getText().contains("Invalid ASM")); f.closeAlerts();
         f.enabled("startButton", true); f.action("handleStart"); f.enabled("loadProgramButton", false); f.enabled("browseProgramButton", false);
         f.enabled("stepButton", true); f.enabled("pauseButton", true); f.enabled("resumeButton", false);
-        f.action("handlePause"); f.enabled("stepButton", false); f.enabled("resumeButton", true); f.enabled("keyboardSendButton", true);
+        f.action("handlePause"); f.enabled("stepButton", false); f.enabled("resumeButton", true);
         f.action("handleResume"); f.action("handleAutomatic"); f.enabled("stepButton", false); f.enabled("automaticButton", false);
         f.action("handleReset");
         assertEquals(256, f.widget("mainMemorySlider", Slider.class).getValue());
-        assertEquals(32, f.widget("kernelMemorySlider", Slider.class).getValue());
+        assertEquals(140, f.widget("kernelMemorySlider", Slider.class).getValue());
         assertEquals(512, f.widget("secondaryStorageSlider", Slider.class).getValue());
         assertEquals(64, f.widget("virtualMemorySlider", Slider.class).getValue());
-        assertTrue(f.widget("programPathField", TextField.class).getText().isEmpty());
+        assertTrue(f.queue().getItems().isEmpty());
     }); }
-    @Test void keyboardValidationPausedCompletionAndScreenReplacement() throws Exception { onFx(() -> {
+    @Test void screenOutputAndRefreshRemainSessionOwned() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
-        var input = f.widget("keyboardField", TextField.class);
-        for (String invalid : List.of("", "text", "256", "-1", "99999999999")) {
-            input.setText(invalid); f.action("handleKeyboardSend"); assertEquals(invalid, input.getText()); f.closeAlerts();
-        }
-        input.setText("255"); f.action("handleKeyboardSend"); assertEquals("", input.getText());
-        f.load("io.asm", "INT 09H", "INT 10H", "INT 09H", "INC"); f.action("handleStart");
-        for (int i = 0; i < 6; i++) f.action("handleStep");
-        assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
-        f.action("refresh"); f.action("refresh"); assertEquals(List.of("255"), f.widget("screenList", ListView.class).getItems());
-        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
-        f.enabled("stepButton", false); f.enabled("automaticButton", false); f.enabled("pauseButton", true);
-        f.action("handlePause"); input.setText("0"); f.action("handleKeyboardSend");
-        assertEquals(1, f.simulator.snapshot().pendingKeyboardRequests().size()); assertEquals(SimulatorState.PAUSED, f.simulator.snapshot().simulatorState());
-        f.action("handleResume"); f.action("handleStep");
+        f.load("io.asm","MOV DX, 255","INT 10H","INC"); f.action("handleStart");
+        f.action("handleStep"); f.action("handleStep");
+        assertEquals(List.of("255"),f.widget("screenList",ListView.class).getItems());
+        f.action("refresh"); f.action("refresh");
+        assertEquals(List.of("255"),f.widget("screenList",ListView.class).getItems());
+        f.action("handlePause"); f.action("handleResume"); f.action("handleStep");
         assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
-        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton", "keyboardSendButton")) f.enabled(name, false);
-        f.enabled("resetButton", true); assertEquals("Idle", f.widget("ownerValueLabel", Label.class).getText());
+        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton")) f.enabled(name, false);
+        f.enabled("resetButton", true); assertEquals("CPU 0: Idle", f.widget("ownerValueLabel", Label.class).getText());
         assertEquals("—", f.widget("currentInstructionLabel", Label.class).getText());
         f.action("handleReset");
         for (String name : List.of("jobsTable", "processTable", "memoryTable", "storageTable", "completedTable", "programTable")) assertTrue(f.widget(name, TableView.class).getItems().isEmpty());
-        for (String name : List.of("readyList", "suspendedList", "pendingList", "screenList")) assertTrue(f.widget(name, ListView.class).getItems().isEmpty());
+        for (String name : List.of("readyList", "suspendedList", "screenList")) assertTrue(f.widget(name, ListView.class).getItems().isEmpty());
     }); }
     @Test void selectionFollowsPidThroughRefreshSuspensionAndCompletion() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize"); f.load("one.asm", "INC"); f.load("two.asm", "INC");
@@ -136,14 +820,19 @@ class DashboardControllerTest {
         f.action("handleReset"); assertNull(get(f.controller, "selectedProcessId"));
     }); }
     @Test void matrixIncludesCapacityAndSafeErrorAndRowStylesAreRecycled() throws Exception { onFx(() -> {
-        var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(128); f.widget("kernelMemorySlider", Slider.class).setValue(127);
+        var f = new Fixture(); f.widget("mainMemorySlider", Slider.class).setValue(256); f.widget("kernelMemorySlider", Slider.class).setValue(255);
         f.action("handleInitialize"); f.load("large.asm", "INC", "INC"); f.action("handleStart");
         assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_CAPACITY), f.simulator.snapshot().runtimeStatus());
-        f.enabled("stepButton", false); f.enabled("pauseButton", true); f.enabled("keyboardSendButton", true);
-        var queue = get(f.simulator, "readyQueue"); queue.getClass().getMethod("enqueue", int.class).invoke(queue, 999);
+        f.enabled("stepButton", true); f.enabled("pauseButton", true);
+        f.action("handleStep"); assertEquals(1, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
+        assertEquals(0, f.simulator.snapshot().cpuTicks().orElseThrow());
+        // Inyección de corrupción: la API de colas locales ya rechaza PID desconocidos.
+        var queue = get(f.simulator, "readyQueue");
+        @SuppressWarnings("unchecked") var corrupted = (Set<Integer>) get(queue, "processes");
+        corrupted.add(999);
         f.action("refresh"); assertEquals(SimulatorState.ERROR, f.simulator.snapshot().simulatorState());
         f.closeAlerts(); f.action("refresh"); assertTrue(Window.getWindows().isEmpty());
-        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton", "keyboardSendButton")) f.enabled(name, false);
+        for (String name : List.of("initializeButton", "browseProgramButton", "loadProgramButton", "startButton", "stepButton", "automaticButton", "pauseButton", "resumeButton")) f.enabled(name, false);
         f.enabled("resetButton", true);
         @SuppressWarnings("unchecked") TableView<MemoryEntry> memory = (TableView<MemoryEntry>) get(f.controller, "memoryTable");
         var row = memory.getRowFactory().call(memory);
@@ -170,7 +859,7 @@ class DashboardControllerTest {
         assertTrue(initial.contains("CPU ID: —")); assertTrue(initial.contains("Start Time: —"));
         assertTrue(initial.contains("CPU Ticks: 0")); assertTrue(initial.contains("Finish Time: —"));
         f.action("handleInitialize"); assertEquals("0", f.widget("cpuTicksLabel", Label.class).getText());
-        f.load("ticks.asm", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
+        f.load("ticks.asm", "ADD AX", "ADD AX", "ADD AX"); f.action("handleStart"); f.action("handleAutomatic");
         var timeline = (Timeline)get(f.controller, "automaticTimeline");
         try {
             assertEquals(1000, timeline.getKeyFrames().getFirst().getTime().toMillis());
@@ -179,8 +868,10 @@ class DashboardControllerTest {
                 if (tick > 1) f.realClock.advance(java.time.Duration.ofSeconds(1));
                 callback.handle(new javafx.event.ActionEvent());
                 assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(tick, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
                 assertEquals(Integer.toString(tick), f.widget("cpuTicksLabel", Label.class).getText());
                 f.action("refresh"); assertEquals(tick, f.simulator.snapshot().cpuTicks().orElseThrow());
+                assertEquals(tick, f.simulator.snapshot().simulationTimeSeconds().orElseThrow());
             }
             var completed = f.simulator.snapshot().completedProcesses().getFirst();
             @SuppressWarnings("unchecked") TableColumn<CompletedProcess,String> column = (TableColumn<CompletedProcess,String>) get(f.controller,"completedCpuTicksColumn");
@@ -198,15 +889,13 @@ class DashboardControllerTest {
             f.action("handleReset"); assertEquals("—", f.widget("cpuTicksLabel",Label.class).getText());
         } finally { timeline.stop(); }
     }); }
-    @Test void completedDurationIncludesKeyboardWaitingAndPauseWithoutExtraTicks() throws Exception { onFx(() -> {
+    @Test void completedDurationIncludesPauseWithoutExtraTicks() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
-        f.load("waiting.asm", "INT 09H"); f.action("handleStart");
-        f.action("handleStep"); f.action("handleStep");
-        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), f.simulator.snapshot().runtimeStatus());
+        f.load("paused.asm", "INC", "INC"); f.action("handleStart");
+        f.action("handleStep");
         f.action("handlePause"); f.realClock.advance(Duration.ofSeconds(420));
-        f.widget("keyboardField", TextField.class).setText("42"); f.action("handleKeyboardSend");
         assertTrue(f.simulator.snapshot().completedProcesses().isEmpty());
-        f.action("handleResume");
+        f.action("handleResume"); f.action("handleStep");
         assertEquals(SimulatorState.FINISHED, f.simulator.snapshot().simulatorState());
         assertEquals(2, f.simulator.snapshot().cpuTicks().orElseThrow());
         f.widget("completedTable", TableView.class).getSelectionModel().selectFirst();
@@ -217,7 +906,7 @@ class DashboardControllerTest {
     @Test void layoutAtBothSupportedSizesAndLongValues() throws Exception { onFx(() -> {
         var f = new Fixture(); f.action("handleInitialize");
         f.load("example.asm", "MOV DX, \"a-long-program-name-with-readable-text.txt\"", "MOV AL, \"A long text value that must not widen the CPU pane\"", "ADD AX");
-        f.load("input.asm", "INT 09H", "INC"); f.action("handleStart"); f.action("handleStep"); f.action("handleStep");
+        f.load("other.asm", "INC", "INC"); f.action("handleStart"); f.action("handleStep"); f.action("handleStep");
         for (int[] size : List.of(new int[]{1100,650}, new int[]{1280,720})) {
             f.root.resize(size[0], size[1]); f.root.applyCss(); f.root.layout();
             assertEquals(size[0], f.root.getWidth()); assertEquals(size[1], f.root.getHeight());
@@ -236,19 +925,19 @@ class DashboardControllerTest {
         var f = new Fixture(); f.action("handleInitialize");
         f.load("done.asm", "INC");
         f.load("long-program-name.asm", "MOV DX, \"long-file-name-for-visible-tooltip.txt\"", "MOV AL, \"long text with preserved content\"", "ADD AX");
-        f.load("input.asm", "INT 09H", "INC");
+        f.load("other.asm", "INC", "INC");
         f.action("handleStart"); f.action("handleStep"); f.action("handleStep"); f.action("handleStep");
         f.root.applyCss(); f.root.layout();
         var panes = f.root.lookupAll(".tab-pane").stream().map(TabPane.class::cast).toList();
         var upper = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Processes"))).findFirst().orElseThrow();
         var lower = panes.stream().filter(pane -> pane.getTabs().stream().anyMatch(tab -> tab.getText().equals("Completed"))).findFirst().orElseThrow();
         assertEquals(List.of("Workload", "Processes"), upper.getTabs().stream().map(Tab::getText).toList());
-        assertEquals(List.of("Main Memory", "Secondary Storage", "Active Program", "I/O", "Completed"), lower.getTabs().stream().map(Tab::getText).toList());
+        assertEquals(List.of("Main Memory", "Secondary Storage", "Active Program", "I/O", "Completed", "Statistics"), lower.getTabs().stream().map(Tab::getText).toList());
         for (int[] size : List.of(new int[]{1100,650},new int[]{1280,720},new int[]{1920,1080})) {
             f.root.resize(size[0],size[1]);
             for (String lifecycle : List.of("CONFIGURING","INITIALIZED","PROGRAM_LOADED","RUNNING","PAUSED","FINISHED","ERROR")) {
                 f.widget("simulatorStateLabel",Label.class).setText(lifecycle);
-                for (String runtime : List.of("RUNNABLE","WAITING_FOR_INPUT","WAITING_FOR_CAPACITY")) {
+                for (String runtime : List.of("RUNNABLE","WAITING_FOR_CAPACITY")) {
                     f.widget("runtimeStatusLabel",Label.class).setText(runtime);
                     f.widget("cpuTicksLabel",Label.class).setText("1234567890");
                     f.root.applyCss(); f.root.layout();

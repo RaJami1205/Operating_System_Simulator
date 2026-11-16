@@ -1,16 +1,124 @@
 package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @Test void mlfqValidatesAllLevelsAndFreezesInput() {
+        assertThrows(NullPointerException.class, () -> new MlfqConfiguration(null));
+        assertThrows(NullPointerException.class, () -> new MlfqConfiguration(Arrays.asList(1, null)));
+        for (var invalid : List.of(List.<Integer>of(), List.of(1), List.of(1,2,3,4,5,6),
+                List.of(0,1), List.of(-1,2), List.of(1,11)))
+            assertThrows(IllegalArgumentException.class, () -> new MlfqConfiguration(invalid));
+        var source = new ArrayList<>(List.of(10, 10, 5, 2, 1));
+        var config = new MlfqConfiguration(source);
+        source.clear();
+        assertEquals(List.of(10, 10, 5, 2, 1), config.levelQuanta());
+        assertThrows(UnsupportedOperationException.class, () -> config.levelQuanta().clear());
+    }
+
+    @Test void lotteryCopyPreservesCustomMlfq() {
+        var d = SimulatorConfiguration.defaults();
+        assertEquals(List.of(1, 2, 4), d.mlfq().levelQuanta());
+        var custom = new MlfqConfiguration(List.of(5, 3));
+        var config = new SimulatorConfiguration(d.mainMemory(), d.secondaryStoragePositions(), d.virtualMemoryPositions(),
+                d.cpuCount(), d.schedulingPolicy(), d.userAllocationStrategy(), d.memoryMode(), d.fixedPartitions(),
+                d.paging(), d.quantum(), d.priority(), d.lottery(), custom);
+        assertEquals(custom, config.withLottery(LotteryConfiguration.withSeed(7)).mlfq());
+    }
+
+    @Test void fixedModesValidateBeforeInitializationAndAllHistoricalConstructorsStayDynamic() {
+        var geometry = new MemoryConfiguration(256, 140);
+        for (var legacy : java.util.List.of(new SimulatorConfiguration(geometry, 512, 64),
+                new SimulatorConfiguration(geometry, 512, 64, 1),
+                new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS),
+                new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS,
+                        io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT))) {
+            assertEquals(io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, legacy.memoryMode());
+            assertTrue(legacy.fixedPartitions().isEmpty()); assertEquals(SimulatorConfiguration.defaults(), legacy);
+        }
+        var equal = io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration.equal(4);
+        var mode = io.github.rajami1205.osimulator.model.memory.MemoryMode.FIXED_EQUAL;
+        var strategy = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.BEST_FIT;
+        var fixed = new SimulatorConfiguration(geometry, 512, 64, 1, SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.of(equal));
+        assertEquals(equal, fixed.fixedPartitions().orElseThrow()); assertEquals(strategy, fixed.userAllocationStrategy());
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(geometry, 512, 64, 1,
+                SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(geometry, 512, 64, 1,
+                SchedulingPolicyId.FCFS, strategy, mode, java.util.Optional.of(io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration.equal(3))));
+    }
+    @Test void historicalConstructorsDefaultToFirstFitAndExplicitStrategiesAreImmutable() {
+        var memory = new MemoryConfiguration(256, 140);
+        var first = io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT;
+        for (var historical : java.util.List.of(new SimulatorConfiguration(memory, 512, 64),
+                new SimulatorConfiguration(memory, 512, 64, 1),
+                new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS))) {
+            assertEquals(first, historical.userAllocationStrategy());
+            assertEquals(new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, first), historical);
+        }
+        for (var strategy : io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.values()) {
+            var configuration = new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, strategy);
+            assertEquals(strategy, configuration.userAllocationStrategy());
+        }
+        assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS, null));
+    }
+    @Test void historicalConstructorsAndExplicitPolicyAreEquivalent() {
+        var memory = new MemoryConfiguration(256, 140);
+        var explicit = new SimulatorConfiguration(memory, 512, 64, 1, SchedulingPolicyId.FCFS);
+        assertEquals(SimulatorConfiguration.defaults(), explicit);
+        assertEquals(new SimulatorConfiguration(memory, 512, 64), explicit);
+        assertEquals(new SimulatorConfiguration(memory, 512, 64, 1), explicit);
+        assertEquals(SchedulingPolicyId.FCFS, explicit.schedulingPolicy());
+        assertThrows(NullPointerException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1, null));
+        assertEquals(java.util.List.of(SchedulingPolicyId.FCFS, SchedulingPolicyId.SPN, SchedulingPolicyId.SRT,
+                        SchedulingPolicyId.RR, SchedulingPolicyId.HRRN, SchedulingPolicyId.PRIORITY,
+                        SchedulingPolicyId.LOTTERY, SchedulingPolicyId.GUARANTEED, SchedulingPolicyId.SELFISH_RR,
+                        SchedulingPolicyId.MLFQ),
+                java.util.List.of(SchedulingPolicyId.values()));
+        assertThrows(IllegalArgumentException.class, () -> SchedulingPolicyId.valueOf("EDF"));
+        assertEquals(2, explicit.quantum());
+        for (int invalid : new int[] {0, 11, -1}) {
+            assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(memory, 512, 64, 1,
+                    SchedulingPolicyId.RR, io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy.FIRST_FIT,
+                    io.github.rajami1205.osimulator.model.memory.MemoryMode.DYNAMIC, java.util.Optional.empty(),
+                    java.util.Optional.empty(), invalid));
+        }
+    }
+    @ParameterizedTest
+    @CsvSource({"1,5,140", "2,10,280", "3,15,420", "4,20,560", "5,25,700"})
+    void validatesCapacityAndExactKernelBoundary(int cpus, int capacity, int kernel) {
+        int main = Math.max(256, kernel + 1);
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(main, kernel), 512, 64, cpus);
+        assertEquals(cpus, configuration.cpuCount());
+        assertEquals(capacity, configuration.maxProcesses());
+        assertEquals(kernel, configuration.minimumKernelMemory());
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(main, kernel - 1), 512, 64, cpus));
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(kernel, kernel), 512, 64, cpus));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, 6})
+    void rejectsInvalidCpuCount(int cpus) {
+        assertThrows(IllegalArgumentException.class, () -> new SimulatorConfiguration(
+                new MemoryConfiguration(1024, 700), 512, 64, cpus));
+    }
+
     @Test
     void exposesApprovedDefaults() {
         var configuration = SimulatorConfiguration.defaults();
-        assertEquals(new MemoryConfiguration(256, 32), configuration.mainMemory());
+        assertEquals(1, configuration.cpuCount());
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64, 1), configuration);
+        assertEquals(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64), configuration);
+        assertEquals(new MemoryConfiguration(256, 140), configuration.mainMemory());
         assertEquals(512, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());
     }
@@ -27,7 +135,7 @@ class SimulatorConfigurationTest {
 
     @Test
     void acceptsMinimumStorageAndVirtualMemory() {
-        var configuration = new SimulatorConfiguration(new MemoryConfiguration(128, 32), 128, 64);
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(256, 140), 128, 64);
         assertEquals(128, configuration.secondaryStoragePositions());
         assertEquals(64, configuration.virtualMemoryPositions());
     }
@@ -42,6 +150,20 @@ class SimulatorConfigurationTest {
             "128,128", "128,129", "512,512", "512,513"})
     void rejectsInvalidCapacities(int secondary, int virtual) {
         assertThrows(IllegalArgumentException.class,
-                () -> new SimulatorConfiguration(new MemoryConfiguration(256, 32), secondary, virtual));
+                () -> new SimulatorConfiguration(new MemoryConfiguration(256, 140), secondary, virtual));
     }
+    @ParameterizedTest
+    @CsvSource({"255,140", "256,139", "256,256", "256,257"})
+    void rejectsInvalidSessionMemory(int main,int kernel) {
+        assertThrows(IllegalArgumentException.class, () ->
+                new SimulatorConfiguration(new MemoryConfiguration(main,kernel),512,64));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"256,140", "257,140", "256,141", "256,255", "512,140", "512,300"})
+    void acceptsSessionBoundariesWithoutExtraUserMinimum(int main,int kernel) {
+        var configuration=new SimulatorConfiguration(new MemoryConfiguration(main,kernel),512,64);
+        assertEquals(main-kernel,configuration.mainMemory().userPositions());
+    }
+
 }

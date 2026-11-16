@@ -22,6 +22,7 @@ public sealed interface AdmissionResult {
     enum Reason {
         RESIDENT_CAPACITY_REACHED,
         INSUFFICIENT_USER_MEMORY,
+        INSUFFICIENT_BACKING_STORE,
         INSUFFICIENT_KERNEL_MEMORY
     }
 }

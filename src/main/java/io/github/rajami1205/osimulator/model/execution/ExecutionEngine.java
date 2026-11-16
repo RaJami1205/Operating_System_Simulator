@@ -15,7 +15,9 @@ import io.github.rajami1205.osimulator.model.instruction.SwapInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.ImmediateOperand;
 import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
 import io.github.rajami1205.osimulator.model.memory.MemoryAllocation;
+import io.github.rajami1205.osimulator.model.memory.ResidentImage;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -26,7 +28,6 @@ import io.github.rajami1205.osimulator.model.cpu.ServiceRegister;
 import io.github.rajami1205.osimulator.model.cpu.TextRegisterValue;
 import io.github.rajami1205.osimulator.model.instruction.operand.TextOperand;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.cpu.RegisterName;
 import io.github.rajami1205.osimulator.model.instruction.InterruptInstruction;
 import io.github.rajami1205.osimulator.model.instruction.operand.InterruptVector;
@@ -43,111 +44,92 @@ import io.github.rajami1205.osimulator.model.process.exception.ProcessStackOverf
 import io.github.rajami1205.osimulator.model.process.exception.ProcessStackUnderflowException;
 
 /**
- * Aplica instrucciones semánticas sobre el CPU activo. Consume un tick por llamada y publica efectos sólo
- * al completar el peso; no conserva estado de sesión propio.
+ * Aplica instrucciones semánticas sobre el CPU activo. Completa una instrucción por llamada;
+ * no conserva estado de sesión propio.
  */
 public final class ExecutionEngine {
+    /** Compatibilidad con callers que conservan el handle USER contiguo histórico. */
+    public TickResult executeTick(SimulatedFileSystem filesystem, ScreenDevice screen, MainMemory memory,
+            CpuRegisters<Instruction> cpu, ProcessControlBlock pcb, MemoryAllocation allocation) {
+        return executeTick(filesystem, screen, memory, cpu, pcb, (ResidentImage) allocation);
+    }
     /** Resultado interno de los efectos finales de una instrucción, previo a publicar PC y estado. */
-    private sealed interface SemanticOutcome permits Continue, Terminate, WaitForKeyboard { }
+    private sealed interface SemanticOutcome permits Continue, Terminate { }
     /** Próximo PC lógico que debe publicarse tras completar la instrucción. */
     private record Continue(int nextLogicalPc) implements SemanticOutcome { }
     /** Finalización explícita sin avanzar al siguiente PC. */
     private record Terminate() implements SemanticOutcome { }
-    /** INT09 sin entrada disponible; solicita BLOCKED sin avanzar PC todavía. */
-    private record WaitForKeyboard() implements SemanticOutcome { }
 
     /**
-     * Consume como máximo un tick usando la allocation USER canónica; aplica efectos sólo al completar el
-     * peso y detecta PC terminal antes del fetch.
+     * Completa una instrucción usando la imagen USER canónica; detecta PC terminal antes del fetch.
      */
     public TickResult executeTick(
             SimulatedFileSystem filesystem,
             ScreenDevice screen,
-            KeyboardDevice keyboard,
             MainMemory memory,
             CpuRegisters<Instruction> cpu,
             ProcessControlBlock pcb,
-            ExecutionProgress progress,
-            MemoryAllocation allocation
+            ResidentImage allocation
     ) {
         Objects.requireNonNull(memory, "memory must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
         Objects.requireNonNull(pcb, "pcb must not be null");
-        Objects.requireNonNull(progress, "progress must not be null");
 
         Objects.requireNonNull(filesystem, "filesystem must not be null");
         Objects.requireNonNull(screen, "screen must not be null");
-        Objects.requireNonNull(keyboard, "keyboard must not be null");
         validateExecutableState(pcb);
-        progress.validateContext(memory, cpu, pcb, allocation);
 
         int currentProgramCounter = pcb.programCounter();
-        int instructionCount = pcb.instructionCount();
-        if (currentProgramCounter == instructionCount) {
-            cpu.setProgramCounter(instructionCount);
-            pcb.changeState(ProcessState.TERMINATED);
-            return TickResult.PROGRAM_FINISHED;
-        }
-
         try {
-            memory.validateUserAllocation(allocation, pcb.memoryBounds());
+            memory.validateImage(allocation, pcb);
         } catch (RuntimeException exception) {
             throw new ExecutionEngineException("Invalid process allocation", exception);
         }
-        if (progress.isIdle()) {
-            Instruction instruction;
-            try {
-                instruction = memory.readInstruction(allocation, currentProgramCounter);
-            } catch (MemoryProtectionException exception) {
-                throw new ExecutionEngineException("Unable to fetch process instruction", exception);
-            }
-
+        if (pcb.hasTerminalProgramCounter()) {
             cpu.setProgramCounter(currentProgramCounter);
-            cpu.loadInstructionRegister(instruction);
-            if (pcb.state() == ProcessState.READY) {
-                pcb.changeState(ProcessState.RUNNING);
-            }
-            progress.begin(memory, cpu, pcb, instruction, allocation);
+            pcb.changeState(ProcessState.TERMINATED);
+            return TickResult.PROGRAM_FINISHED;
         }
-
-        if (!progress.consumeTick()) return TickResult.IN_PROGRESS;
-        SemanticOutcome outcome;
+        if (!pcb.hasExecutableProgramCounter()) {
+            throw new ExecutionEngineException("Logical PC outside executable code");
+        }
+        Instruction instruction;
         try {
-            outcome = executeInstruction(progress.instruction().orElseThrow(), cpu, pcb, currentProgramCounter, screen, keyboard, filesystem);
-        } catch (RuntimeException | Error failure) {
-            progress.clear();
-            throw failure;
+            var resolution = memory.resolveInstructionAddress(allocation, pcb.logicalCodeRange(),
+                    new LogicalAddress(currentProgramCounter));
+            if (resolution instanceof io.github.rajami1205.osimulator.model.memory.AddressResolution.PageNotPresent) return TickResult.PAGE_FAULT;
+            var physical = ((io.github.rajami1205.osimulator.model.memory.AddressResolution.Present) resolution).address();
+            instruction = memory.fetchInstruction(allocation, physical.value());
+        } catch (MemoryProtectionException exception) {
+            throw new ExecutionEngineException("Unable to fetch process instruction", exception);
         }
+        cpu.setProgramCounter(currentProgramCounter);
+        cpu.loadInstructionRegister(instruction);
+        if (pcb.state() == ProcessState.READY) pcb.changeState(ProcessState.RUNNING);
+        var outcome = executeInstruction(instruction, cpu, pcb, currentProgramCounter, screen, filesystem);
 
         return switch (outcome) {
-            case Continue next -> publishNextPc(cpu, pcb, progress, next.nextLogicalPc());
+            case Continue next -> publishNextPc(cpu, pcb, next.nextLogicalPc());
             case Terminate ignored -> {
-                progress.clear();
                 pcb.changeState(ProcessState.TERMINATED);
                 yield TickResult.PROGRAM_FINISHED;
-            }
-            case WaitForKeyboard ignored -> {
-                progress.clear();
-                pcb.changeState(ProcessState.BLOCKED);
-                yield TickResult.WAITING_FOR_INPUT;
             }
         };
     }
 
-    /** Publica el próximo PC en CPU/PCB, limpia progreso y marca TERMINATED si alcanza Limit. */
+    /** Publica el próximo PC en CPU/PCB y marca TERMINATED si alcanza Limit. */
     private TickResult publishNextPc(CpuRegisters<Instruction> cpu, ProcessControlBlock pcb,
-            ExecutionProgress progress, int nextProgramCounter) {
+            int nextProgramCounter) {
         cpu.setProgramCounter(nextProgramCounter);
         pcb.setProgramCounter(nextProgramCounter);
-        progress.clear();
-        if (nextProgramCounter == pcb.instructionCount()) {
+        if (pcb.hasTerminalProgramCounter()) {
             pcb.changeState(ProcessState.TERMINATED);
             return TickResult.PROGRAM_FINISHED;
         }
         return TickResult.INSTRUCTION_COMPLETED;
     }
 
-    /** Rechaza estados distintos de READY/RUNNING antes de consumir progreso. */
+    /** Rechaza estados distintos de READY/RUNNING antes de ejecutar. */
     private void validateExecutableState(ProcessControlBlock pcb) {
         if (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.RUNNING) {
             throw new ExecutionEngineException(
@@ -166,7 +148,6 @@ public final class ExecutionEngine {
             ProcessControlBlock pcb,
             int currentPc,
             ScreenDevice screen,
-            KeyboardDevice keyboard,
             SimulatedFileSystem filesystem
     ) {
         try {
@@ -176,22 +157,17 @@ public final class ExecutionEngine {
                         case FILESYSTEM -> filesystem.execute(cpu, pcb);
                         case TERMINATE -> { return new Terminate(); }
                         case SCREEN -> screen.append(cpu.readRegister(RegisterName.DX));
-                        case KEYBOARD -> {
-                            var input = keyboard.poll();
-                            if (input.isEmpty()) return new WaitForKeyboard();
-                            cpu.writeRegister(RegisterName.DX, input.getAsInt());
-                        }
                     }
                 }
                 case CmpInstruction cmp -> cpu.writeConditionFlags(new ConditionFlags(
                         cpu.readRegister(cmp.left()) == cpu.readRegister(cmp.right()),
                         cpu.conditionFlags().overflow()));
-                case JmpInstruction jump -> { return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount())); }
+                case JmpInstruction jump -> { return new Continue(branchTarget(currentPc, jump.displacement(), pcb)); }
                 case JeInstruction jump -> {
-                    if (cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
+                    if (cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb));
                 }
                 case JneInstruction jump -> {
-                    if (!cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb.instructionCount()));
+                    if (!cpu.conditionFlags().equal()) return new Continue(branchTarget(currentPc, jump.displacement(), pcb));
                 }
                 case PushInstruction push -> pcb.stack().push(cpu.readRegister(push.source()));
                 case PopInstruction pop -> cpu.writeRegister(pop.destination(), pcb.stack().pop());
@@ -259,12 +235,12 @@ public final class ExecutionEngine {
     }
 
     /**
-     * Calcula PC + 1 + displacement con aritmética amplia y rechaza destinos fuera de
-     * 0..instructionCount-1.
+     * Calcula PC + displacement con aritmética amplia y rechaza destinos fuera de
+     * [logicalBase, logicalEndExclusive).
      */
-    private int branchTarget(int currentPc, BranchDisplacement displacement, int instructionCount) {
-        long target = (long) currentPc + 1L + displacement.value();
-        if (target < 0 || target >= instructionCount) {
+    private int branchTarget(int currentPc, BranchDisplacement displacement, ProcessControlBlock pcb) {
+        long target = (long) currentPc + displacement.value();
+        if (target < pcb.logicalCodeRange().base().value() || target >= pcb.logicalCodeRange().endExclusive().value()) {
             throw new ExecutionEngineException("Branch target outside process instructions: " + target);
         }
         return (int) target;

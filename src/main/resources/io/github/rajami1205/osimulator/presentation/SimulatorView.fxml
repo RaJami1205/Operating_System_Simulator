@@ -15,6 +15,10 @@
                 <Label fx:id="cpuTicksLabel" text="—" styleClass="state-value"/>
             </VBox>
             <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
+                <Label text="POLICY" styleClass="state-caption"/>
+                <Label fx:id="schedulingPolicyLabel" text="—" styleClass="state-value"/>
+            </VBox>
+            <VBox alignment="CENTER_RIGHT" minWidth="-Infinity" styleClass="state-badge">
                 <Label text="LIFECYCLE" styleClass="state-caption"/>
                 <Label fx:id="simulatorStateLabel" text="CONFIGURING" styleClass="state-value"/>
             </VBox>
@@ -34,14 +38,62 @@
                 <VBox spacing="4.0" maxWidth="Infinity" maxHeight="Infinity" styleClass="dashboard-panel">
                     <Label text="SIMULATOR CONTROL" styleClass="panel-header"/>
                     <VBox spacing="10.0" styleClass="control-section">
+                        <Label text="CPU SCHEDULING" styleClass="section-title"/>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="CPU count" styleClass="configuration-label"/>
+                            <ComboBox fx:id="cpuCountBox" prefWidth="80"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="Algorithm" styleClass="configuration-label"/>
+                            <ComboBox fx:id="schedulingPolicyBox" prefWidth="130"/>
+                        </HBox>
+                        <HBox fx:id="mlfqRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Quanta por nivel" styleClass="configuration-label"/>
+                            <TextField fx:id="mlfqField" prefWidth="100"/>
+                        </HBox>
+                        <HBox fx:id="quantumRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Quantum" styleClass="configuration-label"/>
+                            <TextField fx:id="quantumField" prefWidth="60"/>
+                        </HBox>
+                        <VBox fx:id="priorityRow" spacing="6" visible="false" managed="false">
+                            <CheckBox fx:id="preemptiveBox" text="Preemptive" styleClass="configuration-label"/>
+                            <HBox alignment="CENTER_LEFT" spacing="8">
+                                <Label text="Aging every N ticks (0 = off)" wrapText="true" styleClass="configuration-label"/>
+                                <TextField fx:id="agingField" prefWidth="60"/>
+                            </HBox>
+                        </VBox>
+                        <HBox fx:id="lotteryRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Seed (blank = random)" wrapText="true" styleClass="configuration-label"/>
+                            <TextField fx:id="seedField" prefWidth="110"/>
+                        </HBox>
+                    </VBox>
+                    <VBox spacing="10.0" styleClass="control-section">
                         <Label text="MEMORY CONFIGURATION" styleClass="section-title"/>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="Memory mode" styleClass="configuration-label"/>
+                            <ComboBox fx:id="memoryModeBox" prefWidth="130"/>
+                        </HBox>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <Label text="USER allocation" styleClass="configuration-label"/>
+                            <ComboBox fx:id="userAllocationBox" prefWidth="120"/>
+                        </HBox>
+                        <VBox spacing="4">
+                            <Label text="Equal: partition count" styleClass="configuration-label"/>
+                            <TextField fx:id="partitionCountField" text="1" styleClass="input-field"/>
+                            <Label text="Unequal: capacities (comma-separated)" wrapText="true" styleClass="configuration-label"/>
+                            <TextField fx:id="partitionCapacitiesField" promptText="32,48,64,112" styleClass="input-field"/>
+                            <Label text="Paging: page size (cells)" styleClass="configuration-label"/>
+                            <TextField fx:id="pageSizeField" text="4" styleClass="input-field"/>
+                            <Label text="Paging load mode" styleClass="configuration-label"/>
+                            <ComboBox fx:id="pagingLoadModeBox" maxWidth="Infinity"/>
+                        </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
                             <HBox alignment="CENTER_LEFT" spacing="8.0">
                                 <Label text="Main Memory" styleClass="configuration-label"/>
                                 <Region HBox.hgrow="ALWAYS"/>
                                 <Label fx:id="mainMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="mainMemorySlider" min="128" max="1024" value="256" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Slider fx:id="mainMemorySlider" min="256" max="1024" value="256" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
                             <Label fx:id="mainMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
@@ -50,7 +102,7 @@
                                 <Region HBox.hgrow="ALWAYS"/>
                                 <Label fx:id="kernelMemoryValue" styleClass="configuration-value"/>
                             </HBox>
-                            <Slider fx:id="kernelMemorySlider" min="32" max="255" value="32" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
+                            <Slider fx:id="kernelMemorySlider" min="140" max="255" value="140" blockIncrement="1" majorTickUnit="1" minorTickCount="0" snapToTicks="true" styleClass="configuration-slider"/>
                             <Label fx:id="kernelMemoryRange" styleClass="configuration-range"/>
                         </VBox>
                         <VBox spacing="5.0" styleClass="configuration-setting">
@@ -75,16 +127,22 @@
                     </VBox>
                     <VBox spacing="4.0" styleClass="control-section">
                         <Label text="PROGRAM" styleClass="section-title"/>
-                        <GridPane hgap="6.0" vgap="4.0">
-                            <columnConstraints>
-                                <ColumnConstraints percentWidth="38.0"/>
-                                <ColumnConstraints percentWidth="62.0" hgrow="ALWAYS"/>
-                            </columnConstraints>
-                            <Label text="Program file (.asm)" wrapText="true" styleClass="section-label"/>
-                            <TextField fx:id="programPathField" editable="false" maxWidth="Infinity" promptText="No program selected" styleClass="input-field" GridPane.columnIndex="1"/>
-                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" styleClass="secondary-button" GridPane.rowIndex="1"/>
-                            <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Program" disable="true" maxWidth="Infinity" styleClass="secondary-button" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-                        </GridPane>
+                        <HBox spacing="4.0">
+                            <Button fx:id="browseProgramButton" onAction="#handleBrowseProgram" text="Browse" maxWidth="Infinity" HBox.hgrow="ALWAYS" styleClass="secondary-button"/>
+                            <Button fx:id="moveProgramUpButton" onAction="#handleMoveProgramUp" text="▲" disable="true" styleClass="secondary-button"/>
+                            <Button fx:id="moveProgramDownButton" onAction="#handleMoveProgramDown" text="▼" disable="true" styleClass="secondary-button"/>
+                            <Button fx:id="removeProgramButton" onAction="#handleRemoveProgram" text="Remove" disable="true" styleClass="secondary-button"/>
+                        </HBox>
+                        <TableView fx:id="programQueueTable" editable="true" prefHeight="150.0" minHeight="90.0">
+                            <placeholder><Label text="Browse to add .asm programs" styleClass="section-label"/></placeholder>
+                            <columns>
+                                <TableColumn fx:id="programFileColumn" text="File" prefWidth="110" sortable="false"/>
+                                <TableColumn fx:id="programArrivalColumn" text="Arrival" prefWidth="60" sortable="false"/>
+                                <TableColumn fx:id="programPriorityColumn" text="Priority" prefWidth="60" sortable="false" visible="false"/>
+                                <TableColumn fx:id="programTicketsColumn" text="Tickets" prefWidth="60" sortable="false" visible="false"/>
+                            </columns>
+                        </TableView>
+                        <Button fx:id="loadProgramButton" onAction="#handleLoadProgram" text="Load Programs" disable="true" maxWidth="Infinity" styleClass="secondary-button"/>
                     </VBox>
                     <VBox spacing="4.0" styleClass="control-section">
                         <Label text="EXECUTION" styleClass="section-title"/>
@@ -108,6 +166,10 @@
                     <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="dashboard-scroll" minWidth="200">
                         <VBox spacing="8" styleClass="dashboard-panel">
                             <Label text="CPU / CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>
+                            <HBox alignment="CENTER_LEFT" spacing="8">
+                                <Label text="View CPU" styleClass="section-label"/>
+                                <ComboBox fx:id="cpuSelector" prefWidth="80"/>
+                            </HBox>
                             <Label fx:id="cpuOwnerLabel" text="Idle" styleClass="helper-text"/>
                         <VBox spacing="5" styleClass="instruction-panel">
                                 <Label text="CURRENT INSTRUCTION" wrapText="true" styleClass="panel-header"/>
@@ -124,7 +186,7 @@
                                     <ColumnConstraints percentWidth="50"/>
                                 </columnConstraints>
                                 <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="0" GridPane.rowIndex="0">
-                                    <Label text="PC" minWidth="-Infinity" styleClass="metric-label"/>
+                                    <Label text="Physical PC" minWidth="-Infinity" styleClass="metric-label"/>
                                     <Label fx:id="pcValueLabel" text="—" maxWidth="Infinity" alignment="CENTER_RIGHT" HBox.hgrow="ALWAYS" styleClass="technical-value"/>
                                 </HBox>
                                 <HBox alignment="CENTER_LEFT" spacing="6" styleClass="metric-card, cpu-metric" GridPane.columnIndex="1" GridPane.rowIndex="0">
@@ -178,20 +240,19 @@
                                             <Label text="No jobs" styleClass="empty-state"/>
                                         </placeholder>
                                         <columns>
-                                            <TableColumn fx:id="jobIdColumn" text="Job ID" prefWidth="70"/>
-                                            <TableColumn fx:id="jobNameColumn" text="Program" prefWidth="220"/>
-                                            <TableColumn fx:id="jobStateColumn" text="State" prefWidth="100"/>
+                                            <TableColumn fx:id="jobIdColumn" editable="false" text="Job ID" prefWidth="70"/>
+                                            <TableColumn fx:id="jobNameColumn" editable="false" text="Program" prefWidth="220"/>
+                                            <TableColumn fx:id="jobStateColumn" editable="false" text="State" prefWidth="100"/>
+                                            <TableColumn fx:id="jobArrivalColumn" text="Arrival (s)" prefWidth="110"/>
                                         </columns>
                                     </TableView>
                                     <GridPane hgap="6" vgap="4">
                                         <columnConstraints>
-                                            <ColumnConstraints percentWidth="33.3"/>
-                                            <ColumnConstraints percentWidth="33.3"/>
-                                            <ColumnConstraints percentWidth="33.4"/>
+                                            <ColumnConstraints percentWidth="50"/>
+                                            <ColumnConstraints percentWidth="50"/>
                                         </columnConstraints>
                                         <Label text="Ready" styleClass="section-title"/>
                                         <Label text="Suspended Ready" wrapText="true" styleClass="section-title" GridPane.columnIndex="1"/>
-                                        <Label text="Keyboard Pending" wrapText="true" styleClass="section-title" GridPane.columnIndex="2"/>
                                         <ListView fx:id="readyList" minHeight="74" prefHeight="92" GridPane.rowIndex="1">
                                             <placeholder>
                                                 <Label text="No ready processes" wrapText="true" styleClass="empty-state"/>
@@ -200,11 +261,6 @@
                                         <ListView fx:id="suspendedList" minHeight="74" prefHeight="92" GridPane.columnIndex="1" GridPane.rowIndex="1">
                                             <placeholder>
                                                 <Label text="No suspended ready processes" wrapText="true" styleClass="empty-state"/>
-                                            </placeholder>
-                                        </ListView>
-                                        <ListView fx:id="pendingList" minHeight="74" prefHeight="92" GridPane.columnIndex="2" GridPane.rowIndex="1">
-                                            <placeholder>
-                                                <Label text="No pending input" wrapText="true" styleClass="empty-state"/>
                                             </placeholder>
                                         </ListView>
                                     </GridPane>
@@ -219,11 +275,12 @@
                                         <columns>
                                             <TableColumn fx:id="pidColumn" text="PID" prefWidth="55"/>
                                             <TableColumn fx:id="processStateColumn" text="State" prefWidth="145"/>
-                                            <TableColumn fx:id="processPcColumn" text="PC" prefWidth="55"/>
+                                            <TableColumn fx:id="processPcColumn" text="Logical PC" prefWidth="85"/>
                                             <TableColumn fx:id="residencyColumn" text="Residency" prefWidth="100"/>
                                             <TableColumn fx:id="baseColumn" text="Base" prefWidth="60"/>
                                             <TableColumn fx:id="limitColumn" text="Limit" prefWidth="60"/>
                                             <TableColumn fx:id="priorityColumn" text="Priority" prefWidth="65"/>
+                                            <TableColumn fx:id="ticketsColumn" text="Tickets" prefWidth="65" visible="false"/>
                                         </columns>
                                     </TableView>
                                     <TextArea fx:id="pcbDetailArea" editable="false" wrapText="true" text="Select a process" styleClass="detail-area"/>
@@ -235,6 +292,19 @@
                 <TabPane tabClosingPolicy="UNAVAILABLE" styleClass="dashboard-tabs" minHeight="130">
                     <tabs>
                         <Tab text="Main Memory">
+                            <VBox spacing="4">
+                            <TextArea fx:id="pagingDetailsArea" editable="false" prefHeight="130" minHeight="60" visible="false" managed="false" styleClass="detail-area"/>
+                            <TableView fx:id="partitionTable" prefHeight="120" minHeight="60" visible="false" managed="false">
+                                <columns>
+                                    <TableColumn fx:id="partitionIdColumn" text="Partition" prefWidth="75"/>
+                                    <TableColumn fx:id="partitionBaseColumn" text="Base" prefWidth="70"/>
+                                    <TableColumn fx:id="partitionCapacityColumn" text="Capacity" prefWidth="80"/>
+                                    <TableColumn fx:id="partitionOccupiedColumn" text="State" prefWidth="90"/>
+                                    <TableColumn fx:id="partitionOwnerColumn" text="PID" prefWidth="65"/>
+                                    <TableColumn fx:id="partitionUsedColumn" text="Used" prefWidth="70"/>
+                                    <TableColumn fx:id="partitionFragmentationColumn" text="Internal fragmentation" prefWidth="155"/>
+                                </columns>
+                            </TableView>
                             <TableView fx:id="memoryTable" minHeight="70.0" VBox.vgrow="ALWAYS">
                                 <placeholder>
                                     <Label text="Memory not initialized" styleClass="empty-state"/>
@@ -245,6 +315,7 @@
                                     <TableColumn fx:id="memoryContentColumn" text="Content" prefWidth="600"/>
                                 </columns>
                             </TableView>
+                            </VBox>
                         </Tab>
                         <Tab text="Secondary Storage">
                             <TableView fx:id="storageTable" minHeight="70.0" VBox.vgrow="ALWAYS">
@@ -265,6 +336,7 @@
                                 </placeholder>
                                 <columns>
                                     <TableColumn fx:id="programAddressColumn" text="Address" prefWidth="100"/>
+                                    <TableColumn fx:id="programLogicalColumn" text="Logical address" prefWidth="115" visible="false"/>
                                     <TableColumn fx:id="programInstructionColumn" text="Instruction" prefWidth="550"/>
                                 </columns>
                             </TableView>
@@ -273,18 +345,12 @@
                             <HBox spacing="12" styleClass="dashboard-panel">
                                 <VBox spacing="6" HBox.hgrow="ALWAYS">
                                     <Label text="SIMULATED SCREEN" styleClass="panel-header"/>
+                                    <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
                                     <ListView fx:id="screenList" VBox.vgrow="ALWAYS">
                                         <placeholder>
                                             <Label text="No output" styleClass="empty-state"/>
                                         </placeholder>
                                     </ListView>
-                                </VBox>
-                                <VBox spacing="8" prefWidth="260" minWidth="200">
-                                    <Label text="SIMULATED KEYBOARD" styleClass="panel-header"/>
-                                    <TextField fx:id="keyboardField" promptText="0..255" onAction="#handleKeyboardSend" styleClass="input-field"/>
-                                    <Button fx:id="keyboardSendButton" text="Send" onAction="#handleKeyboardSend" styleClass="primary-button"/>
-                                    <Label text="FIFO input. While paused, values remain queued until Resume." wrapText="true" minHeight="-Infinity" maxWidth="Infinity" styleClass="helper-text"/>
-                                    <Label fx:id="ioStatusLabel" wrapText="true" styleClass="status-feedback"/>
                                 </VBox>
                             </HBox>
                         </Tab>
@@ -296,13 +362,64 @@
                                     </placeholder>
                                     <columns>
                                         <TableColumn fx:id="completedPidColumn" text="PID" prefWidth="70"/>
-                                        <TableColumn fx:id="completedPcColumn" text="Final PC" prefWidth="90"/>
+                                        <TableColumn fx:id="completedPcColumn" text="Final Logical PC" prefWidth="115"/>
                                         <TableColumn fx:id="completedCpuTicksColumn" text="CPU Ticks" prefWidth="95"/>
                                         <TableColumn fx:id="completedIrColumn" text="Final IR" prefWidth="400"/>
                                     </columns>
                                 </TableView>
                                 <TextArea fx:id="completedDetailArea" editable="false" wrapText="true" text="Select a completed process" styleClass="detail-area"/>
                             </SplitPane>
+                        </Tab>
+                        <Tab text="Statistics">
+                            <VBox spacing="6">
+                                <HBox alignment="CENTER_LEFT" spacing="8">
+                                    <Label text="Execution" styleClass="configuration-label"/>
+                                    <ComboBox fx:id="statisticsRunBox" prefWidth="280"/>
+                                </HBox>
+                                <!-- Divisor vertical arrastrable: arriba la ejecución elegida, abajo los resultados acumulados. -->
+                                <SplitPane orientation="VERTICAL" dividerPositions="0.55" styleClass="dashboard-split" VBox.vgrow="ALWAYS">
+                                <SplitPane dividerPositions="0.6" styleClass="dashboard-split" minHeight="60">
+                                    <TableView fx:id="statisticsTable" minHeight="60.0">
+                                        <placeholder>
+                                            <Label text="No completed processes yet" styleClass="empty-state"/>
+                                        </placeholder>
+                                        <columns>
+                                            <TableColumn fx:id="statisticsPidColumn" text="PID" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsCpuColumn" text="CPU" prefWidth="50"/>
+                                            <TableColumn fx:id="statisticsArrivalColumn" text="Arrival" prefWidth="65"/>
+                                            <TableColumn fx:id="statisticsServiceColumn" text="Ts" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsStartColumn" text="Start" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsFinishColumn" text="Finish" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsTurnaroundColumn" text="Tr" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsRatioColumn" text="Tr/Ts" prefWidth="60"/>
+                                            <TableColumn fx:id="statisticsResponseColumn" text="Response" prefWidth="75"/>
+                                            <TableColumn fx:id="statisticsWaitColumn" text="Wait" prefWidth="55"/>
+                                            <TableColumn fx:id="statisticsExecutedColumn" text="Executed" prefWidth="75"/>
+                                        </columns>
+                                    </TableView>
+                                    <TextArea fx:id="statisticsSummaryArea" editable="false" wrapText="false" text="No statistics yet" styleClass="detail-area"/>
+                                </SplitPane>
+                                <VBox spacing="4" minHeight="80">
+                                <Label text="ACCUMULATED RESULTS (finished executions)" styleClass="panel-header"/>
+                                <TableView fx:id="runHistoryTable" prefHeight="200" minHeight="60" VBox.vgrow="ALWAYS">
+                                    <placeholder>
+                                        <Label text="No finished executions yet" styleClass="empty-state"/>
+                                    </placeholder>
+                                    <columns>
+                                        <TableColumn fx:id="historyRunColumn" text="Run" prefWidth="55"/>
+                                        <TableColumn fx:id="historyAlgorithmColumn" text="Algorithm" prefWidth="110"/>
+                                        <TableColumn fx:id="historyCpusColumn" text="CPUs" prefWidth="55"/>
+                                        <TableColumn fx:id="historyStartColumn" text="Start" prefWidth="55"/>
+                                        <TableColumn fx:id="historyEndColumn" text="End" prefWidth="55"/>
+                                        <TableColumn fx:id="historyIdleColumn" text="Idle" prefWidth="55"/>
+                                        <TableColumn fx:id="historyTurnaroundColumn" text="Average Tr" prefWidth="85"/>
+                                        <TableColumn fx:id="historyRatioColumn" text="Average Tr/Ts" prefWidth="100"/>
+                                        <TableColumn fx:id="historyUtilizationColumn" text="Utilization" prefWidth="85"/>
+                                    </columns>
+                                </TableView>
+                                </VBox>
+                                </SplitPane>
+                            </VBox>
                         </Tab>
                     </tabs>
                 </TabPane>

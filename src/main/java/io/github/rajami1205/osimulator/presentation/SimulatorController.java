@@ -1,22 +1,38 @@
 package io.github.rajami1205.osimulator.presentation;
 
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
 import io.github.rajami1205.osimulator.application.simulator.*;
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
+import java.util.ArrayList;
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
+import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
+import io.github.rajami1205.osimulator.model.memory.UserAllocationStrategy;
+import io.github.rajami1205.osimulator.model.memory.MemoryMode;
+import io.github.rajami1205.osimulator.model.memory.FixedPartitionConfiguration;
+import io.github.rajami1205.osimulator.model.memory.PagingConfiguration;
+import java.util.Optional;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.job.Job;
+import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageException;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.List;
 import javafx.animation.*;
 import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
 import static io.github.rajami1205.osimulator.presentation.DashboardTables.*;
@@ -31,10 +47,39 @@ public final class SimulatorController {
     private final ProgramImporter programImporter;
     private Timeline automaticTimeline;
     private boolean automaticMode;
-    private Path selectedProgramPath;
     private Integer selectedProcessId;
     private SimulatorSnapshot view;
     private boolean renderingSelection;
+    private boolean renderingCpuSelection;
+    @FXML private ComboBox<Integer> cpuCountBox;
+    @FXML private ComboBox<SchedulingPolicyId> schedulingPolicyBox;
+    @FXML private Label schedulingPolicyLabel;
+    @FXML private ComboBox<UserAllocationStrategy> userAllocationBox;
+    @FXML private ComboBox<MemoryMode> memoryModeBox;
+    @FXML private TextField partitionCountField;
+    @FXML private TextField partitionCapacitiesField;
+    @FXML private TextField pageSizeField;
+    @FXML private HBox mlfqRow;
+    @FXML private TextField mlfqField;
+    @FXML private HBox quantumRow;
+    @FXML private TextField quantumField;
+    @FXML private VBox priorityRow;
+    @FXML private HBox lotteryRow;
+    @FXML private TextField seedField;
+    @FXML private CheckBox preemptiveBox;
+    @FXML private TextField agingField;
+    @FXML private ComboBox<io.github.rajami1205.osimulator.model.memory.PagingLoadMode> pagingLoadModeBox;
+    @FXML private TextArea pagingDetailsArea;
+    @FXML private TableColumn<ProgramEntry, String> programLogicalColumn;
+    @FXML private TableView<PartitionView> partitionTable;
+    @FXML private TableColumn<PartitionView, String> partitionIdColumn;
+    @FXML private TableColumn<PartitionView, String> partitionBaseColumn;
+    @FXML private TableColumn<PartitionView, String> partitionCapacityColumn;
+    @FXML private TableColumn<PartitionView, String> partitionOccupiedColumn;
+    @FXML private TableColumn<PartitionView, String> partitionOwnerColumn;
+    @FXML private TableColumn<PartitionView, String> partitionUsedColumn;
+    @FXML private TableColumn<PartitionView, String> partitionFragmentationColumn;
+    @FXML private ComboBox<Integer> cpuSelector;
     private String feedback = "";
     @FXML private Label cpuTicksLabel;
     @FXML private TableColumn<CompletedProcess, String> completedCpuTicksColumn;
@@ -74,20 +119,51 @@ public final class SimulatorController {
     @FXML private Button initializeButton;
     @FXML private Button browseProgramButton;
     @FXML private Button loadProgramButton;
+    @FXML private Button moveProgramUpButton;
+    @FXML private Button moveProgramDownButton;
+    @FXML private Button removeProgramButton;
+    @FXML private TableView<ProgramLoadRow> programQueueTable;
+    @FXML private TableColumn<ProgramLoadRow, String> programFileColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programArrivalColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programPriorityColumn;
+    @FXML private TableColumn<ProgramLoadRow, String> programTicketsColumn;
     @FXML private Button startButton;
     @FXML private Button stepButton;
     @FXML private Button automaticButton;
     @FXML private Button pauseButton;
     @FXML private Button resumeButton;
     @FXML private Button resetButton;
-    @FXML private Button keyboardSendButton;
-    @FXML private TextField programPathField;
-    @FXML private TextField keyboardField;
     @FXML private TextArea pcbDetailArea;
     @FXML private TextArea completedDetailArea;
+    @FXML private ComboBox<String> statisticsRunBox;
+    @FXML private TableView<StatisticsText.ProcessRow> statisticsTable;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsPidColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsCpuColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsArrivalColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsServiceColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsStartColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsFinishColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsTurnaroundColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsRatioColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsResponseColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsWaitColumn;
+    @FXML private TableColumn<StatisticsText.ProcessRow, String> statisticsExecutedColumn;
+    @FXML private TextArea statisticsSummaryArea;
+    @FXML private TableView<StatisticsText.HistoryRow> runHistoryTable;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyRunColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyAlgorithmColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyCpusColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyStartColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyEndColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyIdleColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyTurnaroundColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyRatioColumn;
+    @FXML private TableColumn<StatisticsText.HistoryRow, String> historyUtilizationColumn;
+    /** Evita que el refresco del selector de ejecución dispare su propio listener. */
+    private boolean renderingStatisticsSelection;
+    private static final String CURRENT_RUN_LABEL = "Current execution";
     @FXML private ListView<String> readyList;
     @FXML private ListView<String> suspendedList;
-    @FXML private ListView<String> pendingList;
     @FXML private ListView<String> screenList;
     @FXML private TableView<ProgramEntry> programTable;
     @FXML private TableColumn<ProgramEntry, String> programAddressColumn;
@@ -104,6 +180,7 @@ public final class SimulatorController {
     @FXML private TableColumn<Job, String> jobIdColumn;
     @FXML private TableColumn<Job, String> jobNameColumn;
     @FXML private TableColumn<Job, String> jobStateColumn;
+    @FXML private TableColumn<Job, String> jobArrivalColumn;
     @FXML private TableView<ProcessDetails> processTable;
     @FXML private TableColumn<ProcessDetails, String> pidColumn;
     @FXML private TableColumn<ProcessDetails, String> processStateColumn;
@@ -112,6 +189,7 @@ public final class SimulatorController {
     @FXML private TableColumn<ProcessDetails, String> baseColumn;
     @FXML private TableColumn<ProcessDetails, String> limitColumn;
     @FXML private TableColumn<ProcessDetails, String> priorityColumn;
+    @FXML private TableColumn<ProcessDetails, String> ticketsColumn;
     @FXML private TableView<CompletedProcess> completedTable;
     @FXML private TableColumn<CompletedProcess, String> completedPidColumn;
     @FXML private TableColumn<CompletedProcess, String> completedPcColumn;
@@ -127,6 +205,58 @@ public final class SimulatorController {
      * por callback y sólo regula el ritmo visual.
      */
     @FXML private void initialize() {
+        pagingLoadModeBox.getItems().setAll(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.values());
+        pagingLoadModeBox.setValue(io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT);
+        memoryModeBox.getItems().setAll(MemoryMode.values());
+        memoryModeBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(MemoryMode mode) {
+                if (mode == null) return "";
+                return switch (mode) {
+                    case DYNAMIC -> "Dynamic";
+                    case FIXED_EQUAL -> "Fixed Equal";
+                    case FIXED_UNEQUAL -> "Fixed Unequal";
+                    case PAGING -> "Paging";
+                };
+            }
+            @Override public MemoryMode fromString(String value) {
+                throw new UnsupportedOperationException("Memory mode selector is not editable");
+            }
+        });
+        memoryModeBox.valueProperty().addListener((o, before, after) -> updateMemoryModeControls());
+        userAllocationBox.getItems().setAll(UserAllocationStrategy.values());
+        userAllocationBox.setConverter(new javafx.util.StringConverter<>() {
+            @Override public String toString(UserAllocationStrategy strategy) {
+                if (strategy == null) return "";
+                return switch (strategy) {
+                    case FIRST_FIT -> "First-Fit";
+                    case NEXT_FIT -> "Next-Fit";
+                    case BEST_FIT -> "Best-Fit";
+                };
+            }
+            @Override public UserAllocationStrategy fromString(String text) {
+                throw new UnsupportedOperationException("Allocation selector is not editable");
+            }
+        });
+        // Sólo políticas implementadas: cada feature que extiende el enum aparece aquí sin otra lista.
+        schedulingPolicyBox.getItems().setAll(SchedulingPolicyId.values());
+        schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
+        showMlfqQuanta(MlfqConfiguration.defaults());
+        quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
+        restorePriorityConfigurationDefaults();
+        seedField.clear();
+        schedulingPolicyBox.valueProperty().addListener((o, before, after) -> {
+            updateQuantumControls();
+            updatePriorityControls();
+            updateLotteryControls();
+        });
+        cpuCountBox.getItems().setAll(1, 2, 3, 4, 5);
+        cpuCountBox.setValue(1);
+        cpuCountBox.valueProperty().addListener((o, before, after) -> updateCpuMemoryLimits());
+        cpuSelector.valueProperty().addListener((o, before, after) -> {
+            if (!renderingCpuSelection && view != null) render(view);
+        });
+        mainMemorySlider.setMin(SimulatorConfiguration.MIN_MAIN_MEMORY);
+        kernelMemorySlider.setMin(SimulatorConfiguration.MIN_KERNEL_MEMORY);
         configureSlider(mainMemorySlider, mainMemoryValue, mainMemoryRange);
         configureSlider(kernelMemorySlider, kernelMemoryValue, kernelMemoryRange);
         configureSlider(secondaryStorageSlider, secondaryStorageValue, secondaryStorageRange);
@@ -147,7 +277,13 @@ public final class SimulatorController {
         });
         completedTable.getSelectionModel().selectedItemProperty().addListener((o, before, after) ->
                 completedDetailArea.setText(after == null ? "Select a completed process"
-                        : DashboardDetails.context(after.finalContext()) + DashboardDetails.accounting(after.accounting())));
+                        : DashboardDetails.context(after.finalContext())
+                        + "\nCPU Affinity: " + after.cpuAffinity().value()
+                        + DashboardDetails.logical(after.logicalTimes(), after.declaredBurst())
+                        + DashboardDetails.accounting(after.accounting())));
+        statisticsRunBox.getSelectionModel().selectedIndexProperty().addListener((o, before, after) -> {
+            if (!renderingStatisticsSelection && view != null) renderStatistics(view);
+        });
         refresh();
     }
     /**
@@ -155,7 +291,18 @@ public final class SimulatorController {
      * directamente.
      */
     private void configureTables() {
-        column(programAddressColumn, v -> Integer.toString(v.address())); column(programInstructionColumn, ProgramEntry::instruction);
+        column(programLogicalColumn, v -> v.logicalAddress().map(Object::toString).orElse("—"));
+        column(partitionIdColumn, v -> Integer.toString(v.partitionId()));
+        column(partitionBaseColumn, v -> Integer.toString(v.base()));
+        column(partitionCapacityColumn, v -> Integer.toString(v.capacity()));
+        column(partitionOccupiedColumn, v -> v.occupied() ? "Occupied" : "Free");
+        column(partitionOwnerColumn, v -> v.ownerPid().map(Object::toString).orElse("—"));
+        column(partitionUsedColumn, v -> Integer.toString(v.usedLength()));
+        column(partitionFragmentationColumn, v -> Integer.toString(v.internalFragmentation()));
+        for (TableView<?> table : List.of(memoryTable, storageTable, programTable, jobsTable, processTable, completedTable, partitionTable)) {
+            table.getSortOrder().clear();
+        }
+        column(programAddressColumn, v -> v.physicalAddress().map(Object::toString).orElse("Not resident")); column(programInstructionColumn, ProgramEntry::instruction);
         column(memoryAddressColumn, v -> Integer.toString(v.address())); column(memoryRegionColumn, MemoryEntry::region);
         column(memoryContentColumn, v -> v.content().orElse("\u2014"));
         regions(memoryTable, v -> v.region().equals("KERNEL") ? "kernel-row" : "user-row");
@@ -163,65 +310,535 @@ public final class SimulatorController {
         column(storageContentColumn, StorageEntry::content);
         regions(storageTable, v -> switch (v.region()) { case FILE_INDEX -> "file-index-row"; case PROGRAM_DATA -> "program-data-row"; case VIRTUAL_MEMORY -> "virtual-memory-row"; });
         column(jobIdColumn, v -> Integer.toString(v.jobId())); column(jobNameColumn, Job::programName); column(jobStateColumn, v -> v.state().name());
+        column(jobArrivalColumn, v -> Long.toString(v.arrivalTime()));
+        jobArrivalColumn.setCellFactory(column -> new ArrivalCell());
+        configureProgramQueueTable();
         column(pidColumn, v -> Integer.toString(v.processId())); column(processStateColumn, v -> v.state().name());
         column(processPcColumn, v -> Integer.toString(v.savedProgramCounter())); column(residencyColumn, v -> v.residency().name());
         column(baseColumn, v -> v.base().map(Object::toString).orElse("\u2014")); column(limitColumn, v -> Integer.toString(v.limit()));
         column(priorityColumn, v -> Integer.toString(v.priority()));
+        column(ticketsColumn, v -> Integer.toString(v.tickets()));
         column(completedCpuTicksColumn, v -> Long.toString(v.accounting().cpuTicks()));
         column(completedPidColumn, v -> Integer.toString(v.processId())); column(completedPcColumn, v -> Integer.toString(v.finalContext().programCounter()));
         column(completedIrColumn, v -> v.finalContext().instructionRegister().orElse("\u2014"));
+        configureStatisticsTables();
+    }
+
+    private void configureStatisticsTables() {
+        column(statisticsPidColumn, StatisticsText.ProcessRow::pid);
+        column(statisticsCpuColumn, StatisticsText.ProcessRow::cpu);
+        column(statisticsArrivalColumn, StatisticsText.ProcessRow::arrival);
+        column(statisticsServiceColumn, StatisticsText.ProcessRow::serviceTime);
+        column(statisticsStartColumn, StatisticsText.ProcessRow::start);
+        column(statisticsFinishColumn, StatisticsText.ProcessRow::finish);
+        column(statisticsTurnaroundColumn, StatisticsText.ProcessRow::turnaround);
+        column(statisticsRatioColumn, StatisticsText.ProcessRow::normalizedTurnaround);
+        column(statisticsResponseColumn, StatisticsText.ProcessRow::response);
+        column(statisticsWaitColumn, StatisticsText.ProcessRow::waitingTime);
+        column(statisticsExecutedColumn, StatisticsText.ProcessRow::executed);
+        column(historyRunColumn, StatisticsText.HistoryRow::run);
+        column(historyAlgorithmColumn, StatisticsText.HistoryRow::algorithm);
+        column(historyCpusColumn, StatisticsText.HistoryRow::cpus);
+        column(historyStartColumn, StatisticsText.HistoryRow::start);
+        column(historyEndColumn, StatisticsText.HistoryRow::end);
+        column(historyIdleColumn, StatisticsText.HistoryRow::idle);
+        column(historyTurnaroundColumn, StatisticsText.HistoryRow::meanTurnaround);
+        column(historyRatioColumn, StatisticsText.HistoryRow::meanNormalizedTurnaround);
+        column(historyUtilizationColumn, StatisticsText.HistoryRow::utilization);
+        statisticsTable.getSortOrder().clear();
+        runHistoryTable.getSortOrder().clear();
+    }
+
+    /**
+     * Muestra la ejecuci\u00f3n elegida en el selector (la actual o una del historial) y el historial acumulado.
+     * Conserva la selecci\u00f3n entre refrescos; s\u00f3lo lee el snapshot.
+     */
+    private void renderStatistics(SimulatorSnapshot snapshot) {
+        List<RunStatistics> history = snapshot.runHistory();
+        List<String> labels = new ArrayList<>();
+        labels.add(CURRENT_RUN_LABEL);
+        for (RunStatistics run : history) {
+            labels.add(StatisticsText.runLabel(run));
+        }
+
+        int previousIndex = statisticsRunBox.getSelectionModel().getSelectedIndex();
+        int selectedIndex = previousIndex >= 0 && previousIndex < labels.size() ? previousIndex : 0;
+        renderingStatisticsSelection = true;
+        try {
+            if (!statisticsRunBox.getItems().equals(labels)) {
+                statisticsRunBox.getItems().setAll(labels);
+            }
+            statisticsRunBox.getSelectionModel().select(selectedIndex);
+        } finally {
+            renderingStatisticsSelection = false;
+        }
+
+        Optional<RunStatistics> shown = selectedIndex == 0
+                ? snapshot.statistics()
+                : Optional.of(history.get(selectedIndex - 1));
+        statisticsTable.getItems().setAll(shown.map(StatisticsText::processRows).orElse(List.of()));
+        statisticsSummaryArea.setText(shown.map(StatisticsText::summary).orElse("No statistics yet"));
+        runHistoryTable.getItems().setAll(StatisticsText.historyRows(history));
     }
     /** Recoge capacidades enteras de sliders y delega validación/inicialización al Orchestrator. */
     @FXML private void handleInitialize() {
         command(() -> orchestrator.initialize(new SimulatorConfiguration(
                 new MemoryConfiguration(sliderValue(mainMemorySlider), sliderValue(kernelMemorySlider)),
-                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider))));
+                sliderValue(secondaryStorageSlider), sliderValue(virtualMemorySlider), cpuCountBox.getValue(),
+                schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
+                memoryModeBox.getValue() == MemoryMode.PAGING
+                        ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty(),
+                parseQuantum(), parsePriorityConfiguration(), parseLotteryConfiguration(), parseMlfqConfiguration())));
     }
-    /** Abre el selector de ASM del host si la carga está habilitada y conserva la ruta elegida. */
+
+    private Optional<FixedPartitionConfiguration> fixedConfiguration() {
+        return switch (memoryModeBox.getValue()) {
+            case DYNAMIC, PAGING -> Optional.empty();
+            case FIXED_EQUAL -> Optional.of(FixedPartitionConfiguration.equal(parsePartitionInteger(partitionCountField.getText())));
+            case FIXED_UNEQUAL -> Optional.of(FixedPartitionConfiguration.unequal(parsePartitionCapacities(partitionCapacitiesField.getText())));
+        };
+    }
+
+    static int parsePartitionInteger(String text) {
+        String value = text == null ? "" : text.trim();
+        try {
+            if (!value.matches("[0-9]+")) throw new NumberFormatException();
+            int parsed = Integer.parseInt(value);
+            if (parsed <= 0) throw new NumberFormatException();
+            return parsed;
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Partition values must be positive integers within 1..2147483647");
+        }
+    }
+
+    static List<Integer> parsePartitionCapacities(String text) {
+        if (text == null) throw new IllegalArgumentException("Enter comma-separated partition capacities");
+        return java.util.Arrays.stream(text.split(",", -1)).map(SimulatorController::parsePartitionInteger).toList();
+    }
+
+    /** El quantum sólo se usa con RR, LOTTERY y SELFISH_RR: se parsea únicamente entonces; el rango lo valida el modelo. */
+    private boolean policyUsesQuantum() {
+        var policy = schedulingPolicyBox.getValue();
+        return policy == SchedulingPolicyId.RR || policy == SchedulingPolicyId.LOTTERY
+                || policy == SchedulingPolicyId.SELFISH_RR;
+    }
+
+    private MlfqConfiguration parseMlfqConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.MLFQ) return MlfqConfiguration.defaults();
+        List<Integer> quanta;
+        try {
+            quanta = parsePartitionCapacities(mlfqField.getText());
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("MLFQ requires comma-separated integer quanta.", invalid);
+        }
+        return new MlfqConfiguration(quanta);
+    }
+
+    private void showMlfqQuanta(MlfqConfiguration configuration) {
+        mlfqField.setText(configuration.levelQuanta().stream().map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(",")));
+    }
+
+    private int parseQuantum() {
+        if (!policyUsesQuantum()) return SimulatorConfiguration.DEFAULT_QUANTUM;
+        return parsePartitionInteger(quantumField.getText());
+    }
+
+    /** Preemptive y aging sólo se usan con PRIORITY; con otras políticas se envían los defaults. */
+    private PriorityConfiguration parsePriorityConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.PRIORITY) return PriorityConfiguration.defaults();
+        boolean preemptive = preemptiveBox.isSelected();
+        int agingInterval = parseAgingInterval(agingField.getText());
+        return new PriorityConfiguration(preemptive, agingInterval);
+    }
+
+    static int parseAgingInterval(String text) {
+        String value = text == null ? "" : text.strip();
+        if (!value.matches("[0-9]{1,2}")) {
+            throw new IllegalArgumentException("Aging interval must be an integer from "
+                    + PriorityConfiguration.MIN_AGING_INTERVAL + " to " + PriorityConfiguration.MAX_AGING_INTERVAL + ".");
+        }
+        return Integer.parseInt(value);
+    }
+
+    static int parsePriority(String text) {
+        String value = text == null ? "" : text.strip();
+        if (!value.matches("[0-9]")) {
+            throw new IllegalArgumentException("Priority must be an integer from "
+                    + ProcessControlBlock.MIN_PRIORITY + " to " + ProcessControlBlock.MAX_PRIORITY + ".");
+        }
+        return Integer.parseInt(value);
+    }
+
+    private void updatePriorityControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesPriority = schedulingPolicyBox.getValue() == SchedulingPolicyId.PRIORITY;
+        priorityRow.setVisible(usesPriority);
+        priorityRow.setManaged(usesPriority);
+        priorityRow.setDisable(!configuring || !usesPriority);
+    }
+
+    /** La semilla sólo se usa con LOTTERY; vacía significa aleatoria (la sesión la resuelve). */
+    private LotteryConfiguration parseLotteryConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.LOTTERY) return LotteryConfiguration.defaults();
+        return parseSeed(seedField.getText());
+    }
+
+    static LotteryConfiguration parseSeed(String text) {
+        String value = text == null ? "" : text.strip();
+        if (value.isEmpty()) return LotteryConfiguration.defaults();
+        long seed;
+        try {
+            seed = Long.parseLong(value);
+        } catch (NumberFormatException failure) {
+            seed = -1;
+        }
+        if (seed < LotteryConfiguration.MIN_SEED || seed > LotteryConfiguration.MAX_SEED) {
+            throw new IllegalArgumentException("Seed must be an integer from " + LotteryConfiguration.MIN_SEED
+                    + " to " + LotteryConfiguration.MAX_SEED + ", or blank for a random seed.");
+        }
+        return LotteryConfiguration.withSeed(seed);
+    }
+
+    static int parseTickets(String text) {
+        String value = text == null ? "" : text.strip();
+        int tickets;
+        try {
+            tickets = Integer.parseInt(value);
+        } catch (NumberFormatException failure) {
+            tickets = -1;
+        }
+        if (tickets < ProcessControlBlock.MIN_TICKETS || tickets > ProcessControlBlock.MAX_TICKETS) {
+            throw new IllegalArgumentException("Tickets must be an integer from "
+                    + ProcessControlBlock.MIN_TICKETS + " to " + ProcessControlBlock.MAX_TICKETS + ".");
+        }
+        return tickets;
+    }
+
+    private void updateLotteryControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesLottery = schedulingPolicyBox.getValue() == SchedulingPolicyId.LOTTERY;
+        lotteryRow.setVisible(usesLottery);
+        lotteryRow.setManaged(usesLottery);
+        seedField.setDisable(!configuring || !usesLottery);
+    }
+
+    private void restorePriorityConfigurationDefaults() {
+        var defaults = PriorityConfiguration.defaults();
+        preemptiveBox.setSelected(defaults.preemptive());
+        agingField.setText(Integer.toString(defaults.agingInterval()));
+    }
+
+    private void updateQuantumControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesMlfq = schedulingPolicyBox.getValue() == SchedulingPolicyId.MLFQ;
+        mlfqRow.setVisible(usesMlfq);
+        mlfqRow.setManaged(usesMlfq);
+        mlfqRow.setDisable(!configuring || !usesMlfq);
+        boolean usesQuantum = policyUsesQuantum();
+        quantumRow.setVisible(usesQuantum);
+        quantumRow.setManaged(usesQuantum);
+        quantumField.setDisable(!configuring || !usesQuantum);
+    }
+
+    private void updateMemoryModeControls() {
+        boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        var mode = memoryModeBox.getValue();
+        memoryModeBox.setDisable(!configuring);
+        userAllocationBox.setDisable(!configuring || mode != MemoryMode.DYNAMIC);
+        partitionCountField.setDisable(!configuring || mode != MemoryMode.FIXED_EQUAL);
+        partitionCapacitiesField.setDisable(!configuring || mode != MemoryMode.FIXED_UNEQUAL);
+        pageSizeField.setDisable(!configuring || mode != MemoryMode.PAGING);
+        pagingLoadModeBox.setDisable(!configuring || mode != MemoryMode.PAGING);
+    }
+    /** Columnas de la lista de programas: nombre y celdas de texto siempre editables para Arrival/Priority. */
+    private void configureProgramQueueTable() {
+        programFileColumn.setCellValueFactory(cell ->
+                new javafx.beans.property.ReadOnlyStringWrapper(cell.getValue().fileName()));
+        programFileColumn.setCellFactory(column -> new TableCell<>() {
+            @Override protected void updateItem(String name, boolean empty) {
+                super.updateItem(name, empty);
+                boolean blank = empty || name == null;
+                setText(blank ? null : name);
+                setTooltip(blank ? null : new Tooltip(getTableRow().getItem() == null ? name
+                        : getTableRow().getItem().path().toString()));
+            }
+        });
+        programArrivalColumn.setCellValueFactory(cell -> cell.getValue().arrivalProperty());
+        programArrivalColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::arrivalProperty));
+        programPriorityColumn.setCellValueFactory(cell -> cell.getValue().priorityProperty());
+        programPriorityColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::priorityProperty));
+        programTicketsColumn.setCellValueFactory(cell -> cell.getValue().ticketsProperty());
+        programTicketsColumn.setCellFactory(column -> new BoundTextFieldCell(ProgramLoadRow::ticketsProperty));
+        programQueueTable.getSelectionModel().selectedIndexProperty()
+                .addListener((o, before, after) -> updateProgramQueueButtons());
+    }
+
+    /**
+     * Celda con un TextField enlazado a la propiedad de su fila: lo escrito se guarda al instante, sin
+     * depender de presionar Enter como TextFieldTableCell.
+     */
+    private static final class BoundTextFieldCell extends TableCell<ProgramLoadRow, String> {
+        private final java.util.function.Function<ProgramLoadRow, javafx.beans.property.StringProperty> property;
+        private final TextField field = new TextField();
+        private javafx.beans.property.StringProperty bound;
+
+        BoundTextFieldCell(java.util.function.Function<ProgramLoadRow, javafx.beans.property.StringProperty> property) {
+            this.property = property;
+            field.getStyleClass().add("input-field");
+            // Al enfocar el campo se selecciona su fila, para que ▲/▼/Remove actúen sobre ella.
+            field.focusedProperty().addListener((o, before, focused) -> {
+                if (focused && !isEmpty()) getTableView().getSelectionModel().select(getIndex());
+            });
+        }
+
+        /**
+         * Cada tecla cambia la propiedad de la fila y JavaFX vuelve a llamar a updateItem en el siguiente
+         * layout. Sólo se re-enlaza si la celda pasó a mostrar otra fila: re-enlazar la misma propiedad
+         * reescribe el texto y devuelve el cursor al inicio, lo que invertía los dígitos ("10" → "01").
+         */
+        @Override protected void updateItem(String value, boolean empty) {
+            super.updateItem(value, empty);
+            ProgramLoadRow row = getTableRow() == null ? null : getTableRow().getItem();
+            javafx.beans.property.StringProperty next = empty || row == null ? null : property.apply(row);
+            if (next != bound) {
+                if (bound != null) field.textProperty().unbindBidirectional(bound);
+                bound = next;
+                if (bound != null) field.textProperty().bindBidirectional(bound);
+            }
+            setGraphic(bound == null ? null : field);
+        }
+    }
+
+    /** Abre el selector múltiple de ASM y agrega los archivos elegidos a la lista de programas por cargar. */
     @FXML private void handleBrowseProgram() {
         if (browseProgramButton.isDisabled()) return;
         var chooser = new FileChooser();
-        chooser.setTitle("Select ASM program");
+        chooser.setTitle("Select ASM programs");
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Assembly files (*.asm)", "*.asm"));
-        var file = chooser.showOpenDialog(programPathField.getScene().getWindow());
-        if (file != null) { selectedProgramPath = file.toPath(); programPathField.setText(selectedProgramPath.toString()); }
+        var files = chooser.showOpenMultipleDialog(programQueueTable.getScene().getWindow());
+        if (files != null) addProgramFiles(files.stream().map(java.io.File::toPath).toList());
         refresh();
     }
+
     /**
-     * Importa ASM mediante ProgramImporter y hace submission de ProgramImage con nombre lógico; no admite
-     * ni ejecuta procesos.
+     * Agrega archivos al final de la lista, ordenados por nombre dentro de la misma selección (el orden del
+     * diálogo no está garantizado y el orden de carga decide el PID en empates). Ignora rutas ya listadas.
+     */
+    void addProgramFiles(List<Path> paths) {
+        var alreadyListed = new java.util.HashSet<Path>();
+        for (ProgramLoadRow row : programQueueTable.getItems()) alreadyListed.add(row.path().toAbsolutePath().normalize());
+        var sorted = new java.util.ArrayList<>(paths);
+        sorted.sort(java.util.Comparator.comparing((Path path) -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(Path::toString));
+        for (Path path : sorted) {
+            Path key = path.toAbsolutePath().normalize();
+            if (alreadyListed.add(key)) programQueueTable.getItems().add(new ProgramLoadRow(path));
+        }
+        updateProgramQueueButtons();
+    }
+
+    /** Sube una posición la fila seleccionada; el orden de la tabla es el orden de carga. */
+    @FXML private void handleMoveProgramUp() { moveSelectedProgram(-1); }
+
+    /** Baja una posición la fila seleccionada. */
+    @FXML private void handleMoveProgramDown() { moveSelectedProgram(1); }
+
+    private void moveSelectedProgram(int offset) {
+        var rows = programQueueTable.getItems();
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        int target = index + offset;
+        if (index < 0 || target < 0 || target >= rows.size()) return;
+        ProgramLoadRow moved = rows.remove(index);
+        rows.add(target, moved);
+        programQueueTable.getSelectionModel().select(target);
+        updateProgramQueueButtons();
+    }
+
+    /** Quita de la lista la fila seleccionada sin afectar Jobs ya cargados. */
+    @FXML private void handleRemoveProgram() {
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        if (index < 0) return;
+        programQueueTable.getItems().remove(index);
+        updateProgramQueueButtons();
+    }
+
+    /** Valor de una fila ya validado, listo para submitProgram. */
+    private record ValidatedProgram(ProgramLoadRow row, ProgramImage image, long arrival, int priority, int tickets) { }
+
+    /**
+     * Carga todos los programas de la lista en el orden de la tabla. Primero valida Arrival/Priority e
+     * importa todos los ASM sin publicar nada; si algo falla no se carga ninguno. Luego hace submission
+     * fila por fila; si el backend rechaza una, las anteriores quedan cargadas y la fallida y las
+     * siguientes permanecen en la lista para corregirlas.
      */
     @FXML private void handleLoadProgram() {
         command(() -> {
-            if (selectedProgramPath == null) throw new IllegalStateException("Select an ASM program first.");
-            var instructions = programImporter.importProgram(selectedProgramPath);
-            var name = selectedProgramPath.getFileName().toString();
-            orchestrator.submitProgram(new ProgramImage(name, instructions));
-            feedback = "Submitted " + name + ". Workload ready; load another program or Start.";
+            var rows = List.copyOf(programQueueTable.getItems());
+            if (rows.isEmpty()) throw new IllegalStateException("Browse to add at least one ASM program first.");
+            boolean usesPriority = usesPriorityColumn();
+            boolean usesTickets = usesTicketsColumn();
+            var validated = new java.util.ArrayList<ValidatedProgram>();
+            for (ProgramLoadRow row : rows) {
+                validated.add(validate(row, usesPriority, usesTickets));
+            }
+            int submitted = 0;
+            try {
+                for (ValidatedProgram program : validated) {
+                    orchestrator.submitProgram(program.image(), program.arrival(), program.priority(), program.tickets());
+                    programQueueTable.getItems().remove(program.row());
+                    submitted++;
+                }
+            } catch (IllegalArgumentException | IllegalStateException | StorageException failure) {
+                String name = validated.get(submitted).row().fileName();
+                throw withFileName(name, failure);
+            } finally {
+                updateProgramQueueButtons();
+            }
+            feedback = "Submitted " + submitted + (submitted == 1 ? " program" : " programs")
+                    + ". Workload ready; load more programs or Start.";
         });
     }
+
+    private ValidatedProgram validate(ProgramLoadRow row, boolean usesPriority, boolean usesTickets)
+            throws ProgramImportException {
+        String name = row.fileName();
+        try {
+            long arrival = parseArrivalTime(row.arrivalProperty().get());
+            int priority = usesPriority ? parsePriority(row.priorityProperty().get()) : ProcessControlBlock.DEFAULT_PRIORITY;
+            int tickets = usesTickets ? parseTickets(row.ticketsProperty().get()) : ProcessControlBlock.DEFAULT_TICKETS;
+            var instructions = programImporter.importProgram(row.path());
+            return new ValidatedProgram(row, new ProgramImage(name, instructions), arrival, priority, tickets);
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            throw withFileName(name, failure);
+        } catch (ProgramImportException failure) {
+            throw new IllegalArgumentException(name + ": " + failure.getMessage(), failure);
+        }
+    }
+
+    private static RuntimeException withFileName(String name, RuntimeException failure) {
+        String message = name + ": " + failure.getMessage();
+        if (failure instanceof IllegalStateException) return new IllegalStateException(message, failure);
+        return new IllegalArgumentException(message, failure);
+    }
+
+    /** La columna Priority sólo aplica a una sesión inicializada con la política PRIORITY. */
+    private boolean usesPriorityColumn() {
+        return view != null && view.configuration()
+                .map(configuration -> configuration.schedulingPolicy() == SchedulingPolicyId.PRIORITY)
+                .orElse(false);
+    }
+
+    /** Tickets sólo aplican a una sesión inicializada con la política LOTTERY. */
+    private boolean usesTicketsColumn() {
+        return view != null && view.configuration()
+                .map(configuration -> configuration.schedulingPolicy() == SchedulingPolicyId.LOTTERY)
+                .orElse(false);
+    }
+
+    private boolean loadingPrograms() {
+        if (view == null) return false;
+        var state = view.simulatorState();
+        return state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
+    }
+
+    private void updateProgramQueueButtons() {
+        boolean loading = loadingPrograms();
+        int size = programQueueTable.getItems().size();
+        int index = programQueueTable.getSelectionModel().getSelectedIndex();
+        boolean selected = index >= 0 && index < size;
+        programQueueTable.setDisable(!loading);
+        browseProgramButton.setDisable(!loading);
+        moveProgramUpButton.setDisable(!loading || !selected || index == 0);
+        moveProgramDownButton.setDisable(!loading || !selected || index == size - 1);
+        removeProgramButton.setDisable(!loading || !selected);
+        loadProgramButton.setDisable(!loading || size == 0);
+        programPriorityColumn.setVisible(usesPriorityColumn());
+        programTicketsColumn.setVisible(usesTicketsColumn());
+        ticketsColumn.setVisible(usesTicketsColumn());
+    }
+    private final class ArrivalCell extends TableCell<Job, String> {
+        @Override public void updateIndex(int index) {
+            if (isEditing() && index != getIndex()) jobsTable.edit(-1, null);
+            super.updateIndex(index);
+        }
+
+        @Override public void startEdit() {
+            Job job = getTableRow().getItem();
+            if (job == null || job.state() != JobState.PENDING || !jobsTable.isEditable()) return;
+            super.startEdit();
+            if (!isEditing()) return;
+            TextField editor = new TextField(getItem());
+            editor.setOnAction(event -> {
+                if (!isEditing() || getGraphic() != editor) return;
+                boolean current = getTableRow().getItem() == job
+                        && orchestrator.jobs().stream().anyMatch(candidate -> candidate == job);
+                jobsTable.edit(-1, null);
+                if (current) command(() -> orchestrator.updateJobArrival(job.jobId(), parseArrivalTime(editor.getText())));
+            });
+            editor.setOnKeyPressed(event -> {
+                if (event.getCode() == javafx.scene.input.KeyCode.ESCAPE) jobsTable.edit(-1, null);
+            });
+            setText(null);
+            setGraphic(editor);
+            editor.requestFocus();
+            editor.selectAll();
+        }
+
+        @Override public void cancelEdit() {
+            super.cancelEdit();
+            setGraphic(null);
+            setText(getItem());
+        }
+
+        @Override protected void updateItem(String value, boolean empty) {
+            super.updateItem(value, empty);
+            if (!isEditing()) {
+                setGraphic(null);
+                setText(empty ? null : value);
+            }
+        }
+    }
+
+    /** Parsing entero exacto; evita redondeos y efectos de carga ante entradas inválidas. */
+    static long parseArrivalTime(String text) {
+        final long arrival;
+        try { arrival = Long.parseLong(text.strip()); }
+        catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Arrival Time must be an integer from 0 to " + Long.MAX_VALUE + ".", failure);
+        }
+        if (arrival < 0) throw new IllegalArgumentException("Arrival Time cannot be negative.");
+        return arrival;
+    }
     /** Solicita Start al Orchestrator a través de la frontera común de errores y refresh. */
-    @FXML private void handleStart() { command(orchestrator::start); }
+    @FXML private void handleStart() {
+        jobsTable.edit(-1, null);
+        command(orchestrator::start);
+    }
     /** Ejecuta la misma ruta de un tick usada por Automatic. */
     @FXML private void handleStep() { executeSingleStep(); }
-    /** Activa Timeline sólo si el snapshot está RUNNABLE y no existe ejecución automática activa. */
+    /** Activa Timeline si hay trabajo ejecutable o una llegada futura pendiente. */
     @FXML private void handleAutomatic() {
         if (!runnable() || automaticMode) return;
         automaticMode = true;
         refresh();
         automaticTimeline.playFromStart();
     }
-    /** Consulta si el último snapshot permite ticks: lifecycle RUNNING y runtime RUNNABLE. */
+    /** Una llegada futura justifica IDLE automático, incluso si también falta capacidad. */
     private boolean runnable() {
-        return view.simulatorState() == SimulatorState.RUNNING && view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE;
+        return view.simulatorState() == SimulatorState.RUNNING
+                && view.runtimeStatus().orElse(null) != RuntimeStatus.WAITING_FOR_FRAMES
+                && (view.runtimeStatus().orElse(null) == RuntimeStatus.RUNNABLE || view.nextArrivalTime().isPresent());
     }
-    /** Solicita un único Step cuando es ejecutable y detiene Automatic si deja de estar RUNNABLE. */
+    /** Manual permite confirmar intervalos IDLE aunque no exista un próximo evento. */
+    private boolean canStep() {
+        return view.simulatorState() == SimulatorState.RUNNING
+                && view.runtimeStatus().filter(status -> status != RuntimeStatus.FINISHED && status != RuntimeStatus.WAITING_FOR_FRAMES).isPresent();
+    }
+    /** Manual y Automatic usan el mismo Step; render decide continuidad desde el nuevo snapshot. */
     private void executeSingleStep() {
-        if (!runnable()) { stopAutomaticExecution(); refresh(); return; }
-        command(() -> {
-            var result = orchestrator.step();
-            if (result.status() != RuntimeStatus.RUNNABLE) stopAutomaticExecution();
-        });
+        if (!canStep() || (automaticMode && !runnable())) { stopAutomaticExecution(); refresh(); return; }
+        command(orchestrator::step);
     }
     /** Pausa Timeline y delega Pause de sesión sin alterar estados de procesos desde JavaFX. */
     @FXML private void handlePause() {
@@ -233,28 +850,13 @@ public final class SimulatorController {
         command(orchestrator::resume);
         if (automaticMode && runnable()) automaticTimeline.play();
     }
-    /** Detiene Timeline, limpia selección/input y delega Reset antes de restaurar defaults visuales. */
+    /** Detiene Timeline, limpia selección y delega Reset antes de restaurar defaults visuales. */
     @FXML private void handleReset() {
+        jobsTable.edit(-1, null);
         stopAutomaticExecution();
-        selectedProgramPath = null; selectedProcessId = null;
-        programPathField.clear(); keyboardField.clear(); feedback = "";
+        selectedProcessId = null;
+        programQueueTable.getItems().clear(); feedback = "";
         orchestrator.reset(); restoreConfigurationDefaults(); refresh();
-    }
-    /**
-     * Valida texto entero de entrada y lo envía al FIFO del Orchestrator, sin seleccionar PID ni bloquear
-     * el hilo.
-     */
-    @FXML private void handleKeyboardSend() {
-        if (keyboardSendButton.isDisabled()) return;
-        command(() -> {
-            String text = keyboardField.getText().trim();
-            if (text.isEmpty()) throw new IllegalArgumentException("Enter an integer from 0 to 255.");
-            final int input;
-            try { input = Integer.parseInt(text); }
-            catch (NumberFormatException invalid) { throw new IllegalArgumentException("Enter an integer from 0 to 255."); }
-            orchestrator.submitKeyboardInput(input);
-            keyboardField.clear(); feedback = "Keyboard value accepted: " + input;
-        });
     }
     /** Comando de UI que admite errores de importación para tratarlos en una única frontera visual. */
     @FunctionalInterface
@@ -290,38 +892,53 @@ public final class SimulatorController {
     }
     /**
      * Actualiza paneles desde el snapshot y conserva selecciones; detiene Timeline al terminar, fallar o
-     * esperar recursos/input.
+     * esperar recursos sin llegadas futuras.
      */
     private void render(SimulatorSnapshot snapshot) {
         view = snapshot;
+        renderingCpuSelection = true;
+        var selectedCpu = cpuSelector.getValue();
+        try {
+            cpuSelector.getItems().setAll(snapshot.cpus().stream().map(c -> c.id().value()).toList());
+            cpuSelector.setValue(cpuSelector.getItems().contains(selectedCpu) ? selectedCpu
+                    : cpuSelector.getItems().isEmpty() ? null : cpuSelector.getItems().getFirst());
+        } finally { renderingCpuSelection = false; }
+        var local = snapshot.cpus().stream().filter(c -> Objects.equals(cpuSelector.getValue(), c.id().value())).findFirst();
         if (snapshot.simulatorState() == SimulatorState.ERROR || snapshot.simulatorState() == SimulatorState.FINISHED
-                || (snapshot.simulatorState() == SimulatorState.RUNNING && snapshot.runtimeStatus().orElse(null) != RuntimeStatus.RUNNABLE)) {
+                || (snapshot.simulatorState() == SimulatorState.RUNNING && !runnable())) {
             stopAutomaticExecution();
         }
-        cpuTicksLabel.setText(snapshot.cpuTicks().isPresent() ? Long.toString(snapshot.cpuTicks().getAsLong()) : "\u2014");
+        cpuTicksLabel.setText(local.map(c -> Long.toString(c.cpuTicks())).orElse("\u2014"));
         simulatorStateLabel.setText(snapshot.simulatorState().name());
-        runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014"));
-        ownerValueLabel.setText(snapshot.ownerPid().map(pid -> "PID " + pid).orElse("Idle"));
-        cpuOwnerLabel.setText(snapshot.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers"));
-        renderCpu(snapshot);
-        currentInstructionLabel.setText(snapshot.currentInstruction().map(InstructionSnapshot::semanticInstruction).orElse("\u2014"));
-        opcodeValueLabel.setText(snapshot.currentInstruction().map(InstructionSnapshot::opcode).orElse("\u2014"));
-        value(operandValueLabel, snapshot.currentInstruction().map(InstructionSnapshot::operand).orElse("\u2014"));
+        runtimeStatusLabel.setText(snapshot.runtimeStatus().map(Enum::name).orElse("\u2014")
+                + "\nSimulation Time: " + (snapshot.simulationTimeSeconds().isPresent()
+                ? snapshot.simulationTimeSeconds().getAsLong() + " s" : "\u2014")
+                + (snapshot.nextArrivalTime().isPresent() ? "\nNext Arrival: " + snapshot.nextArrivalTime().getAsLong() + " s" : ""));
+        ownerValueLabel.setText(local.map(c -> "CPU " + c.id().value() + ": "
+                + c.ownerPid().map(pid -> "PID " + pid).orElse("Idle")).orElse("Idle"));
+        cpuOwnerLabel.setText(local.map(c -> "CPU " + c.id().value() + " · "
+                + c.ownerPid().map(pid -> "Active CPU: PID " + pid).orElse("Idle / retained CPU registers")).orElse("Idle"));
+        renderCpu(local);
+        currentInstructionLabel.setText(local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::semanticInstruction).orElse("\u2014"));
+        opcodeValueLabel.setText(local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::opcode).orElse("\u2014"));
+        value(operandValueLabel, local.flatMap(CpuView::currentInstruction).map(InstructionSnapshot::operand).orElse("\u2014"));
         executionStatusLabel.setText(statusText(snapshot));
+        jobsTable.edit(-1, null);
+        jobsTable.setEditable(snapshot.simulatorState() == SimulatorState.PROGRAM_LOADED);
         jobsTable.getItems().setAll(snapshot.jobs());
         renderProcesses(snapshot);
-        programTable.getItems().setAll(snapshot.program()); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
-        readyList.getItems().setAll(snapshot.readyQueue().stream().map(pid -> "PID " + pid).toList());
-        suspendedList.getItems().setAll(snapshot.suspendedReadyQueue().stream().map(pid -> "PID " + pid).toList());
-        pendingList.getItems().setAll(snapshot.pendingKeyboardRequests().stream().map(r -> "PID " + r.processId() + " / PC " + r.interruptPc()).toList());
+        programTable.getItems().setAll(local.map(CpuView::program).orElse(List.of())); memoryTable.getItems().setAll(snapshot.memory()); storageTable.getItems().setAll(snapshot.storage());
+        readyList.getItems().setAll(local.map(CpuView::readyQueue).orElse(List.of()).stream().map(pid -> "PID " + pid).toList());
+        suspendedList.getItems().setAll(local.map(CpuView::suspendedReadyQueue).orElse(List.of()).stream().map(pid -> "PID " + pid).toList());
         screenList.getItems().setAll(snapshot.screenOutput().stream().map(Object::toString).toList());
         var selected = completedTable.getSelectionModel().getSelectedItem();
         completedTable.getItems().setAll(snapshot.completedProcesses());
         if (selected != null) snapshot.completedProcesses().stream().filter(p -> p.processId() == selected.processId()).findFirst()
                 .ifPresent(p -> completedTable.getSelectionModel().select(p));
         if (completedTable.getSelectionModel().getSelectedItem() == null) completedDetailArea.setText("Select a completed process");
+        renderStatistics(snapshot);
         statusLabel.setText(feedback.isBlank() ? statusText(snapshot) : feedback + " | " + statusText(snapshot));
-        ioStatusLabel.setText(statusText(snapshot) + " | Pending input: " + snapshot.pendingKeyboardRequests().size());
+        ioStatusLabel.setText(statusText(snapshot));
         updateControls(snapshot);
     }
     /**
@@ -341,12 +958,15 @@ public final class SimulatorController {
     /** Muestra el detalle del PID seleccionado exclusivamente desde el read model actual. */
     private void renderSelectedProcess() {
         pcbDetailArea.setText(view.processes().stream().filter(p -> Objects.equals(selectedProcessId, p.processId()))
-                .findFirst().map(DashboardDetails::process).orElse("Select a process"));
+                .findFirst().map(process -> DashboardDetails.process(process, usesTicketsColumn())).orElse("Select a process"));
     }
     /** Muestra registros del CPU activo y tooltips, sin confundirlos con el contexto guardado del PCB. */
-    private void renderCpu(SimulatorSnapshot snapshot) {
-        var cpu = snapshot.cpu();
-        value(pcValueLabel, cpu.map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
+    private void renderCpu(java.util.Optional<CpuView> local) {
+        var cpu = local.map(CpuView::cpu);
+        value(pcValueLabel, local.flatMap(CpuView::addressTranslationError).isPresent() ? "ERROR"
+                : local.flatMap(CpuView::nextInstructionPhysicalAddress).map(Object::toString).orElse("\u2014"));
+        cpuOwnerLabel.setText(cpuOwnerLabel.getText() + "\nLogical PC: "
+                + local.flatMap(CpuView::ownerPid).flatMap(pid -> cpu).map(v -> Integer.toString(v.programCounter())).orElse("\u2014"));
         value(irValueLabel, cpu.flatMap(CpuSnapshot::instructionRegister).orElse("\u2014"));
         value(acValueLabel, cpu.map(v -> Integer.toString(v.accumulator())).orElse("\u2014"));
         value(axValueLabel, cpu.map(v -> Integer.toString(v.ax())).orElse("\u2014"));
@@ -363,12 +983,13 @@ public final class SimulatorController {
      * negocio.
      */
     private String statusText(SimulatorSnapshot snapshot) {
-        if (snapshot.simulatorState() == SimulatorState.PAUSED) return "Paused; keyboard input is queued until Resume";
+        if (snapshot.simulatorState() == SimulatorState.PAUSED) return "Paused";
         if (snapshot.simulatorState() == SimulatorState.ERROR) return "Execution error; inspect state or Reset";
         if (snapshot.runtimeStatus().isPresent()) return switch (snapshot.runtimeStatus().orElseThrow()) {
             case RUNNABLE -> automaticMode ? "Automatic execution" : "Ready for next CPU tick";
-            case WAITING_FOR_INPUT -> "Waiting for keyboard input";
             case WAITING_FOR_CAPACITY -> "Waiting for capacity";
+            case WAITING_FOR_ARRIVAL -> "Waiting for arrival";
+            case WAITING_FOR_FRAMES -> "Waiting for frames: no internal progress; inspect or Reset";
             case FINISHED -> "Workload finished";
         };
         return switch (snapshot.simulatorState()) {
@@ -382,13 +1003,69 @@ public final class SimulatorController {
     private void updateControls(SimulatorSnapshot snapshot) {
         var state = snapshot.simulatorState();
         boolean configuring = state == SimulatorState.CONFIGURING;
-        boolean loading = state == SimulatorState.INITIALIZED || state == SimulatorState.PROGRAM_LOADED;
-        boolean keyboard = loading || state == SimulatorState.RUNNING || state == SimulatorState.PAUSED;
-        initializeButton.setDisable(!configuring); browseProgramButton.setDisable(!loading);
-        loadProgramButton.setDisable(!loading || selectedProgramPath == null); startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
-        stepButton.setDisable(!runnable() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
+        cpuCountBox.setDisable(!configuring);
+        schedulingPolicyBox.setDisable(!configuring);
+        schedulingPolicyLabel.setText(snapshot.configuration()
+                .map(configuration -> configuration.schedulingPolicy().name()).orElse("—"));
+        snapshot.configuration().ifPresent(configuration -> {
+            schedulingPolicyBox.setValue(configuration.schedulingPolicy());
+            showMlfqQuanta(configuration.mlfq());
+            quantumField.setText(Integer.toString(configuration.quantum()));
+            preemptiveBox.setSelected(configuration.priority().preemptive());
+            agingField.setText(Integer.toString(configuration.priority().agingInterval()));
+            seedField.setText(configuration.lottery().seed().isPresent()
+                    ? Long.toString(configuration.lottery().seed().getAsLong()) : "");
+            userAllocationBox.setValue(configuration.userAllocationStrategy());
+            memoryModeBox.setValue(configuration.memoryMode());
+            configuration.paging().ifPresent(paging -> {
+                pageSizeField.setText(Integer.toString(paging.pageSize()));
+                pagingLoadModeBox.setValue(paging.loadMode());
+            });
+        });
+        updateMemoryModeControls();
+        updateQuantumControls();
+        updatePriorityControls();
+        updateLotteryControls();
+        partitionTable.getItems().setAll(snapshot.partitions());
+        partitionTable.setVisible(!snapshot.partitions().isEmpty());
+        partitionTable.setManaged(!snapshot.partitions().isEmpty());
+        boolean paged = snapshot.configuration().map(c -> c.memoryMode() == MemoryMode.PAGING).orElse(false);
+        programLogicalColumn.setVisible(paged);
+        pagingDetailsArea.setVisible(paged); pagingDetailsArea.setManaged(paged);
+        if (paged) {
+            var text = new StringBuilder("Frames (physical order)\n");
+            snapshot.paging().clockHand().ifPresent(hand -> text.append("CLOCK Hand: ").append(hand).append('\n'));
+            for (var frame : snapshot.paging().frames()) text.append("Frame ").append(frame.frameId())
+                    .append(" | Base ").append(frame.base()).append(" | Size ").append(frame.capacity())
+                    .append(frame.occupied() ? " | Occupied" : " | Free")
+                    .append(" | PID ").append(frame.ownerPid().map(Object::toString).orElse("—"))
+                    .append(" | Page ").append(frame.pageNumber().map(Object::toString).orElse("—"))
+                    .append(" | R ").append(frame.referenced().map(r -> r ? "1" : "0").orElse("—")).append('\n');
+            for (var table : snapshot.paging().pageTables()) {
+                text.append("PID ").append(table.processId()).append(" ").append(table.loadMode())
+                        .append(" Page Table rev ").append(table.revision()).append(table.suspended() ? " Suspended" : "")
+                        .append(" | Backing ").append(table.backing().map(Object::toString).orElse("—")).append(" (logical order)\n");
+                for (var page : table.pages()) text.append("Page ").append(page.pageNumber()).append(" → Frame ")
+                        .append(page.frame().map(Object::toString).orElse("Not Present")).append(" | Base ").append(page.base().map(Object::toString).orElse("—"))
+                        .append(" | Used ").append(page.usedLength()).append('\n');
+            }
+            text.append("Unassignable USER remainder: ").append(snapshot.paging().unassignableCells());
+            for (var event : snapshot.paging().events()) {
+                text.append('\n').append(event.kind()).append(" t=").append(event.time())
+                        .append(" CPU ").append(event.cpuId().value()).append(" PID ").append(event.processId()).append(" Page ").append(event.pageNumber());
+                event.eviction().ifPresent(e -> text.append(" | Victim PID ").append(e.victimProcessId())
+                        .append(" Page ").append(e.victimPageNumber()).append(" | Frame ").append(e.frameId()));
+            }
+            for (var request : snapshot.paging().pending()) text.append("\nPending Page-In: PID ").append(request.processId()).append(" Page ").append(request.pageNumber());
+            pagingDetailsArea.setText(text.toString());
+        } else pagingDetailsArea.clear();
+        cpuSelector.setDisable(snapshot.cpus().isEmpty());
+        initializeButton.setDisable(!configuring);
+        updateProgramQueueButtons();
+        startButton.setDisable(state != SimulatorState.PROGRAM_LOADED);
+        stepButton.setDisable(!canStep() || automaticMode); automaticButton.setDisable(!runnable() || automaticMode);
         pauseButton.setDisable(state != SimulatorState.RUNNING); resumeButton.setDisable(state != SimulatorState.PAUSED);
-        resetButton.setDisable(false); keyboardField.setDisable(!keyboard); keyboardSendButton.setDisable(!keyboard);
+        resetButton.setDisable(false);
         mainMemorySlider.setDisable(!configuring); kernelMemorySlider.setDisable(!configuring);
         secondaryStorageSlider.setDisable(!configuring); virtualMemorySlider.setDisable(!configuring);
     }
@@ -420,13 +1097,34 @@ public final class SimulatorController {
 
     /** Restituye los defaults del modelo en los cuatro sliders y recalcula límites dependientes. */
     private void restoreConfigurationDefaults() {
+        cpuCountBox.setValue(1);
+        updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
+        schedulingPolicyBox.setValue(defaults.schedulingPolicy());
+        showMlfqQuanta(MlfqConfiguration.defaults());
+        quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
+        restorePriorityConfigurationDefaults();
+        seedField.clear();
+        memoryModeBox.setValue(defaults.memoryMode());
+        partitionCountField.setText("1");
+        pageSizeField.setText(Integer.toString(PagingConfiguration.defaults().pageSize()));
+        pagingLoadModeBox.setValue(PagingConfiguration.defaults().loadMode());
+        partitionCapacitiesField.clear();
+        userAllocationBox.setValue(defaults.userAllocationStrategy());
         mainMemorySlider.setValue(defaults.mainMemory().totalPositions());
         secondaryStorageSlider.setValue(defaults.secondaryStoragePositions());
         updateDependentRange(kernelMemorySlider, mainMemorySlider);
         updateDependentRange(virtualMemorySlider, secondaryStorageSlider);
         kernelMemorySlider.setValue(defaults.mainMemory().kernelReservedPositions());
         virtualMemorySlider.setValue(defaults.virtualMemoryPositions());
+    }
+
+    private void updateCpuMemoryLimits() {
+        int kernelMinimum = SimulatorConfiguration.MIN_KERNEL_MEMORY * cpuCountBox.getValue();
+        // Ampliar Main y el máximo Kernel antes de subir su mínimo evita rangos transitoriamente inválidos.
+        mainMemorySlider.setMin(Math.max(SimulatorConfiguration.MIN_MAIN_MEMORY, kernelMinimum + 1));
+        updateDependentRange(kernelMemorySlider, mainMemorySlider);
+        kernelMemorySlider.setMin(kernelMinimum);
     }
 
     /** Presenta un Alert con el diagnóstico controlado, sin mostrar stack traces al usuario. */

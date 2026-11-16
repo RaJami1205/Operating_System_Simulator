@@ -11,7 +11,7 @@ public record ProcessMemoryBounds(int base, int limit) {
         }
     }
 
-    /** Calcula el fin físico exclusivo Base + Limit; no es el PC terminal lógico. */
+    /** Calcula el fin físico exclusivo Base + Limit; también es el marcador terminal físico. */
     public int endExclusive() {
         return base + limit;
     }

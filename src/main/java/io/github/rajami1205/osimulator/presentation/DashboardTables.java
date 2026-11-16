@@ -14,6 +14,7 @@ final class DashboardTables {
     private DashboardTables() {}
     /** Conecta la extracción de texto con celdas y tooltips para conservar acceso a valores largos. */
     static <T> void column(TableColumn<T, String> column, Function<T, String> text) {
+        column.setSortable(false);
         column.setCellValueFactory(cell -> new ReadOnlyStringWrapper(text.apply(cell.getValue())));
         column.setCellFactory(ignored -> new TableCell<>() {
             /**

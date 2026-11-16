@@ -1,6 +1,7 @@
 package io.github.rajami1205.osimulator.application.process;
 
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
@@ -18,16 +19,26 @@ public final class Dispatcher {
     private final ReadyQueue ready;
     private final ProcessResourceRegistry resources;
     private ProcessControlBlock owner;
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
+    private final CpuId cpuId;
 
     /** Recibe CPU, tabla, cola y recursos de la misma sesión; comienza sin owner. */
     public Dispatcher(CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
             ProcessResourceRegistry resources, MainMemory memory) {
+        this(CpuId.ZERO, cpu, table, ready, resources, memory);
+    }
+
+    public Dispatcher(CpuId cpuId, CpuRegisters<Instruction> cpu, ProcessTable table, ReadyQueue ready,
+            ProcessResourceRegistry resources, MainMemory memory) {
+        this.cpuId = Objects.requireNonNull(cpuId);
         this.memory = Objects.requireNonNull(memory);
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.cpu = Objects.requireNonNull(cpu);
         this.table = Objects.requireNonNull(table);
         this.ready = Objects.requireNonNull(ready);
         this.resources = Objects.requireNonNull(resources);
+        ready.requireBinding(cpuId, table);
     }
 
     /**
@@ -37,27 +48,44 @@ public final class Dispatcher {
     public Optional<ProcessControlBlock> owner() { return Optional.ofNullable(owner); }
 
     /**
-     * Valida cabeza READY, bounds y handles USER/Kernel antes de restaurar contexto y marcar RUNNING; no
+     * Valida candidato READY local, bounds y handles USER/Kernel antes de restaurar contexto y marcar RUNNING; no
      * consume ticks.
      */
     public void dispatch(int pid) {
+        dispatch(pid, 0);
+    }
+
+    public void dispatch(int pid, long currentTime) {
         if (owner != null) throw new IllegalStateException("CPU already owned");
         var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Unknown selected process"));
         var resource = resources.find(pid).orElseThrow(() -> new IllegalStateException("Missing process resources"));
-        if (!ready.peek().equals(Optional.of(pid)) || pcb.state() != ProcessState.READY
-                || !(resource.residence() instanceof UserImageResidence.Resident resident)
-                || resident.allocation().base() != pcb.memoryBounds().base()
-                || resident.allocation().size() != pcb.instructionCount()
-                || pcb.programCounter() >= pcb.instructionCount()
-                || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING)) {
+        if (!ready.entries().contains(pid) || pcb.state() != ProcessState.READY
+                || !pcb.cpuAffinity().equals(cpuId)
+                || resource.residence().suspended()
+                || !pcb.hasExecutableProgramCounter()
+                || table.entries().stream().anyMatch(p -> p.state() == ProcessState.RUNNING
+                    && p.cpuAffinity().equals(cpuId))) {
             throw new IllegalStateException("Invalid dispatch candidate or CPU ownership");
         }
-        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
+        memory.validateImage(resource.residence().residentImage(), pcb);
         memory.validatePcbAllocation(resource.kernel(), pcb);
-        cpu.restore(pcb.cpuContext());
-        ready.poll();
-        pcb.changeState(ProcessState.RUNNING);
+        // Prevalida el evento antes de restaurar CPU; sólo se publica tras sincronización exitosa.
+        pcb.logicalTimes().dispatchedAt(currentTime);
+        var previousCpu = cpu.snapshot();
+        try {
+            cpu.restore(pcb.cpuContext());
+            pcb.changeState(ProcessState.RUNNING);
+            pcbSynchronizer.sync(pcb);
+        } catch (RuntimeException failure) {
+            // writePcbImage es atómico; READY aún conserva el candidato en su posición original.
+            pcb.changeState(ProcessState.READY);
+            cpu.restore(previousCpu);
+            throw failure;
+        }
+        // Sin callbacks ni concurrencia: membresía/afinidad y timestamp ya fueron prevalidados.
+        ready.remove(pid);
         owner = pcb;
+        pcb.recordFirstDispatch(currentTime);
     }
 
     /**
@@ -69,6 +97,52 @@ public final class Dispatcher {
             throw new IllegalStateException("Only a blocked/terminated owner may release CPU");
         }
         owner.replaceCpuContext(cpu.snapshot());
+        pcbSynchronizer.sync(owner);
+        owner = null;
+    }
+
+    /**
+     * Expulsa al owner RUNNING de vuelta a READY: guarda el contexto, cambia estado, re-encola y libera
+     * ownership. No consume ticks ni selecciona sucesor.
+     */
+    public void preempt() {
+        if (owner == null || owner.state() != ProcessState.RUNNING) {
+            throw new IllegalStateException("Only a running owner can be preempted");
+        }
+        ProcessControlBlock preempted = owner;
+        int pid = preempted.processId();
+        if (table.find(pid).orElse(null) != preempted || !preempted.cpuAffinity().equals(cpuId)
+                || ready.entries().contains(pid) || !preempted.hasExecutableProgramCounter()
+                || table.entries().stream().anyMatch(other -> other != preempted
+                        && other.cpuAffinity().equals(cpuId) && other.state() == ProcessState.RUNNING)) {
+            throw new IllegalStateException("Inconsistent preemption owner or queue");
+        }
+        pcbSynchronizer.validate(preempted);
+        var saved = preempted.cpuContext();
+        var active = cpu.snapshot();
+        var range = preempted.logicalCodeRange();
+        if (active.programCounter() < range.base().value() || active.programCounter() >= range.endExclusive().value()) {
+            throw new IllegalStateException("Preemption requires an executable CPU program counter");
+        }
+        ready.enqueue(pid);
+        try {
+            preempted.replaceCpuContext(active);
+            preempted.changeState(ProcessState.READY);
+            pcbSynchronizer.sync(preempted);
+        } catch (RuntimeException | Error failure) {
+            preempted.changeState(ProcessState.RUNNING);
+            try {
+                preempted.replaceCpuContext(saved);
+            } catch (RuntimeException | Error cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            try {
+                if (!ready.remove(pid)) throw new IllegalStateException("Provisional queue entry missing");
+            } catch (RuntimeException | Error cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
         owner = null;
     }
 }

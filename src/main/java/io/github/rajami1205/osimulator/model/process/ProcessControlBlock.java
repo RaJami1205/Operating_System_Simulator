@@ -5,22 +5,39 @@ import io.github.rajami1205.osimulator.model.process.exception.InvalidProcessPro
 import java.util.Objects;
 import java.util.Optional;
 import io.github.rajami1205.osimulator.model.cpu.CpuContext;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
+import io.github.rajami1205.osimulator.model.memory.LogicalAddress;
+import io.github.rajami1205.osimulator.model.memory.LogicalCodeRange;
 
 /**
  * Estado persistente del proceso: contexto guardado, bounds, stack, archivos, accounting y enlace Kernel.
  * El CPU activo permanece separado y priority sólo es metadata para FCFS.
  */
 public final class ProcessControlBlock {
+    /** Base compartida por los espacios lógicos independientes de cada proceso. */
+    public static final int LOGICAL_CODE_BASE = 4096;
 
     private final int processId;
+    private final CpuId cpuAffinity;
+    private final LogicalCodeRange logicalCodeRange;
     private ProcessMemoryBounds memoryBounds;
     private final ProcessStack stack = new ProcessStack();
     private final OpenFileTable openFiles = new OpenFileTable();
     private ProcessAccounting accounting = ProcessAccounting.initial();
+    private LogicalProcessTimes logicalTimes;
     private ProcessState state = ProcessState.NEW;
-    private CpuContext<Instruction> cpuContext = CpuContext.initial();
+    private CpuContext<Instruction> cpuContext;
+    /** Rango de prioridad de planificación: menor número = mayor prioridad. */
+    public static final int MIN_PRIORITY = 0;
+    public static final int MAX_PRIORITY = 9;
+    public static final int DEFAULT_PRIORITY = 0;
     private int priority;
+    /** Tickets de Lottery: rango y valor por defecto. Sólo viven en este objeto, no en la imagen Kernel. */
+    public static final int MIN_TICKETS = 1;
+    public static final int MAX_TICKETS = 100;
+    public static final int DEFAULT_TICKETS = 1;
+    private int tickets = DEFAULT_TICKETS;
     private Optional<PcbAddress> nextPcbAddress = Optional.empty();
     /** Valida y fija los metadatos del proceso con su PC inicial y estado NEW. */
     public ProcessControlBlock(
@@ -28,13 +45,39 @@ public final class ProcessControlBlock {
             int programStartAddress,
             int instructionCount
     ) {
+        this(processId, programStartAddress, instructionCount, LogicalProcessTimes.admitted(0, 0));
+    }
+
+    public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
+            LogicalProcessTimes logicalTimes) {
+        this(processId, programStartAddress, instructionCount, logicalTimes, CpuId.ZERO);
+    }
+
+    /** Fija afinidad antes de publicar recursos; nunca cambia por dispatch o swapping. */
+    public ProcessControlBlock(int processId, int programStartAddress, int instructionCount,
+            LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        this(processId, new ProcessMemoryBounds(programStartAddress, instructionCount), instructionCount, logicalTimes, cpuAffinity);
+    }
+
+    private ProcessControlBlock(int processId, ProcessMemoryBounds bounds, int instructionCount,
+            LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+        this.cpuAffinity = Objects.requireNonNull(cpuAffinity);
+        this.logicalTimes = Objects.requireNonNull(logicalTimes);
         validateProcessId(processId);
         this.processId = processId;
-        this.memoryBounds = new ProcessMemoryBounds(programStartAddress, instructionCount);
+        this.memoryBounds = bounds;
+        this.logicalCodeRange = new LogicalCodeRange(new LogicalAddress(LOGICAL_CODE_BASE), instructionCount);
+        this.cpuContext = CpuContext.<Instruction>initial().withProgramCounter(logicalCodeRange.base().value());
     }
+
+    public static ProcessControlBlock paged(int processId, int instructionCount, LogicalProcessTimes times, CpuId affinity) {
+        return new ProcessControlBlock(processId, null, instructionCount, times, affinity);
+    }
+    public boolean isPaged() { return memoryBounds == null; }
 
     /** Devuelve bounds físicos vigentes; rechaza la consulta mientras el proceso está suspended. */
     public ProcessMemoryBounds memoryBounds() {
+        if (isPaged()) throw new IllegalStateException("Paged process has no contiguous physical bounds");
         if (state == ProcessState.READY_SUSPENDED || state == ProcessState.BLOCKED_SUSPENDED) {
             throw new IllegalStateException("Suspended process has no current MainMemory bounds");
         }
@@ -45,11 +88,32 @@ public final class ProcessControlBlock {
     public void relocateSuspended(ProcessMemoryBounds bounds) {
         Objects.requireNonNull(bounds, "bounds must not be null");
         if ((state != ProcessState.READY_SUSPENDED && state != ProcessState.BLOCKED_SUSPENDED)
-                || bounds.limit() != memoryBounds.limit()) {
+                || isPaged() || bounds.limit() != instructionCount()) {
             throw new IllegalStateException("Relocation requires suspended state and unchanged limit");
         }
+        validateOperationalProgramCounter(programCounter());
         memoryBounds = bounds;
     }
+
+    /** Rango lógico inmutable, independiente de la residencia. */
+    public LogicalCodeRange logicalCodeRange() { return logicalCodeRange; }
+
+    /** Dirección lógica de una posición ejecutable del programa. */
+    public int logicalInstructionAddress(int offset) {
+        if (offset < 0 || offset >= logicalCodeRange.length()) {
+            throw new InvalidProcessProgramCounterException("Invalid instruction offset: " + offset);
+        }
+        return logicalCodeRange.base().value() + offset;
+    }
+
+    /** PC lógico ejecutable, independiente de la residencia. */
+    public boolean hasExecutableProgramCounter() {
+        return programCounter() >= logicalCodeRange.base().value() && programCounter() < logicalCodeRange.endExclusive().value();
+    }
+
+    /** Distingue el marcador terminal lógico, también durante suspensión. */
+    public boolean hasTerminalProgramCounter() { return programCounter() == logicalCodeRange.endExclusive().value(); }
+
     /** Expone el contexto inmutable guardado, que puede diferir del CPU mientras el proceso ejecuta. */
     public CpuContext<Instruction> cpuContext() { return cpuContext; }
     /** Entrega el stack propio y mutable del proceso para operaciones del dominio. */
@@ -58,12 +122,22 @@ public final class ProcessControlBlock {
     public OpenFileTable openFiles() { return openFiles; }
     /** Consulta el record inmutable de timestamps reales y ticks consumidos. */
     public ProcessAccounting accounting() { return accounting; }
+    public LogicalProcessTimes logicalTimes() { return logicalTimes; }
+    public CpuId cpuAffinity() { return cpuAffinity; }
+
+    /** Publica un evento previamente validado sin alterar snapshots anteriores. */
+    public void recordFirstDispatch(long time) { logicalTimes = logicalTimes.dispatchedAt(time); }
+
+    /** Se invoca únicamente después del commit temporal del tick terminal. */
+    public void recordLogicalFinish(long time) { logicalTimes = logicalTimes.finishedAt(time); }
     /** Consulta metadata de prioridad que FCFS no usa como criterio de selección. */
     public int priority() { return priority; }
+    /** Tickets de Lottery (1..100); no forman parte del layout PCB de 28 celdas. */
+    public int tickets() { return tickets; }
     /** Consulta el enlace opcional a otra dirección Kernel simulada, no una identidad de objeto Java. */
     public Optional<PcbAddress> nextPcbAddress() { return nextPcbAddress; }
 
-    /** Reemplaza el contexto guardado sólo después de validar su PC lógico contra Limit. */
+    /** Reemplaza el contexto guardado sólo después de validar su PC lógico. */
     public void replaceCpuContext(CpuContext<Instruction> context) {
         Objects.requireNonNull(context, "context must not be null");
         validateOperationalProgramCounter(context.programCounter());
@@ -77,6 +151,12 @@ public final class ProcessControlBlock {
 
     /** Actualiza la metadata de prioridad sin reordenar ReadyQueue. */
     public void setPriority(int priority) { this.priority = priority; }
+    public void setTickets(int tickets) {
+        if (tickets < MIN_TICKETS || tickets > MAX_TICKETS) {
+            throw new IllegalArgumentException("Tickets must be between " + MIN_TICKETS + " and " + MAX_TICKETS);
+        }
+        this.tickets = tickets;
+    }
 
     /** Reemplaza el enlace opcional no nulo; la coordinación valida después su destino canónico. */
     public void setNextPcbAddress(Optional<PcbAddress> address) {
@@ -94,7 +174,7 @@ public final class ProcessControlBlock {
 
     /** Expone la cantidad de instrucciones del proceso. */
     public int instructionCount() {
-        return memoryBounds.limit();
+        return logicalCodeRange.length();
     }
 
     /** Expone el límite exclusivo del programa en memoria. */
@@ -130,12 +210,12 @@ public final class ProcessControlBlock {
         cpuContext = cpuContext.withProgramCounter(programCounter);
     }
 
-    /** El PC lógico admite Limit únicamente como marcador terminal. */
+    /** El PC lógico admite EndExclusive únicamente como marcador terminal. */
     private void validateOperationalProgramCounter(int programCounter) {
-        if (programCounter < 0 || programCounter > memoryBounds.limit()) {
+        if (programCounter < logicalCodeRange.base().value() || programCounter > logicalCodeRange.endExclusive().value()) {
             throw new InvalidProcessProgramCounterException(
-                    "Process Program Counter must be between 0"
-                            + " and " + memoryBounds.limit() + ": " + programCounter);
+                    "Logical Program Counter must be between " + logicalCodeRange.base().value()
+                            + " and " + logicalCodeRange.endExclusive().value() + ": " + programCounter);
         }
     }
     /** Exige un identificador positivo para el proceso. */

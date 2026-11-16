@@ -15,7 +15,91 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProcessSwapServiceTest {
-    private final MainMemory memory=new MainMemory(new MemoryConfiguration(128,32));
+    @Test void fixedSwapRelocatesToLargerPartitionAndFailurePreservesBacking() throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), UserAllocationStrategy.BEST_FIT,
+                MemoryMode.FIXED_UNEQUAL, Optional.of(FixedPartitionConfiguration.unequal(List.of(16, 32, 48))));
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("fixed", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "fixed", JobState.PENDING)); admission.admit(1);
+        var pcb = table.find(1).orElseThrow(); pcb.setProgramCounter(4097);
+        var old = user(1); var context = pcb.cpuContext(); var affinity = pcb.cpuAffinity();
+        assertEquals(140, old.base()); assertEquals(3, old.size());
+        swap.swapOut(1);
+        assertFalse(memory.partitions().getFirst().occupied());
+        assertEquals(3, storage.readSwapBlock(disk(1)).size());
+        var blocker = memory.allocateUser(1); // Ocupa toda la antigua partición de 16.
+        var suspended = resource(1); var before = memory.partitions();
+        var medium = memory.allocateUser(32); var large = memory.allocateUser(48);
+        assertEquals(new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY), swap.swapIn(1));
+        assertSame(suspended, resource(1)); assertTrue(queue.entries().isEmpty());
+        memory.release(medium); memory.release(large);
+        var fault = MemoryFaults.install(memory, "user");
+        fault.writeFailure = new IllegalStateException("fixed restore failed");
+        assertSame(fault.writeFailure, assertThrows(IllegalStateException.class, () -> swap.swapIn(1)));
+        assertEquals(before, memory.partitions()); assertSame(suspended, resource(1));
+        assertEquals(context, pcb.cpuContext()); assertTrue(queue.entries().isEmpty());
+        assertEquals(ProcessState.READY_SUSPENDED, pcb.state());
+        fault.writeFailure = null;
+        swap.swapIn(1);
+        assertEquals(156, user(1).base()); assertEquals(3, user(1).size());
+        assertEquals(29, memory.partitions().get(1).internalFragmentation());
+        assertEquals(context, pcb.cpuContext()); assertEquals(affinity, pcb.cpuAffinity());
+        assertEquals(3, pcb.instructionCount());
+        assertEquals(157, memory.translateInstructionAddress(user(1), pcb.logicalCodeRange(), new LogicalAddress(4097)).value());
+        assertThrows(RuntimeException.class, () -> memory.readUserBlock(old));
+        memory.validatePcbAllocation(resource(1).kernel(), pcb);
+        assertEquals(List.of(1), queue.entries());
+        memory.release(blocker);
+        assertEquals(140, memory.allocateUser(16).base());
+    }
+    @ParameterizedTest @EnumSource(UserAllocationStrategy.class)
+    void strategyRoundTripAndFailedRestorePreserveIdentityContextAndCursor(UserAllocationStrategy strategy) throws Exception {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("timed", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "timed", JobState.PENDING));
+        admission.admit(1);
+        var pcb = table.find(1).orElseThrow(); pcb.setProgramCounter(4097);
+        var context = pcb.cpuContext();
+        var old = user(1);
+        swap.swapOut(1);
+        var suspended = resource(1); var source = disk(1);
+        var faults = MemoryFaults.install(memory, "user");
+        faults.writeFailure = new IllegalStateException("restore failed");
+        assertSame(faults.writeFailure, assertThrows(IllegalStateException.class, () -> swap.swapIn(1)));
+        assertSame(suspended, resource(1)); assertSame(context, pcb.cpuContext());
+        assertEquals(3, storage.readSwapBlock(source).size()); assertTrue(queue.entries().isEmpty());
+        faults.writeFailure = null;
+        assertEquals(new SwapResult.Completed(), swap.swapIn(1));
+        int expectedBase = strategy == UserAllocationStrategy.NEXT_FIT ? 143 : 140;
+        assertEquals(expectedBase, user(1).base());
+        assertNotEquals(old.allocationId(), user(1).allocationId());
+        assertEquals(context, pcb.cpuContext());
+        assertEquals(4097, pcb.programCounter());
+        assertEquals(expectedBase + 1, memory.translateInstructionAddress(user(1), pcb.logicalCodeRange(), new LogicalAddress(4097)).value());
+        assertThrows(RuntimeException.class, () -> memory.readUserBlock(old));
+        memory.validatePcbAllocation(resource(1).kernel(), pcb);
+        assertEquals(expectedBase + 3, memory.allocateUser(1).base());
+    }
+
+    @ParameterizedTest @EnumSource(UserAllocationStrategy.class)
+    void strategySwapInWaitsWithoutChangingSuspendedOwnership(UserAllocationStrategy strategy) {
+        var memory = new MainMemory(new MemoryConfiguration(236, 140), strategy);
+        var admission = new ProcessAdmissionService(jobs, storage, memory, table, new ProgramLoader(), queue, registry);
+        var swap = new ProcessSwapService(memory, storage, table, registry, queue);
+        storage.storeProgram("waiting", Collections.nCopies(3, new IncInstruction()));
+        jobs.add(new Job(1, "waiting", JobState.PENDING)); admission.admit(1); swap.swapOut(1);
+        var suspended = resource(1);
+        var all = memory.allocateUser(96);
+        assertEquals(new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY), swap.swapIn(1));
+        assertSame(suspended, resource(1)); assertTrue(queue.entries().isEmpty());
+        memory.release(all);
+        assertEquals(new SwapResult.Completed(), swap.swapIn(1));
+        assertEquals(140, user(1).base());
+    }
+    private final MainMemory memory=new MainMemory(new MemoryConfiguration(236,140));
     private final SecondaryStorage storage=new SecondaryStorage(512,64);
     private final ProcessTable table=new ProcessTable();
     private final ProcessResourceRegistry registry=new ProcessResourceRegistry();
@@ -39,7 +123,7 @@ class ProcessSwapServiceTest {
         var resources=resource(1);var original=user(1);
         memory.writeInstruction(original,0,new DecInstruction());
         var image=memory.readUserBlock(original);
-        pcb.setProgramCounter(2);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
+        pcb.setProgramCounter(4098);pcb.stack().push(7);pcb.openFiles().open("file");pcb.setPriority(9);
         var context=pcb.cpuContext();var accounting=pcb.accounting();var link=pcb.nextPcbAddress();
         storage.createUserFile("file");storage.writeUserFile("file","hello");var index=storage.entries();
         assertEquals(new SwapResult.Completed(),swap.swapOut(1));
@@ -51,7 +135,7 @@ class ProcessSwapServiceTest {
         assertEquals(image,storage.readSwapBlock(disk(1)));
         assertEquals(448,disk(1).base());
         assertEquals(StorageRegion.VIRTUAL_MEMORY,storage.regionOf(disk(1).base()));
-        assertSame(pcb,((PcbContent)memory.read(resources.address().address())).pcb());
+        assertTrue(((PcbContent)memory.read(resources.address().address())).belongsTo(pcb));
         assertEquals(resources.kernel(),resource(1).kernel());assertEquals(link,pcb.nextPcbAddress());
         assertSame(pcb,table.find(1).orElseThrow());assertEquals(3,table.size());
         assertThrows(RuntimeException.class,()->memory.readUserBlock(original));
@@ -62,7 +146,7 @@ class ProcessSwapServiceTest {
         assertEquals(new ProcessMemoryBounds(user(1).base(),3),pcb.memoryBounds());
         assertEquals(image,memory.readUserBlock(user(1)));assertEquals(List.of(2,3,1),queue.entries());
         assertThrows(RuntimeException.class,()->storage.readSwapBlock(oldSwap));
-        assertSame(context,pcb.cpuContext());assertEquals(2,pcb.programCounter());
+        assertEquals(context,pcb.cpuContext());assertEquals(4098,pcb.programCounter());
         assertSame(accounting,pcb.accounting());assertEquals(List.of(7),pcb.stack().values());
         assertTrue(pcb.openFiles().contains("file"));assertEquals(9,pcb.priority());
         assertEquals(index,storage.entries());assertEquals("hello",storage.readUserFile("file"));
@@ -91,9 +175,9 @@ class ProcessSwapServiceTest {
         queue.remove(1);assertThrows(IllegalStateException.class,()->swap.swapOut(1));queue.enqueue(1);
         swap.swapOut(1);assertThrows(IllegalStateException.class,()->swap.swapOut(1));
         queue.enqueue(1);assertThrows(IllegalStateException.class,()->swap.swapIn(1));queue.remove(1);swap.swapIn(1);
-        memory.writePcb(resource(1).kernel(),0,new ProcessControlBlock(1,32,2));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resource(1).kernel(),new ProcessControlBlock(1,140,2));
         assertThrows(RuntimeException.class,()->swap.swapOut(1));
-        memory.writePcb(resource(1).kernel(),0,pcb);memory.release(user(1));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resource(1).kernel(),pcb);memory.release(user(1));
         assertThrows(RuntimeException.class,()->swap.swapOut(1));
         assertThrows(IllegalArgumentException.class,()->swap.swapOut(999));
     }
@@ -122,6 +206,22 @@ class ProcessSwapServiceTest {
         assertSame(original,resource(1));assertEquals(image,storage.readSwapBlock(handle));assertTrue(queue.entries().isEmpty());
         fault.writeFailure=null;
         var all=memory.allocateUser(96);memory.release(all);swap.swapIn(1);
+    }
+
+    @Test void rejectedRelocationRollsBackDestinationWithoutPublishingBoundsOrContext() throws Exception {
+        var pcb = admit(1, 3); swap.swapOut(1);
+        var original = resource(1); var image = storage.readSwapBlock(disk(1));
+        var contextField = ProcessControlBlock.class.getDeclaredField("cpuContext");
+        contextField.setAccessible(true);
+        var corrupt = pcb.cpuContext().withProgramCounter(139);
+        contextField.set(pcb, corrupt);
+        assertThrows(RuntimeException.class, () -> swap.swapIn(1));
+        assertSame(corrupt, pcb.cpuContext()); assertSame(original, resource(1));
+        assertEquals(ProcessState.READY_SUSPENDED, pcb.state());
+        assertEquals(image, storage.readSwapBlock(disk(1)));
+        assertEquals(4096, pcb.logicalInstructionAddress(0));
+        var all = memory.allocateUser(96);
+        assertTrue(memory.isEmpty(all.base())); memory.release(all);
     }
 
     @Test void failedSourceReleaseRollsBackPreparedSwapWithoutReorderingReady() throws Exception {

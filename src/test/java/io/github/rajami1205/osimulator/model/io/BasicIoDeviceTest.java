@@ -11,13 +11,4 @@ class BasicIoDeviceTest {
         assertEquals(List.of(-32768),saved); assertEquals(List.of(-32768,32767),screen.outputs());
         assertThrows(UnsupportedOperationException.class,()->saved.add(1));
     }
-    @Test void keyboardValidatesAtomicallyAndPreservesFifo() {
-        var keyboard=new KeyboardDevice(); assertTrue(keyboard.poll().isEmpty());
-        keyboard.submit(0);
-        assertThrows(IllegalArgumentException.class,()->keyboard.submit(-1));
-        assertThrows(IllegalArgumentException.class,()->keyboard.submit(256));
-        keyboard.submit(255);
-        assertEquals(0,keyboard.poll().orElseThrow()); assertEquals(255,keyboard.poll().orElseThrow());
-        assertFalse(keyboard.hasInput()); assertTrue(keyboard.poll().isEmpty());
-    }
 }

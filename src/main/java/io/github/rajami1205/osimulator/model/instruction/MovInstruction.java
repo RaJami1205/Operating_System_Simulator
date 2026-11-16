@@ -18,7 +18,6 @@ import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand
  */
 public record MovInstruction(MovDestination destination, InstructionOperand source) implements Instruction {
 
-    private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(1);
 
     /** Exige destino y fuente no nulos, en ese orden, y rechaza combinaciones de tipos no admitidas por MOV. */
     public MovInstruction {
@@ -61,9 +60,4 @@ public record MovInstruction(MovDestination destination, InstructionOperand sour
         return List.of(target, source);
     }
 
-    /** Devuelve el peso estático en CPU ticks de MOV, sin almacenar progreso. */
-    @Override
-    public ExecutionWeight executionWeight() {
-        return EXECUTION_WEIGHT;
-    }
 }

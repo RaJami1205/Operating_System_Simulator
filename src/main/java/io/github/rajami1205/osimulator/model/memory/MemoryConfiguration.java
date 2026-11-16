@@ -4,7 +4,8 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddre
 import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryConfigurationException;
 
 /**
- * Define la configuración inmutable de la distribución de memoria simulada.
+ * Define la distribución de una estructura de memoria, incluidos fixtures low-level.
+ * SimulatorConfiguration exige adicionalmente los mínimos de sesión Main=256 y Kernel=140.
  *
  * @param totalPositions cantidad total de posiciones de memoria simulada
  * @param kernelReservedPositions cantidad de posiciones reservadas para el Kernel

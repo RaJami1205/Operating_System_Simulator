@@ -2,11 +2,11 @@
 
 # 🖥️ Operating System Simulator
 
-### Simulador educativo multiproceso de conceptos fundamentales de Sistemas Operativos
+### Simulador educativo Multi-CPU de planificación de procesos y administración de memoria
 
-Aplicación de escritorio desarrollada en **Java + JavaFX** para representar de forma visual
-la administración de procesos, CPU, memoria, almacenamiento, interrupciones, I/O,
-filesystem, scheduling y context switching de una minicomputadora simulada.
+Aplicación de escritorio desarrollada en **Java 25 + JavaFX** para explorar visualmente
+**CPU Scheduling**, procesos, PCB, **Memory Management**, **Virtual Memory**,
+**Context Switching**, interrupciones, I/O y estadísticas de una minicomputadora simulada.
 
 <br>
 
@@ -38,6 +38,9 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 - [🏗️ Arquitectura](#️-arquitectura)
 - [🧠 Modelo del sistema operativo](#-modelo-del-sistema-operativo)
 - [⚙️ Instruction Set](#️-instruction-set)
+- [📊 Statistics](#-statistics)
+- [🛡️ Protection & Security](#️-protection--security)
+- [🎨 Principios de diseño](#-principios-de-diseño)
 - [🛠️ Tecnologías](#️-tecnologías)
 - [📦 Requisitos](#-requisitos)
 - [💻 Instalación y ejecución](#-instalación-y-ejecución)
@@ -54,111 +57,89 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 
 | Información | Detalle |
 |---|---|
+| **Institución** | Tecnológico de Costa Rica |
 | **Curso** | Principios de Sistemas Operativos |
-| **Asignación** | Proyecto #1 — Gestor de Multiprocesos |
-| **Estudiante** | Raúl Alfaro Rodríguez |
-| **Carnet** | 2023060456 |
-| **Estado** | ✅ Desarrollo completado |
-| **Video demostrativo** | https://youtu.be/doSFTdcYQJQ |
+| **Proyecto I** | Gestor de Multiprocesos — base funcional y arquitectura |
+| **Proyecto II** | Multi-CPU, CPU Scheduling, Memory Management y Statistics |
+| **Estudiante** | Raúl Alfaro Rodríguez — 2023060456 |
+| **Estudiante** | Diego Araya Ureña — 2023071310 |
+| **Estado** | Proyecto II Implementado |
 
 > [!NOTE]
-> Este proyecto corresponde a una **simulación académica** de mecanismos de un Sistema Operativo.
-> No implementa un Kernel real ni interactúa directamente con hardware físico.
+> Este es un **simulador académico**: no implementa un Kernel real ni administra el hardware o
+> los procesos del equipo anfitrión. Se conserva la información académica del README original.
 
 ---
 
 # 🚀 Descripción del proyecto
 
-**Operating System Simulator** recrea una minicomputadora capaz de cargar y ejecutar
-múltiples programas escritos en un mini lenguaje ensamblador `.asm`.
-
-Cada programa pasa por un flujo similar al utilizado por un Sistema Operativo:
+**Operating System Simulator** permite cargar múltiples programas en un mini lenguaje
+ensamblador `.asm`, configurar sus tiempos de llegada y observar cómo un Sistema Operativo
+simulado los admite, planifica, ejecuta y libera sus recursos.
 
 ```text
-Archivo .asm
-    ↓
-ASM Parser
-    ↓
-Program Image
-    ↓
-Secondary Storage
-    ↓
-Job List
-    ↓
-Admission
-    ↓
-Process + PCB
-    ↓
-Ready Queue
-    ↓
-FCFS Scheduler
-    ↓
-Dispatcher
-    ↓
-CPU
-    ↓
-Execution Engine
+Archivo(s) .asm
+       ↓
+   ASM Parser
+       ↓
+  Program Image → Secondary Storage
+       ↓
+     Job List ← Arrival Time editable después de Load
+       ↓
+Admission / CPU Affinity
+       ↓
+  Process + PCB (Kernel)
+       ↓
+Ready Queues por CPU
+       ↓
+Scheduling Policy seleccionada
+       ↓
+    Dispatcher
+       ↓
+ CPU 1 ... CPU N  (N = 1..5)
+       ↓
+ Execution Engine
+       ↓
+Memory / Paging / I/O / Statistics
 ```
 
-Durante la ejecución, la aplicación permite observar en tiempo real:
-
-- procesos y sus estados;
-- CPU y registers;
-- Current Instruction;
-- PCB/BCP;
-- Ready Queue;
-- Jobs;
-- Main Memory;
-- Secondary Storage;
-- Virtual Memory;
-- simulated keyboard;
-- simulated screen;
-- filesystem;
-- statistics;
-- procesos completados.
+La GUI permite inspeccionar **CPU Status, Current Instruction, Workload, Process/PCB,
+Memory View, Secondary Storage, Scheduling Timeline/Gantt y Statistics** mediante vistas
+y snapshots del estado simulado.
 
 ---
 
 # ✨ Características principales
 
-### 🧩 Multiprocess Runtime
+### 🧩 Multiprocess & Multi-CPU Runtime
 
-- Un único CPU simulado.
-- Hasta **5 procesos admitidos simultáneamente**.
-- Job List.
-- Process Table.
-- Ready Queue FIFO.
-- Scheduler **FCFS non-preemptive**.
-- Dispatcher.
-- Context switching.
-- Save/restore de `CpuContext`.
-- Estados suspendidos y bloqueados.
+- **1–5 CPU** configurables, con **5 procesos admitidos por CPU** (hasta 25 en total).
+- Job List, Process Table, Ready Queues locales y **Fixed CPU Affinity**.
+- Workload con **Arrival Time** y admisión basada en el reloj lógico.
+- **10 Scheduling Algorithms**, incluyendo políticas preemptive y non-preemptive.
+- Dispatcher, **Context Switching**, guardado y restauración de `CpuContext`.
+- Simulación **Step / Automatic / Pause / Resume / Reset**.
+- `SimulationClock` global y coordinación determinista de cada **Global Step**.
+- Preemption transaccional: consistencia de CPU owner, PCB, Kernel y ReadyQueue.
 
 ### 🧠 PCB / BCP
 
-Cada proceso mantiene información como:
+Cada proceso conserva, entre otros datos:
 
 ```text
-PID
-Process State
-PC / IR / AC
-AX / BX / CX / DX
-AH / AL
-Condition Flags
-Stack
-Open Files
-Priority
-Base / Limit
-Accounting
-Kernel PCB Address
-Next PCB Address
+PID / Process State / CPU Affinity
+Logical PC / Physical PC / IR
+AC / AX / BX / CX / DX / Flags
+Stack / Open Files / Priority
+Base / Limit / Accounting
+Kernel PCB Address / Context
 ```
 
-Los PCB se representan dentro de **Kernel Memory** y mantienen enlaces entre procesos.
+El PCB canónico se sincroniza con su representación de **28 celdas en Kernel Memory**.
+El **Logical PC inicia en 4096**; la dirección física se deriva del mecanismo de memoria
+configurado. La suspensión o relocalización no cambia la identidad del proceso.
 
 ### 💾 Main Memory
-
-La memoria principal se divide conceptualmente en:
 
 ```text
 ┌────────────────────────────┐
@@ -168,21 +149,14 @@ La memoria principal se divide conceptualmente en:
 └────────────────────────────┘
 ```
 
-Características:
-
-- tamaño configurable;
-- default de `256` posiciones;
-- Kernel default de `32`;
-- allocation mediante **First-Fit**;
-- fragmentation;
-- adjacent coalescing;
-- protección Kernel/User;
-- canonical `MemoryAllocation` handles;
-- liberación y reutilización de memoria.
+- Memoria principal y región Kernel configurables; **default: Main 256 / Kernel 140**.
+- Separación y protección entre Kernel/User, validación de rangos y handles canónicos.
+- **Dynamic Allocation:** First Fit, Next Fit y Best Fit.
+- **Fixed Partitioning:** particiones Equal y Unequal.
+- **Paging:** Page Tables, Frames y traducción de direcciones lógicas a físicas.
+- Liberación y reutilización de memoria, con visualización de ocupación y estado.
 
 ### 💿 Secondary Storage
-
-El almacenamiento secundario se divide en:
 
 ```text
 ┌────────────────────────────┐
@@ -194,67 +168,58 @@ El almacenamiento secundario se divide en:
 └────────────────────────────┘
 ```
 
-Defaults:
-
 ```text
-Secondary Storage : 512
-Virtual Memory    : 64
+Secondary Storage : 512 (default)
+Virtual Memory    :  64 (default)
 ```
 
-### 🔄 Virtual Memory
+Almacena las imágenes ASM, recursos del filesystem simulado y datos de respaldo
+necesarios para los mecanismos de residencia y Virtual Memory.
 
-La Virtual Memory utiliza un modelo educativo de:
+### 🔄 Virtual Memory, Demand Paging & CLOCK
 
-```text
-Whole-Process Swapping
-```
+- **Fully Resident Paging:** las páginas necesarias están residentes antes de ejecutar.
+- **Demand Paging:** carga de páginas bajo demanda, Page Faults y solicitudes pendientes.
+- **CLOCK / Second-Chance:** selección de Frames para reemplazo y recuperación.
+- **Backing Store**, Page Tables y sincronización de residencia/estado del proceso.
+- Mecanismos de **swapping** y estados suspendidos del modelo original.
+- Page Fault, Page-In y Context Switching no añaden por sí solos ticks de instrucción.
 
-Operaciones principales:
+### ⏱️ CPU Scheduling
 
-```text
-swapOut()
-swapIn()
-```
+| Algorithm | Modalidad o criterio principal |
+|---|---|
+| **FCFS** | First Come, First Served |
+| **SPN** | Shortest Process Next |
+| **SRT** | Shortest Remaining Time |
+| **RR** | Round Robin, Quantum configurable |
+| **HRRN** | Highest Response Ratio Next |
+| **Priority** | Prioridades y Aging |
+| **Lottery** | Tickets y selección pseudoaleatoria controlada |
+| **Guaranteed** | Fairness según servicio recibido |
+| **Selfish RR** | Prioridades dinámicas NEW / ACCEPTED |
+| **MLFQ** | Multilevel Feedback Queue configurable |
 
-Estados relacionados:
+**MLFQ** admite **2–5 niveles**, Quantum de **1–10 instrucciones por nivel** y default
+`[1,2,4]`. Cada CPU dispone de una instancia local de su Scheduling Policy; la
+configuración compartida es inmutable.
 
-```text
-READY
-    ↓
-READY_SUSPENDED
+### 🖥️ JavaFX Dashboard & Visualización
 
-BLOCKED
-    ↓
-BLOCKED_SUSPENDED
-```
-
-El PCB permanece en Kernel Memory mientras la imagen USER del proceso puede
-almacenarse en la región `VIRTUAL_MEMORY` de Secondary Storage.
-
-### ⌨️ Simulated Keyboard
-
-`INT 09H`:
-
-- acepta valores numéricos `0..255`;
-- utiliza FIFO;
-- soporta prequeued input;
-- bloquea el proceso si no hay entrada disponible;
-- almacena el resultado en `DX`;
-- permite que otro proceso utilice el CPU mientras se espera I/O.
+- Configuración de CPU, Scheduling Policy y parámetros, memoria y modalidad de asignación.
+- **Browse / Load Programs** múltiple, Workload y Arrival editable para Jobs `PENDING`
+  mientras la sesión permanece en `PROGRAM_LOADED`.
+- Paneles de CPU, registros, procesos, PCB, memoria y Secondary Storage.
+- **Gantt/Timeline** de ejecución por CPU y panel de estadísticas por sesión.
+- Vistas derivadas de snapshots, separadas de la lógica de Model/Application.
 
 ### 🖥️ Simulated Screen
 
-`INT 10H` imprime el valor numérico contenido en `DX`.
-
-La salida puede observarse desde:
-
-```text
-I/O → Simulated Screen
-```
+`INT 10H` envía a la pantalla simulada el valor numérico de `DX`.
 
 ### 📁 Simulated Filesystem
 
-`INT 21H` implementa:
+`INT 21H` conserva los servicios del filesystem educativo:
 
 | Service | Operación |
 |---|---|
@@ -264,25 +229,18 @@ I/O → Simulated Screen
 | `40H` | Write |
 | `41H` | Delete |
 
-Los archivos viven dentro del **Secondary Storage simulado**.
-
 > [!IMPORTANT]
-> Las system calls simuladas no escriben archivos reales en el filesystem del equipo anfitrión.
+> Las system calls trabajan sobre recursos **simulados**. No modifican archivos reales
+> del equipo anfitrión. **`INT 09H` y el antiguo simulated keyboard fueron retirados**
+> del proyecto; el ASM Parser ya no acepta esa interrupción.
 
 ---
 
 # 📐 Diagrama de Paquetes
 
-El proyecto utiliza un **Package Diagram** para representar de forma visual la organización general del código y las relaciones principales entre sus capas.
-
-La arquitectura se estructura principalmente en:
-
-- **Presentation** → interfaz JavaFX, Controllers y rendering.
-- **Application** → orchestration, runtime, lifecycle y casos de uso.
-- **Model** → lógica principal del simulador: CPU, procesos, memoria, instrucciones, storage y filesystem.
-- **Infrastructure** → adapters relacionados con importación y lectura de programas `.asm`.
-
-Esta separación permite mantener responsabilidades claras, reducir coupling y facilitar testing, mantenimiento y evolución del simulador.
+El **Package Diagram** conserva la organización general por capas y sus dependencias
+principales. Es una referencia visual de la estructura del proyecto; los componentes
+agregados para Scheduling, Paging y Statistics se describen en las secciones siguientes.
 
 <div align="center">
 
@@ -294,27 +252,26 @@ Esta separación permite mantener responsabilidades claras, reducir coupling y f
 
 # 🏗️ Arquitectura
 
-El proyecto utiliza una **Layered Architecture**, complementada con principios de
-`MVC` en Presentation.
+**Layered Architecture** con principios `MVC` en Presentation:
 
 ```text
 ┌─────────────────────────────────────────┐
 │              PRESENTATION               │
-│        JavaFX · FXML · CSS · MVC        │
+│       JavaFX · FXML · CSS · MVC         │
 └───────────────────┬─────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────┐
 │              APPLICATION                │
-│ Use Cases · Runtime · Orchestration     │
-│ Lifecycle · Admission · Dispatcher      │
+│ Orchestration · Admission · Runtime     │
+│ CPU Topology · Dispatcher · Statistics  │
 └───────────────────┬─────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────┐
 │                 MODEL                   │
-│ CPU · Process · Memory · Instructions   │
-│ Scheduling · Storage · Filesystem       │
+│ PCB · Processes · Scheduling · Memory   │
+│ Paging · CPU · Instructions · Storage   │
 └─────────────────────────────────────────┘
                     ▲
                     │
@@ -326,52 +283,22 @@ El proyecto utiliza una **Layered Architecture**, complementada con principios d
 
 ### Presentation
 
-Responsable de:
-
-- JavaFX;
-- FXML;
-- CSS;
-- Controllers;
-- rendering de snapshots;
-- interacción del usuario.
+JavaFX Controllers, FXML/CSS, interacción del usuario y rendering de snapshots.
+No ejecuta directamente Scheduling ni administra estructuras internas del Model.
 
 ### Application
 
-Coordina:
-
-- simulator lifecycle;
-- program submission;
-- admission;
-- multiprocess runtime;
-- Dispatcher;
-- process completion;
-- swapping;
-- statistics;
-- orchestration.
+`SimulatorOrchestrator`, lifecycle, program submission, Admission,
+`MultiprocessRuntime`, CPU Topology, Dispatcher y consolidación de estadísticas.
 
 ### Model
 
-Contiene la lógica independiente de la GUI:
-
-- CPU;
-- registers;
-- instructions;
-- processes;
-- PCB;
-- scheduling;
-- memory;
-- storage;
-- filesystem;
-- I/O;
-- execution.
+CPU, registers, instructions, procesos, PCB, Scheduling Policies, configuración,
+Memory Allocation, Paging, Virtual Memory, storage y filesystem simulado.
 
 ### Infrastructure
 
-Contiene adapters relacionados principalmente con:
-
-- lectura de `.asm`;
-- importación;
-- parsing e integración con programas externos al dominio.
+Lectura, importación y parsing de programas `.asm`, mediante adapters separados del dominio.
 
 ---
 
@@ -380,160 +307,152 @@ Contiene adapters relacionados principalmente con:
 ## Process States
 
 ```text
-NEW
-READY
-RUNNING
-BLOCKED
-READY_SUSPENDED
-BLOCKED_SUSPENDED
-TERMINATED
+NEW → READY → RUNNING → TERMINATED
+         ↑        │
+         └────────┘  Preemption / Quantum
+
+BLOCKED / READY_SUSPENDED / BLOCKED_SUSPENDED
 ```
+
+Los procesos pueden esperar por **capacidad, memoria, páginas o eventos simulados**.
+El estado de un Job (`PENDING`, `ADMITTED`, etc.) no equivale necesariamente al
+estado de ejecución de su proceso.
 
 ## Scheduling
 
+El Scheduler se selecciona antes de `Initialize` y se instancia por CPU. Las políticas
+conservan sus reglas específicas de selección, desempate, Quantum, Aging y Preemption.
+
 ```text
-FCFS
-First Come, First Served
-Non-Preemptive
+           Global SimulationClock
+                     │
+          Multi-CPU Scheduling Point
+              ┌──────┴──────┐
+              ▼             ▼
+          CPU 1 Queue   CPU N Queue
+              │             │
+        Local Policy   Local Policy
+              └──────┬──────┘
+                     ▼
+             Global Step Commit
 ```
 
-La prioridad se conserva como metadata dentro del PCB, pero no altera el orden
-del scheduler en este Proyecto I.
+Los arreglos de colas son locales a cada CPU. El Runtime conserva la **Fixed CPU
+Affinity** y la semántica transaccional cuando ocurre una Preemption fallida.
 
 ## Context Switching
 
-Cuando un proceso abandona el CPU:
-
 ```text
-Physical CPU
-     ↓ save
-PCB CpuContext
+Physical CPU ── save ──→ PCB CpuContext
+Physical CPU ← restore ── PCB CpuContext
 ```
 
-Cuando otro proceso es seleccionado:
-
-```text
-PCB CpuContext
-     ↓ restore
-Physical CPU
-```
-
-Esto permite preservar correctamente registers, flags y ejecución entre procesos.
+Se preservan registros, flags, Logical PC y contexto del proceso. El PCB físico
+se sincroniza con Kernel Memory y no se publica una expulsión incompleta.
 
 ## CPU Tick Model
 
-La unidad de ejecución es:
-
 ```text
-1 Step = máximo 1 CPU Tick
+1 Global Step = 1 segundo lógico
+1 CPU activa  = máximo 1 instrucción completada por Step
+1 instrucción = 1 CPU tick
+Automatic     = aproximadamente 1 Step / segundo real
 ```
 
-Una instruction puede requerir varios ticks según su `ExecutionWeight`.
-
-Ejemplo:
-
-```text
-MOV     → 1 tick
-LOAD    → 2 ticks
-ADD     → 3 ticks
-INT 21H → 5 ticks
-```
-
-Los efectos semánticos se aplican cuando finaliza el último tick de la instruction.
+Cada CPU puede ejecutar una instrucción en el mismo Global Step; el tiempo global
+avanza **una sola vez**. Las transiciones administrativas (admisión, dispatch,
+context switch, Page Fault y CLOCK) no tienen un coste de ticks adicional por sí mismas.
 
 ---
 
 # ⚙️ Instruction Set
 
+Mini lenguaje `.asm` con registers, operaciones aritméticas, control de flujo,
+stack e interrupciones. **Todas las instrucciones ejecutables consumen 1 tick**, sin
+pesos diferenciados por opcode.
+
 | Instruction | Descripción | Ticks |
 |---|---|---:|
 | `MOV R1, R2` | Transferencia entre registers | 1 |
-| `MOV R, N` | Carga de immediate | 1 |
-| `LOAD R` | `AC ← R` | 2 |
-| `STORE R` | `R ← AC` | 2 |
-| `ADD R` | `AC ← AC + R` | 3 |
-| `SUB R` | `AC ← AC - R` | 3 |
+| `MOV R, N` | Immediate hacia register | 1 |
+| `LOAD R` | `AC ← R` | 1 |
+| `STORE R` | `R ← AC` | 1 |
+| `ADD R` | `AC ← AC + R` | 1 |
+| `SUB R` | `AC ← AC - R` | 1 |
 | `INC` / `INC R` | Incremento | 1 |
 | `DEC` / `DEC R` | Decremento | 1 |
-| `SWAP R1, R2` | Intercambio de registers | 1 |
-| `CMP R1, R2` | Comparación | 2 |
-| `JMP displacement` | Salto relativo | 2 |
-| `JE displacement` | Salto si Equal | 2 |
-| `JNE displacement` | Salto si Not Equal | 2 |
-| `PARAM v1, ...` | Parámetros hacia stack | 3 |
+| `SWAP R1, R2` | Intercambio entre registers | 1 |
+| `CMP R1, R2` | Comparación | 1 |
+| `JMP displacement` | Salto relativo | 1 |
+| `JE displacement` | Salto condicionado a Equal | 1 |
+| `JNE displacement` | Salto condicionado a Not Equal | 1 |
+| `PARAM v1, ...` | Parámetros del stack | 1 |
 | `PUSH R` | Push al stack | 1 |
 | `POP R` | Pop desde stack | 1 |
-| `INT 09H` | Keyboard input | 2 |
-| `INT 10H` | Screen output | 2 |
-| `INT 20H` | Process termination | 2 |
-| `INT 21H` | Filesystem services | 5 |
+| `INT 10H` | Simulated Screen | 1 |
+| `INT 20H` | Process Termination | 1 |
+| `INT 21H` | Simulated Filesystem Services | 1 |
+
+> [!NOTE]
+> `INT 09H`, el teclado simulado y el antiguo Binary Decoder no forman parte del
+> alcance vigente. Los saltos trabajan sobre Logical PC y su traducción física.
 
 ---
 
 # 📊 Statistics
 
-Para cada proceso se registra:
+El dashboard presenta métricas de ejecución lógica, por CPU y por proceso,
+además de resultados acumulados de sesiones completadas.
+
+| Métrica | Definición |
+|---|---|
+| **Arrival** | Tiempo lógico de llegada configurado para el Job |
+| **Start / First Dispatch** | Primer instante de ejecución asignada |
+| **Finish** | Instante de finalización |
+| **Turnaround** | `Finish - Arrival` |
+| **Response** | `First Dispatch - Arrival` |
+| **Waiting** | `Turnaround - CPU Service` |
+| **Tr/Ts** | `Turnaround / Declared Burst` |
+| **CPU Busy / Idle** | Ticks de actividad e inactividad por CPU |
+| **Utilization** | Proporción de tiempo lógico con CPU ocupada |
 
 ```text
-CPU ID
-Start Time
-CPU Ticks
-Finish Time
-Elapsed Time
-Duration (s)
+Logical Time (SimulationClock)
+             ≠
+Wall-Clock Time (Instant / Duration)
 ```
 
-Se distingue entre:
-
-```text
-CPU Ticks
-≠
-Wall-Clock Time
-```
-
-Por ello, períodos como:
-
-- waiting for I/O;
-- Pause;
-- suspension;
-- demoras manuales;
-
-forman parte del tiempo real transcurrido, pero no incrementan los CPU ticks.
+`Pause`, la interacción manual o el tiempo real del anfitrión no añaden ticks de CPU.
+Las métricas lógicas se basan en los eventos confirmados del Runtime. El historial
+de estadísticas puede mantenerse entre ejecuciones reiniciadas, según el contrato
+de la sesión.
 
 ---
 
 # 🛡️ Protection & Security
 
-La estrategia de protección se enfoca en los recursos simulados del Sistema Operativo:
+La protección se aplica a los **recursos simulados**:
 
-- aislamiento Kernel/User;
-- canonical allocation handles;
-- memory bounds;
-- stale allocation detection;
-- PCB Kernel validation;
-- process isolation;
-- separación de regiones en Secondary Storage;
-- lifecycle guards;
-- simulated filesystem isolation.
+- aislamiento Kernel/User y validación de límites de memoria;
+- handles de Allocation y protección frente a referencias obsoletas;
+- validación y sincronización del PCB físico de 28 celdas;
+- Process Isolation, CPU Affinity y lifecycle guards;
+- rollback de Preemption ante fallos recuperables;
+- validación de Page Tables, Frames y Backing Store;
+- separación de regiones de Secondary Storage y filesystem simulado.
 
 ---
 
 # 🎨 Principios de diseño
 
-El desarrollo priorizó:
-
-- Object-Oriented Programming;
-- Separation of Concerns;
-- High Cohesion;
-- Low Coupling;
-- Encapsulation;
-- Defensive Programming;
-- SOLID de forma pragmática;
-- Dependency Injection manual;
-- immutable read models;
-- GUI independiente del dominio;
-- deterministic testing;
-- type safety.
+- Object-Oriented Programming y Separation of Concerns.
+- High Cohesion, Low Coupling y Encapsulation.
+- Defensive Programming y type safety.
+- SOLID pragmático y Dependency Injection manual.
+- Immutable domain configuration y snapshots.
+- Scheduling Policies independientes mediante Factory/Strategy.
+- Deterministic testing, prevalidación y transiciones con rollback local.
+- Presentation desacoplada del Runtime y del Model.
 
 ---
 
@@ -541,37 +460,29 @@ El desarrollo priorizó:
 
 | Tecnología | Uso |
 |---|---|
-| **Java 25** | Lenguaje principal |
+| **Java 25** | Lenguaje principal y lógica del simulador |
 | **JavaFX 25** | Desktop GUI |
-| **FXML** | Estructura visual |
-| **JavaFX CSS** | Styling |
-| **Maven** | Build y dependency management |
-| **Maven Wrapper** | Build reproducible |
-| **JUnit 5** | Automated testing |
-| **PlantUML** | Diagramas UML |
-| **Git** | Version control |
-| **GitHub** | Remote repository y Pull Requests |
+| **FXML / JavaFX CSS** | Layout y diseño visual |
+| **Maven / Maven Wrapper** | Build, dependencias y ejecución reproducible |
+| **JUnit 5** | Automated Unit y Integration Tests |
+| **PlantUML** | Package Diagram y diagramas UML |
+| **Git / GitHub** | Version control, Issues y Pull Requests |
 | **GitHub Actions** | Continuous Integration |
 
 ---
 
 # 📦 Requisitos
 
-Para ejecutar el proyecto se requiere:
-
-- Git.
-- Eclipse Temurin OpenJDK **25** o distribución compatible.
-- Sistema operativo con soporte gráfico para JavaFX.
-
-Maven no necesita instalación global porque se incluye **Maven Wrapper**.
+- **Git**.
+- **Eclipse Temurin OpenJDK 25** o distribución compatible.
+- Windows, Linux o macOS con entorno gráfico compatible con JavaFX.
+- Maven global **no es necesario**: se utiliza Maven Wrapper.
 
 Verificar Java:
 
 ```powershell
 java --version
 ```
-
-Debe utilizar Java 25.
 
 ---
 
@@ -603,13 +514,13 @@ Linux / macOS:
 Windows:
 
 ```powershell
-.\mvnw.cmd verify
+.\mvnw.cmd --batch-mode --no-transfer-progress verify
 ```
 
 Linux / macOS:
 
 ```bash
-./mvnw verify
+./mvnw --batch-mode --no-transfer-progress verify
 ```
 
 ## 4. Ejecutar la aplicación
@@ -630,24 +541,24 @@ Linux / macOS:
 
 # 🖥️ Uso general
 
-Flujo típico:
+Flujo típico del Proyecto II:
 
 ```text
-1. Configurar Main Memory / Kernel / Secondary Storage / Virtual Memory
-2. Initialize
-3. Browse
-4. Seleccionar programa .asm
-5. Load Program
-6. Repetir Browse/Load si se desean más programas
-7. Start
-8. Ejecutar mediante Step o Automatic
-9. Observar CPU, processes, memory, storage e I/O
-10. Atender keyboard input cuando INT 09H lo requiera
-11. Revisar Completed y Statistics
-12. Reset para iniciar una nueva sesión
+ 1. Configurar CPU count (1..5) y Memory / Storage
+ 2. Elegir Memory Allocation Mode y Paging (si aplica)
+ 3. Seleccionar Scheduling Algorithm y sus parámetros
+ 4. Initialize
+ 5. Browse y seleccionar uno o varios archivos .asm
+ 6. Load Programs (Job List en estado PENDING)
+ 7. Editar Arrival (s) en Workload antes de Start
+ 8. Start y ejecutar con Step o Automatic
+ 9. Pause / Resume, cuando corresponda
+10. Observar CPU, Ready Queues, PCB, Paging y Timeline
+11. Revisar Completed Processes y Statistics
+12. Reset para configurar otra sesión
 ```
 
-Ejemplo básico:
+Ejemplo básico de programa `.asm`:
 
 ```asm
 MOV AX, 10
@@ -659,243 +570,177 @@ INT 10H
 INT 20H
 ```
 
+> [!TIP]
+> La edición de Arrival después de Load solo está permitida cuando la sesión se
+> encuentra en `PROGRAM_LOADED` y el Job sigue `PENDING`. Una vez admitido o
+> iniciada la ejecución, ese tiempo deja de ser editable.
+
 ---
 
 # 🧪 Testing y validación
 
-Baseline final:
+Validaciones automatizadas **reportadas** en el desarrollo del Proyecto II:
 
-```text
-Tests     : 792
-Failures  : 0
-Errors    : 0
-Skipped   : 0
+| Referencia | Tests | Resultado |
+|---|---:|---|
+| **Última baseline integrada en `dev` confirmada (A03)** | **1279** | BUILD SUCCESS · 0 failures/errors/skipped |
+| **Implementación A04 en `fix/a04-scheduling-numeric-safety`** | **1289** | BUILD SUCCESS · 0 failures/errors/skipped |
 
-BUILD SUCCESS
-```
+> [!NOTE]
+> A04 superó su implementación y Final Diff Audit, pero **su merge hacia `dev` no está
+> confirmado en este registro**. Por ello, el total de 1289 no se presenta como
+> baseline integrada de `dev` hasta verificar ese merge y su CI.
 
-La cobertura incluye:
+La cobertura abarca:
 
-- CPU/registers;
-- Process/PCB;
-- ASM parser;
-- instruction semantics;
-- execution weights;
-- Main Memory;
-- First-Fit;
-- Secondary Storage;
-- Virtual Memory;
-- swapping;
-- Job admission;
-- FCFS;
-- Dispatcher;
-- context switching;
-- interrupts;
-- simulated keyboard;
-- simulated screen;
-- filesystem;
-- accounting;
-- protection/security;
-- snapshots;
-- Controllers;
-- FXML;
-- GUI layout.
+- CPU, registers, ASM Parser, Instruction Set y PCB/Context Switching;
+- Multi-CPU, Workload Arrivals y diez Scheduling Algorithms;
+- Quantum, Preemption transaccional y criterios numéricos extremos;
+- Dynamic/Fixed Memory Allocation y protección Kernel/User;
+- Paging, Demand Paging, Page Faults y CLOCK;
+- Admission, SimulationClock, estadísticas y Timeline;
+- JavaFX Controllers, snapshots y configuración de Scheduling/Memory.
 
-Además se realizaron pruebas manuales end-to-end sobre:
-
-- Step;
-- Automatic;
-- Pause / Resume;
-- multiple processes;
-- context switch;
-- keyboard FIFO;
-- I/O;
-- statistics;
-- memory/storage visualization;
-- GUI responsiveness.
+Las suites JavaFX se han ejecutado en un entorno gráfico. En el CI Ubuntu actual,
+las pruebas que requieren `DISPLAY` pueden omitirse si no hay servidor gráfico;
+la habilitación explícita de **Xvfb** sigue siendo una mejora de QA pendiente.
 
 ---
 
 # 🌿 GitFlow y DevOps
 
-El desarrollo utiliza tres niveles principales:
+El desarrollo utiliza branches protegidas de integración y release:
 
 ```text
 main
   ↑
 dev
   ↑
-feature/*
+feature/*   fix/*
 ```
 
 ### `main`
 
-Contiene únicamente versiones estables y aprobadas.
-
-No se desarrolla directamente sobre esta branch.
+Versiones estables y aprobadas. No se desarrolla directamente en esta branch.
 
 ### `dev`
 
-Branch de integración.
+Branch de integración de features y fixes previamente revisados.
 
-Recibe features previamente implementadas, validadas y revisadas.
+### `feature/*` y `fix/*`
 
-### `feature/*`
-
-Cada funcionalidad importante se desarrolla aisladamente.
-
-Ejemplos utilizados durante el proyecto:
+Branches aisladas para funcionalidades y correcciones, respectivamente.
 
 ```text
-feature/memory-model
-feature/cpu-registers
-feature/asm-parser
-feature/process-pcb
-feature/program-loader
-feature/fcfs-scheduling
-feature/process-swapping
-feature/multiprocess-runtime
-feature/statistics-security
+feature/* o fix/*
+       │
+       │ Pull Request + Review + CI
+       ▼
+      dev
+       │
+       │ Validación de release
+       ▼
+      main
 ```
 
 ## 🔀 Pull Requests
 
-```text
-feature/*
-    │
-    │ Pull Request + CI
-    ▼
-   dev
-    │
-    │ Final validation
-    ▼
-  main
-```
+Se integran mediante PRs revisados; los commits, pushes y merges se realizan
+manualmente y se respetan los Rulesets de `dev` y `main`.
 
 ## 🤖 Continuous Integration
 
-Los Pull Requests hacia `dev` y `main` ejecutan:
+Los Pull Requests hacia `dev` y `main` ejecutan el required check:
 
 ```text
 Maven Build & Test
+GitHub Actions · Ubuntu · Eclipse Temurin 25
+./mvnw --batch-mode --no-transfer-progress verify
 ```
 
-mediante:
-
-```text
-GitHub Actions
-Ubuntu
-Eclipse Temurin Java 25
-Maven Wrapper
-```
-
-Comando principal:
-
-```text
-mvn verify
-```
-
-La integración sólo se realiza cuando los required checks finalizan correctamente.
+> [!IMPORTANT]
+> Un CI verde confirma las pruebas que realmente se ejecutaron. Las suites de
+> JavaFX que dependen de `DISPLAY` requieren configuración gráfica adicional
+> en el runner para garantizar su ejecución en Linux.
 
 ---
 
 # ✅ Objetivos alcanzados
 
-- ✅ Multiprocess execution.
-- ✅ Job List y admission.
-- ✅ PCB/BCP completo.
-- ✅ CPU context.
-- ✅ FCFS Scheduler.
-- ✅ Dispatcher.
-- ✅ Context switching.
-- ✅ Main Memory configurable.
-- ✅ Kernel/User protection.
-- ✅ First-Fit allocation.
-- ✅ Secondary Storage.
-- ✅ File Index.
-- ✅ Virtual Memory.
-- ✅ Whole-process swapping.
-- ✅ ASM Parser.
-- ✅ Instruction weights.
-- ✅ Control flow.
-- ✅ Stack y PARAM.
-- ✅ Interrupts `09H`, `10H`, `20H` y `21H`.
-- ✅ Simulated Keyboard.
-- ✅ Simulated Screen.
-- ✅ Simulated Filesystem.
-- ✅ Process accounting.
-- ✅ Real-time statistics.
-- ✅ Protection & Security strategy.
-- ✅ JavaFX multiprocess dashboard.
-- ✅ Package UML documentation.
-- ✅ Continuous Integration.
-- ✅ Automated + manual testing.
+### Proyecto I — Base del simulador
 
-### Objetivos no alcanzados
+- ✅ ASM Parser, Execution Engine, registers, PCB y Context Switching.
+- ✅ Main Memory, Secondary Storage, filesystem e interrupciones simuladas vigentes.
+- ✅ Job List, Admission, lifecycle, snapshots y JavaFX dashboard.
 
-No se identifican funcionalidades pendientes dentro del **alcance aprobado del Proyecto I**.
+### Proyecto II — Multi-CPU, Scheduling y Memory Management
 
-> [!NOTE]
-> Algunas capacidades, como el whole-process swapping, se implementan como mecanismos internos
-> del Operating System Simulator y no como controles manuales del usuario dentro de la GUI.
+- ✅ 1–5 CPU, capacidad por CPU, Fixed CPU Affinity y Global SimulationClock.
+- ✅ Una instrucción por CPU y Global Step; Logical PC canónico desde 4096.
+- ✅ Arrival Time, Workload múltiple y edición posterior a Load (A01).
+- ✅ Diez CPU Scheduling Algorithms: FCFS, SPN, SRT, RR, HRRN, Priority,
+  Lottery, Guaranteed, Selfish RR y MLFQ.
+- ✅ MLFQ con Queue Levels y Quantum configurables (A03).
+- ✅ Dynamic Allocation (First/Next/Best Fit) y Fixed Partitioning (Equal/Unequal).
+- ✅ Fully Resident Paging, Demand Paging y CLOCK / Second-Chance.
+- ✅ Preemption transaccional y rollback local coherente (A02).
+- ✅ Statistics, resultados acumulados y visualizaciones CPU/Memory/Timeline.
+- ✅ Numeric Safety de SRT, HRRN, Guaranteed y Selfish RR implementada y
+  verificada en la rama de A04; **integración en `dev` por confirmar**.
 
----
 
 # ℹ️ Decisiones y consideraciones
 
 ### Virtual Memory
 
-Se implementa mediante:
-
-```text
-Whole-Process Swapping
-```
-
-No mediante paging.
+Se conservan los mecanismos de residencia/suspensión del proyecto original
+junto con Paging, Demand Paging y reemplazo CLOCK del Proyecto II.
 
 ### Scheduling
 
-El Proyecto I utiliza:
-
-```text
-FCFS non-preemptive
-```
-
-No Round Robin ni prioridades dinámicas.
+Las diez políticas son seleccionables; **no se reemplaza FCFS por un Scheduler
+global único**. Cada CPU administra su Ready Queue y su política local.
 
 ### Swap
 
-`VIRTUAL_MEMORY` representa la región de almacenamiento.
-
-`swapOut()` y `swapIn()` representan el mecanismo de intercambio.
+`swapOut()` y `swapIn()` representan operaciones del modelo de residencia;
+no realizan swapping sobre la memoria física del sistema anfitrión.
 
 ### Step
 
 ```text
-1 Step = máximo 1 CPU Tick
+1 Step = 1 segundo lógico global
+1 CPU = máximo 1 instrucción por Step
 ```
 
-No una instruction completa.
+No existen pesos distintos por instrucción. Un Page Fault o Context Switch no
+representa por sí solo un tick adicional de CPU.
 
 ### Statistics
 
-`CPU Ticks` y `Elapsed Time` representan conceptos diferentes.
+El tiempo lógico de simulación y el `Wall-Clock Time` son métricas distintas.
+Turnaround, Response, Waiting y Tr/Ts se derivan de eventos lógicos y del Burst.
 
 ### Host filesystem
 
-Las system calls simuladas no escriben archivos reales en el equipo anfitrión.
+Las system calls simuladas no escriben en el filesystem real del anfitrión.
+
+### Funcionalidades retiradas
+
+No se mantiene el antiguo **Binary Decoder** ni `INT 09H` / Simulated Keyboard.
+Fueron retirados del alcance académico vigente.
 
 ---
 
 <div align="center">
 
-## 🎓 Proyecto #1 — Gestor de Multiprocesos
+## 🎓 Operating System Simulator · Proyectos I y II
 
 **Principios de Sistemas Operativos**
 
 **Tecnológico de Costa Rica**
 
-**Raúl Alfaro Rodríguez · 2023060456**
+**Raúl Alfaro Rodríguez · Diego Araya Ureña**
 
 <br>
 

@@ -1,85 +1,131 @@
 package io.github.rajami1205.osimulator.application.simulator;
 
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.*;
+import io.github.rajami1205.osimulator.application.statistics.CpuTimelineView;
+import io.github.rajami1205.osimulator.application.statistics.ExecutionTimeline;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.execution.*;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
-import io.github.rajami1205.osimulator.model.io.*;
+import io.github.rajami1205.osimulator.model.io.ScreenDevice;
 import io.github.rajami1205.osimulator.model.job.*;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
+import io.github.rajami1205.osimulator.model.memory.ResidentImage;
 import io.github.rajami1205.osimulator.model.process.*;
 import io.github.rajami1205.osimulator.model.scheduling.*;
-import java.util.HashSet;
-import java.util.Objects;
+import java.util.*;
 
-/**
- * Coordina Step, bloqueo, completion y disponibilidad global sobre un CPU. Delega ownership al Dispatcher
- * y mantiene FCFS non-preemptive; Step ejecuta como máximo un tick.
- */
+/** Un intervalo global determinista con FCFS, registros, ticks y ownership locales. */
 public final class MultiprocessRuntime {
-    private final Dispatcher dispatcher;
+    // Referencias a recursos existentes: el adaptador legacy no crea otra CPU ni otras colas.
+    private record LocalCpu(CpuId id, Dispatcher dispatcher, CpuRegisters<Instruction> registers,
+            ReadyQueue ready, SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter ticks) {
+        LocalCpu {
+            Objects.requireNonNull(id); Objects.requireNonNull(dispatcher); Objects.requireNonNull(registers);
+            Objects.requireNonNull(ready); Objects.requireNonNull(suspended);
+            Objects.requireNonNull(scheduler); Objects.requireNonNull(ticks);
+        }
+    }
+    private record Participant(LocalCpu node, ProcessControlBlock pcb,
+            ProcessAccounting accounting) { }
+    private final List<LocalCpu> cpus;
     private final ExecutionEngine engine;
-    private final ExecutionProgress progress;
-    private final CpuRegisters<Instruction> cpu;
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
     private final SimulatedFileSystem filesystem;
     private final ScreenDevice screen;
-    private final KeyboardDevice keyboard;
-    private final KeyboardCompletionService input;
     private final ProcessCompletionService completion;
     private final ProcessSwapService swap;
     private final JobScheduler admission;
     private final JobList jobs;
     private final ProcessTable table;
     private final ProcessResourceRegistry resources;
-    private final ReadyQueue ready;
-    private final SuspendedReadyQueue suspended;
-    private final ProcessScheduler scheduler;
-    private boolean started;
-    private final CpuTickCounter tickCounter;
+    private final SimulationClock simulationClock;
     private final java.time.Clock realClock;
-    // Un swap-in fallido sólo se reintenta tras un cambio relevante, no en cada Step sin trabajo.
-    private boolean reconsiderSwap = true;
+    private boolean started;
+    private final Set<CpuId> reconsiderSwap = new HashSet<>();
+    private boolean reconsiderAdmission = true;
+    private long lastAdmissionTime = -1;
+    private List<RuntimeStepResult.CpuResult> lastCpuResults = List.of();
+    private PageInService pageIns;
+    private final ExecutionTimeline timeline;
 
-    /**
-     * Recibe los servicios canónicos de sesión y separa el contador de ticks del Clock real; comienza sin
-     * workload iniciado.
-     */
-    public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine, ExecutionProgress progress,
+    public MultiprocessRuntime(CpuTopology topology, ExecutionEngine engine, MainMemory memory,
+            SimulatedFileSystem filesystem, ScreenDevice screen, ProcessCompletionService completion,
+            ProcessSwapService swap, JobScheduler admission, JobList jobs, ProcessTable table,
+            ProcessResourceRegistry resources, SimulationClock simulationClock, java.time.Clock realClock,
+            PageInService pageIns) {
+        this(topology, engine, memory, filesystem, screen, completion, swap, admission, jobs, table, resources, simulationClock, realClock);
+        this.pageIns = Objects.requireNonNull(pageIns);
+    }
+
+    public MultiprocessRuntime(CpuTopology topology, ExecutionEngine engine, MainMemory memory,
+            SimulatedFileSystem filesystem, ScreenDevice screen, ProcessCompletionService completion,
+            ProcessSwapService swap, JobScheduler admission, JobList jobs, ProcessTable table,
+            ProcessResourceRegistry resources, SimulationClock simulationClock, java.time.Clock realClock) {
+        this(Objects.requireNonNull(topology).nodes().stream().map(node -> new LocalCpu(node.id(),
+                node.dispatcher(), node.registers(), node.readyQueue(), node.suspendedReadyQueue(),
+                node.scheduler(), node.tickCounter())).toList(), engine, memory, filesystem, screen,
+                completion, swap, admission, jobs, table, resources, simulationClock, realClock);
+        topology.requireSharedResources(table, memory, resources);
+    }
+
+    /** Compatibilidad CPU0 usando exactamente los recursos suministrados. */
+    public MultiprocessRuntime(Dispatcher dispatcher, ExecutionEngine engine,
             CpuRegisters<Instruction> cpu, MainMemory memory, SimulatedFileSystem filesystem,
-            ScreenDevice screen, KeyboardDevice keyboard, KeyboardCompletionService input,
-            ProcessCompletionService completion, ProcessSwapService swap, JobScheduler admission,
-            JobList jobs, ProcessTable table, ProcessResourceRegistry resources, ReadyQueue ready,
-            SuspendedReadyQueue suspended, ProcessScheduler scheduler, CpuTickCounter tickCounter, java.time.Clock realClock) {
-        this.tickCounter = Objects.requireNonNull(tickCounter);
-        this.realClock = Objects.requireNonNull(realClock);
-        this.dispatcher = Objects.requireNonNull(dispatcher);
+            ScreenDevice screen, ProcessCompletionService completion, ProcessSwapService swap,
+            JobScheduler admission, JobList jobs, ProcessTable table, ProcessResourceRegistry resources,
+            ReadyQueue ready, SuspendedReadyQueue suspended, ProcessScheduler scheduler,
+            CpuTickCounter tickCounter, SimulationClock simulationClock, java.time.Clock realClock) {
+        this(List.of(new LocalCpu(CpuId.ZERO, dispatcher, cpu, ready, suspended, scheduler, tickCounter)),
+                engine, memory, filesystem, screen, completion, swap, admission, jobs, table, resources,
+                simulationClock, realClock);
+    }
+
+    private MultiprocessRuntime(List<LocalCpu> cpus, ExecutionEngine engine, MainMemory memory,
+            SimulatedFileSystem filesystem, ScreenDevice screen, ProcessCompletionService completion,
+            ProcessSwapService swap, JobScheduler admission, JobList jobs, ProcessTable table,
+            ProcessResourceRegistry resources, SimulationClock simulationClock, java.time.Clock realClock) {
+        this.cpus = List.copyOf(cpus);
         this.engine = Objects.requireNonNull(engine);
-        this.progress = Objects.requireNonNull(progress);
-        this.cpu = Objects.requireNonNull(cpu);
         this.memory = Objects.requireNonNull(memory);
+        this.resources = Objects.requireNonNull(resources);
+        pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.filesystem = Objects.requireNonNull(filesystem);
         this.screen = Objects.requireNonNull(screen);
-        this.keyboard = Objects.requireNonNull(keyboard);
-        this.input = Objects.requireNonNull(input);
         this.completion = Objects.requireNonNull(completion);
         this.swap = Objects.requireNonNull(swap);
         this.admission = Objects.requireNonNull(admission);
         this.jobs = Objects.requireNonNull(jobs);
         this.table = Objects.requireNonNull(table);
-        this.resources = Objects.requireNonNull(resources);
-        this.ready = Objects.requireNonNull(ready);
-        this.suspended = Objects.requireNonNull(suspended);
-        this.scheduler = Objects.requireNonNull(scheduler);
+        this.simulationClock = Objects.requireNonNull(simulationClock);
+        this.realClock = Objects.requireNonNull(realClock);
+        timeline = new ExecutionTimeline(this.cpus.stream().map(LocalCpu::id).toList());
+        reconsiderAllSwaps();
     }
 
-    /** Prepara admisión de un workload no vacío una sola vez, sin dispatch ni consumo de ticks. */
-    public void start() {
-        if (started || jobs.entries().isEmpty()) {
-            throw new IllegalStateException("Nonempty unstarted workload required");
+    /** Gantt acumulado de la sesión: un slot por CPU por cada segundo lógico transcurrido. */
+    public List<CpuTimelineView> timeline() { return timeline.views(); }
+
+    /** Registra el tick que acaba de cerrar el reloj: PID ejecutado por CPU o vacío si estuvo ociosa. */
+    private void recordTimelineTick(List<RuntimeStepResult.CpuResult> tickOutcomes) {
+        List<Optional<Integer>> slots = new ArrayList<>();
+        for (var node : cpus) {
+            Optional<Integer> executedPid = tickOutcomes.stream()
+                    .filter(outcome -> outcome.cpuId().equals(node.id))
+                    .filter(outcome -> outcome.outcome() == RuntimeStepResult.CpuOutcome.EXECUTED)
+                    .findFirst()
+                    .flatMap(RuntimeStepResult.CpuResult::processId);
+            slots.add(executedPid);
         }
+        timeline.record(slots);
+    }
+
+    public void start() {
+        if (started || jobs.entries().isEmpty()) throw new IllegalStateException("Nonempty unstarted workload required");
         validateStructure();
         admitWaiting();
         started = true;
@@ -87,180 +133,333 @@ public final class MultiprocessRuntime {
         validateStructure();
     }
 
-    /** Admite en orden hasta agotar PENDING o encontrar el primer Job que debe esperar. */
     private void admitWaiting() {
+        long now = simulationClock.current();
+        if (!reconsiderAdmission && jobs.entries().stream().noneMatch(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > lastAdmissionTime && job.arrivalTime() <= now)) return;
+        reconsiderAdmission = false;
+        lastAdmissionTime = now;
         while (true) {
-            var result = admission.attemptNextAdmission();
+            var result = admission.attemptNextAdmission(now);
             if (result.isEmpty() || result.orElseThrow() instanceof AdmissionResult.Waiting) return;
         }
     }
 
-    /**
-     * Completa input en contextos guardados y procesa cleanup/admisión derivada; nunca ejecuta el CPU ni
-     * suma ticks.
-     */
-    public void drainInput() {
+    /** Cada cabeza local se reintenta una vez por cambio relevante; no selecciona víctimas. */
+    void settle() {
         if (!started) return;
-        int before = input.pending().size();
-        var terminated = input.drain();
-        for (int pid : terminated) completion.complete(pid);
-        if (!terminated.isEmpty()) admitWaiting();
-        if (input.pending().size() != before) reconsiderSwap = true;
-        settle();
-    }
-
-    /**
-     * Reintenta swap-in de la cabeza suspended sólo ante cambios relevantes y sin owner/READY; no
-     * selecciona víctimas de swap-out.
-     */
-    private void settle() {
-        if (started && reconsiderSwap && dispatcher.owner().isEmpty()
-                && ready.peek().isEmpty() && suspended.peek().isPresent()) {
-            int pid = suspended.peek().orElseThrow();
-            if (swap.swapIn(pid) instanceof SwapResult.Completed) suspended.remove(pid);
-            reconsiderSwap = false;
+        for (var node : cpus) {
+            if (reconsiderSwap.contains(node.id) && node.dispatcher.owner().isEmpty()
+                    && node.ready.peek().isEmpty() && node.suspended.peek().isPresent()) {
+                int pid = node.suspended.peek().orElseThrow();
+                if (swap.swapIn(pid) instanceof SwapResult.Completed) node.suspended.remove(pid);
+                reconsiderSwap.remove(node.id);
+            }
         }
     }
 
-    /**
-     * Coordina input y dispatch gratuito, ejecuta como máximo un tick y publica accounting sólo tras
-     * éxito; después procesa bloqueo o completion sin preemption por tick.
-     */
+    /** Último intervalo, inspeccionable también después de ERROR. */
+    public List<RuntimeStepResult.CpuResult> lastCpuResults() { return lastCpuResults; }
+
     public RuntimeStepResult step() {
         if (!started) throw new IllegalStateException("Runtime has not started");
-        drainInput();
-        validateStructure();
-        if (dispatcher.owner().isEmpty()) scheduler.selectNext().ifPresent(dispatcher::dispatch);
-        if (dispatcher.owner().isEmpty()) return new RuntimeStepResult.Idle(status());
-
-        var pcb = dispatcher.owner().orElseThrow();
-        if (pcb.programCounter() < 0 || pcb.programCounter() >= pcb.instructionCount()) {
-            throw new IllegalStateException("Executable owner must have a fetchable logical PC");
-        }
-        var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
-        if (!(resource.residence() instanceof UserImageResidence.Resident resident)) {
-            throw new IllegalStateException("CPU owner must be resident");
-        }
-        memory.validateUserAllocation(resident.allocation(), pcb.memoryBounds());
-        memory.validatePcbAllocation(resource.kernel(), pcb);
-        tickCounter.validateCanAdvance();
-        var tickStart = realClock.instant();
-        // Prepara accounting inmutable antes de ejecutar para detectar overflow antes de aplicar efectos semánticos.
-        var accounted = pcb.accounting().recordSuccessfulCpuTick(0, tickStart);
-        var result = engine.executeTick(filesystem, screen, keyboard, memory, cpu, pcb, progress, resident.allocation());
-        pcb.replaceAccounting(accounted);
-        tickCounter.advance();
-        if (result == TickResult.WAITING_FOR_INPUT) {
-            dispatcher.release();
-            input.register(pcb);
-            reconsiderSwap = true;
-        } else if (result == TickResult.PROGRAM_FINISHED) {
-            dispatcher.release();
-            completion.complete(pcb.processId());
-            admitWaiting();
-            reconsiderSwap = true;
-        }
+        lastCpuResults = List.of();
+        if (status() == RuntimeStatus.FINISHED) return idleResult(RuntimeStatus.FINISHED);
+        if (status() == RuntimeStatus.WAITING_FOR_FRAMES) return idleResult(RuntimeStatus.WAITING_FOR_FRAMES);
+        simulationClock.validateCanAdvance();
+        long finishTime = Math.incrementExact(simulationClock.current());
+        admitWaiting();
         settle();
-        return new RuntimeStepResult.Executed(pcb.processId(), result, status());
+        retryPendingPages();
+        // Todas las CPUs reciben el tiempo vigente antes de evaluar expulsión o elegir candidato.
+        for (var node : cpus) {
+            node.scheduler.onSchedulingPoint(simulationClock.current());
+        }
+        for (var node : cpus) {
+            Optional<ProcessControlBlock> currentOwner = node.dispatcher.owner();
+            if (currentOwner.isPresent()) {
+                ProcessControlBlock ownerPcb = currentOwner.get();
+                boolean preemptionRequested = node.scheduler.shouldPreempt(ownerPcb);
+                if (preemptionRequested) {
+                    var confirm = node.scheduler.preparePreemptionCommit(ownerPcb);
+                    node.dispatcher.preempt();
+                    confirm.run();
+                }
+            }
+        }
+        for (var node : cpus) {
+            if (node.dispatcher.owner().isEmpty()) {
+                node.scheduler.selectNext().ifPresent(pid -> {
+                    node.dispatcher.dispatch(pid, simulationClock.current());
+                    node.scheduler.onDispatched(pid);
+                });
+            }
+        }
+        var participants = new ArrayList<Participant>();
+        var outcomes = new ArrayList<RuntimeStepResult.CpuResult>();
+        for (var node : cpus) {
+            outcomes.add(RuntimeStepResult.CpuResult.unexecuted(node.id,
+                    node.dispatcher.owner().map(ProcessControlBlock::processId)));
+        }
+        lastCpuResults = List.copyOf(outcomes);
+        // Congelar y prevalidar TODAS las CPU antes de aplicar cualquier instrucción.
+        for (var node : cpus) {
+            if (node.dispatcher.owner().isPresent()) participants.add(prepare(node));
+        }
+        if (participants.isEmpty()) {
+            simulationClock.advance();
+            recordTimelineTick(List.of());
+            admitWaiting();
+            settle();
+            return idleResult(status());
+        }
+
+        var finished = new ArrayList<Participant>();
+        RuntimeException failure = null;
+        boolean committed = false;
+        for (var participant : participants) {
+            var node = participant.node;
+            var pcb = participant.pcb;
+            try {
+                var result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, currentImage(pcb));
+                if (result == TickResult.PAGE_FAULT) {
+                    var request = Objects.requireNonNull(pageIns, "Missing Page-In service").request(pcb);
+                    pageEvent(pcb, request, PageFaultEvent.Kind.FAULT_OBSERVED);
+                    if (!pageIns.resolve(pcb, request, simulationClock.current())) {
+                        resources.awaitPage(request);
+                        pcb.changeState(ProcessState.BLOCKED); node.dispatcher.release();
+                        outcomes.set(node.id.value(), new RuntimeStepResult.CpuResult(node.id, Optional.of(pcb.processId()),
+                                RuntimeStepResult.CpuOutcome.WAITING_FOR_PAGE, Optional.empty()));
+                        continue;
+                    }
+                    pageEvent(pcb, request, PageFaultEvent.Kind.PAGE_IN_COMMITTED);
+                    result = engine.executeTick(filesystem, screen, memory, node.registers, pcb, currentImage(pcb));
+                    if (result == TickResult.PAGE_FAULT) throw new IllegalStateException("Page-In did not resolve instruction fetch");
+                }
+                if (result == TickResult.PROGRAM_FINISHED) pcb.logicalTimes().finishedAt(finishTime);
+                pcb.replaceCpuContext(node.registers.snapshot());
+                pcb.replaceAccounting(participant.accounting);
+                pcbSynchronizer.sync(pcb);
+                node.ticks.advance();
+                node.scheduler.onInstructionCompleted(pcb.processId());
+                committed = true;
+                outcomes.set(node.id.value(), RuntimeStepResult.CpuResult.executed(node.id, pcb.processId(), result));
+                if (result == TickResult.PROGRAM_FINISHED) {
+                    pcb.recordLogicalFinish(finishTime);
+                    memory.protectImageForCompletion(pcb.processId());
+                    finished.add(participant);
+                }
+            } catch (RuntimeException error) {
+                outcomes.set(node.id.value(), new RuntimeStepResult.CpuResult(node.id,
+                        Optional.of(pcb.processId()), RuntimeStepResult.CpuOutcome.FAILED, Optional.empty()));
+                failure = error;
+                break;
+            }
+        }
+        lastCpuResults = List.copyOf(outcomes);
+        // Único commit global, también si una CPU posterior falla; overflow ya prevalidado.
+        boolean pageWaitOnly = failure == null
+                && outcomes.stream().anyMatch(o -> o.outcome() == RuntimeStepResult.CpuOutcome.WAITING_FOR_PAGE);
+        if (committed || pageWaitOnly) {
+            simulationClock.advance();
+            recordTimelineTick(outcomes);
+        }
+        // Cleanup posterior: nunca cambia participantes ni oculta la excepción original.
+        for (var participant : finished) {
+            try {
+                participant.node.dispatcher.release();
+                completion.complete(participant.pcb.processId());
+                reconsiderAdmission = true;
+                reconsiderAllSwaps();
+            } catch (RuntimeException error) {
+                if (failure == null) failure = error;
+                else if (failure != error) failure.addSuppressed(error);
+                break;
+            }
+        }
+        if (failure != null) throw failure;
+        retryPendingPages();
+        admitWaiting();
+        settle();
+        var status = status();
+        if (cpus.size() == 1 && outcomes.getFirst().outcome() == RuntimeStepResult.CpuOutcome.EXECUTED) {
+            var first = outcomes.getFirst();
+            return new RuntimeStepResult.Executed(first.processId().orElseThrow(), first.tickResult().orElseThrow(), status);
+        }
+        return new RuntimeStepResult.Global(outcomes, status);
     }
 
-    /**
-     * Rechaza el owner y coordina salida explícita; añade a la cola suspended únicamente procesos que
-     * quedan READY_SUSPENDED.
-     */
+    private Participant prepare(LocalCpu node) {
+        var pcb = node.dispatcher.owner().orElseThrow();
+        if (!pcb.cpuAffinity().equals(node.id) || !pcb.hasExecutableProgramCounter()) {
+            throw new IllegalStateException("Invalid CPU affinity or executable PC");
+        }
+        var resource = resources.find(pcb.processId()).orElseThrow(() -> new IllegalStateException("Missing owner resources"));
+        if (resource.residence().suspended()) {
+            throw new IllegalStateException("CPU owner must be resident");
+        }
+        var image = resource.residence().residentImage();
+        memory.validateImage(image, pcb);
+        if (pageIns != null) pageIns.validateBacking(pcb);
+        memory.validatePcbAllocation(resource.kernel(), pcb);
+        if (!node.registers.snapshot().equals(pcb.cpuContext())) throw new IllegalStateException("CPU context differs from canonical PCB");
+        node.ticks.validateCanAdvance();
+        return new Participant(node, pcb,
+                pcb.accounting().recordSuccessfulCpuTick(node.id.value(), realClock.instant()));
+    }
+
+    private ResidentImage currentImage(ProcessControlBlock pcb) {
+        var image = resources.find(pcb.processId()).orElseThrow().residence().residentImage();
+        memory.validateImage(image, pcb);
+        if (pageIns != null) pageIns.validateBacking(pcb);
+        return image;
+    }
+
+    private RuntimeStepResult idleResult(RuntimeStatus status) {
+        lastCpuResults = cpus.stream().map(node -> RuntimeStepResult.CpuResult.unexecuted(node.id, Optional.empty())).toList();
+        return cpus.size() == 1 ? new RuntimeStepResult.Idle(status) : new RuntimeStepResult.Global(lastCpuResults, status);
+    }
+
+    private void pageEvent(ProcessControlBlock pcb, PendingPageRequest request, PageFaultEvent.Kind kind) {
+        resources.recordPageEvent(new PageFaultEvent(simulationClock.current(), pcb.cpuAffinity(), pcb.processId(), request.pageNumber(), kind));
+    }
+
+    private void retryPendingPages() {
+        if (pageIns == null || resources.pendingPages().isEmpty()) return;
+        var requests = resources.pendingPages().stream().sorted(Comparator
+                .comparingInt((PendingPageRequest r) -> table.find(r.processId()).orElseThrow().cpuAffinity().value())
+                .thenComparingInt(PendingPageRequest::processId)).toList();
+        for (var request : requests) {
+            if (!pageIns.canResolve()) break;
+            var pcb = table.find(request.processId()).orElseThrow();
+            if (pcb.state() != ProcessState.BLOCKED) throw new IllegalStateException("Pending request is not blocked");
+            if (pageIns.resolve(pcb, request, simulationClock.current())) {
+                pageEvent(pcb, request, PageFaultEvent.Kind.PAGE_IN_COMMITTED);
+                resources.clearPageRequest(pcb.processId());
+                pcb.changeState(ProcessState.READY); nodeFor(pcb).ready.enqueue(pcb.processId()); pcbSynchronizer.sync(pcb);
+            }
+        }
+    }
+
     public SwapResult swapOut(int pid) {
         rejectOwner(pid);
+        var suspended = nodeFor(table.find(pid).orElseThrow()).suspended;
         if (suspended.entries().contains(pid)) throw new IllegalStateException("Already queued suspended process");
         var result = swap.swapOut(pid);
         if (result instanceof SwapResult.Completed) {
-            if (table.find(pid).orElseThrow().state() == ProcessState.READY_SUSPENDED) suspended.enqueue(pid);
-            reconsiderSwap = true;
+            if (table.find(pid).orElseThrow().state() == ProcessState.READY_SUSPENDED
+                    && !suspended.entries().contains(pid)) suspended.enqueue(pid);
+            reconsiderAllSwaps();
+            retryPendingPages();
         }
         return result;
     }
 
-    /** Reintenta Jobs pendientes tras liberación explícita si el workload inició, incluso durante Pause. */
     void retryAdmissionAfterRelease() {
-        if (started) admitWaiting();
+        if (started) { reconsiderAdmission = true; admitWaiting(); }
     }
 
-    /**
-     * Coordina entrada explícita, retira membresía suspended al completarla y habilita reconsideración de
-     * disponibilidad.
-     */
     public SwapResult swapIn(int pid) {
         rejectOwner(pid);
         var result = swap.swapIn(pid);
         if (result instanceof SwapResult.Completed) {
-            suspended.remove(pid);
-            reconsiderSwap = true;
+            nodeFor(table.find(pid).orElseThrow()).suspended.remove(pid);
+            reconsiderAllSwaps();
         }
         return result;
     }
 
-    /** Impide transferir al owner del CPU o continuar con progreso activo sin owner. */
+    private void reconsiderAllSwaps() { cpus.forEach(node -> reconsiderSwap.add(node.id)); }
+
     private void rejectOwner(int pid) {
-        if (dispatcher.owner().filter(p -> p.processId() == pid).isPresent()) {
+        if (cpus.stream().anyMatch(node -> node.dispatcher.owner().filter(p -> p.processId() == pid).isPresent())) {
             throw new IllegalStateException("CPU owner cannot be swapped");
-        }
-        if (!progress.isIdle() && dispatcher.owner().isEmpty()) {
-            throw new IllegalStateException("Active instruction has no CPU owner");
         }
     }
 
-    /** Devuelve observación FIFO inmutable sin hacer scheduling ni transferencias. */
-    public java.util.List<Integer> suspendedReadyProcessIds() { return suspended.entries(); }
+    /** Vista legacy explícita CPU0. */
+    public List<Integer> suspendedReadyProcessIds() { return cpus.getFirst().suspended.entries(); }
 
-    /** Valida estructura y determina disponibilidad global sin contar historial como workload activo. */
     public RuntimeStatus status() {
         validateStructure();
-        if (started && dispatcher.owner().isEmpty() && progress.isIdle() && table.size() == 0
-                && resources.entries().isEmpty() && ready.entries().isEmpty() && suspended.entries().isEmpty()
-                && input.pending().isEmpty() && jobs.entries().stream().noneMatch(j -> j.state() == JobState.PENDING)) {
-            return RuntimeStatus.FINISHED;
+        if (started && table.size() == 0 && resources.entries().isEmpty()
+                && jobs.entries().stream().noneMatch(j -> j.state() == JobState.PENDING)) return RuntimeStatus.FINISHED;
+        if (cpus.stream().anyMatch(node -> node.dispatcher.owner().isPresent() || node.ready.peek().isPresent())) {
+            return RuntimeStatus.RUNNABLE;
         }
-        if (dispatcher.owner().isPresent() || ready.peek().isPresent()) return RuntimeStatus.RUNNABLE;
-        if (!input.pending().isEmpty()) return RuntimeStatus.WAITING_FOR_INPUT;
+        if (!resources.pendingPages().isEmpty()) {
+            if (pageIns != null && pageIns.canResolve()) return RuntimeStatus.RUNNABLE;
+            if (cpus.stream().noneMatch(node -> node.suspended.peek().isPresent()) && nextArrivalTime().isEmpty()) return RuntimeStatus.WAITING_FOR_FRAMES;
+        }
+        if (table.size() == 0 && jobs.entries().stream().noneMatch(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() <= simulationClock.current()) && nextArrivalTime().isPresent()) {
+            return RuntimeStatus.WAITING_FOR_ARRIVAL;
+        }
         return RuntimeStatus.WAITING_FOR_CAPACITY;
     }
 
-    /**
-     * Comprueba correspondencia entre PCBs, estados, recursos, colas, pending input y único owner; no
-     * repara ni selecciona procesos.
-     */
+    public OptionalLong nextArrivalTime() {
+        return jobs.entries().stream().filter(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > simulationClock.current()).mapToLong(Job::arrivalTime).min();
+    }
+
+    private LocalCpu nodeFor(ProcessControlBlock pcb) {
+        int id = pcb.cpuAffinity().value();
+        if (id >= cpus.size()) throw new IllegalStateException("Affinity outside session topology");
+        return cpus.get(id);
+    }
+
     private void validateStructure() {
-        var pids = new HashSet<Integer>();
-        for (var pcb : table.entries()) pids.add(pcb.processId());
-        var readyPids = ready.entries();
-        var suspendedPids = suspended.entries();
-        var owner = dispatcher.owner().orElse(null);
-        if (!pids.equals(resources.entries().keySet()) || !pids.containsAll(readyPids)
-                || !pids.containsAll(suspendedPids) || (!progress.isIdle() && owner == null)) {
-            throw new IllegalStateException("Inconsistent active process structures");
+        for (var pending : resources.pendingPages()) {
+            if (table.find(pending.processId()).isEmpty()) throw new IllegalStateException("Pending request without canonical process");
         }
-        var pending = new HashSet<Integer>();
-        for (var request : input.pending()) {
-            if (!pids.contains(request.processId()) || !pending.add(request.processId())) {
-                throw new IllegalStateException("Invalid pending request");
+        var pids = new HashSet<Integer>();
+        table.entries().forEach(pcb -> pids.add(pcb.processId()));
+        if (!pids.equals(resources.entries().keySet())) throw new IllegalStateException("Inconsistent active process structures");
+        var assigned = new HashSet<Integer>();
+        for (var node : cpus) {
+            var owner = node.dispatcher.owner().orElse(null);
+            if (owner != null) {
+                if (table.find(owner.processId()).orElse(null) != owner || !owner.cpuAffinity().equals(node.id)
+                        || owner.state() != ProcessState.RUNNING || !assigned.add(owner.processId())
+                        || !node.registers.snapshot().equals(owner.cpuContext())) {
+                    throw new IllegalStateException("Noncanonical CPU owner or context");
+                }
             }
+            for (int pid : node.ready.entries()) validateQueued(node, pid, ProcessState.READY, assigned);
+            for (int pid : node.suspended.entries()) validateQueued(node, pid, ProcessState.READY_SUSPENDED, assigned);
         }
         for (var pcb : table.entries()) {
-            int pid = pcb.processId();
+            var node = nodeFor(pcb);
             var state = pcb.state();
-            if ((state == ProcessState.RUNNING) != (owner == pcb)
-                    || (state == ProcessState.READY) != readyPids.contains(pid)
-                    || (state == ProcessState.READY_SUSPENDED) != suspendedPids.contains(pid)
-                    || ((state == ProcessState.BLOCKED || state == ProcessState.BLOCKED_SUSPENDED) != pending.contains(pid))
+            if (state == ProcessState.BLOCKED_SUSPENDED) {
+                throw new IllegalStateException("Blocked process has no supported unblocking mechanism");
+            }
+            if (state == ProcessState.BLOCKED) {
+                var pending = resources.pendingPages().stream().filter(r -> r.processId() == pcb.processId()).findFirst()
+                        .orElseThrow(() -> new IllegalStateException("Blocked process has no supported unblocking mechanism: missing pending Page-In"));
+                Objects.requireNonNull(pageIns, "Missing page service").validatePending(pcb, pending);
+            } else if (resources.pendingPages().stream().anyMatch(r -> r.processId() == pcb.processId())) {
+                throw new IllegalStateException("Pending Page-In without BLOCKED state");
+            }
+            int pid = pcb.processId();
+            if ((state == ProcessState.RUNNING) != (node.dispatcher.owner().orElse(null) == pcb)
+                    || (state == ProcessState.READY) != node.ready.entries().contains(pid)
+                    || (state == ProcessState.READY_SUSPENDED) != node.suspended.entries().contains(pid)
                     || state == ProcessState.NEW || state == ProcessState.TERMINATED) {
                 throw new IllegalStateException("Inconsistent process state/queue/owner");
             }
-            boolean swapped = state == ProcessState.READY_SUSPENDED || state == ProcessState.BLOCKED_SUSPENDED;
-            if (swapped != (resources.find(pid).orElseThrow().residence() instanceof UserImageResidence.Suspended)) {
+            if ((state == ProcessState.READY_SUSPENDED)
+                    != resources.find(pid).orElseThrow().residence().suspended()) {
                 throw new IllegalStateException("State and image residence disagree");
             }
         }
-        if (owner != null && table.find(owner.processId()).orElse(null) != owner) {
-            throw new IllegalStateException("Noncanonical CPU owner");
+    }
+
+    private void validateQueued(LocalCpu node, int pid, ProcessState state, Set<Integer> assigned) {
+        var pcb = table.find(pid).orElseThrow(() -> new IllegalStateException("Unknown queued process"));
+        if (!pcb.cpuAffinity().equals(node.id) || pcb.state() != state || !assigned.add(pid)) {
+            throw new IllegalStateException("Invalid local queue membership");
         }
     }
 }

@@ -11,7 +11,6 @@ import io.github.rajami1205.osimulator.model.instruction.operand.RegisterOperand
  */
 public record StoreInstruction(RegisterName destination) implements Instruction {
 
-    private static final ExecutionWeight EXECUTION_WEIGHT = new ExecutionWeight(2);
 
     /** Exige registro destino no nulo para recibir AC. */
     public StoreInstruction {
@@ -29,9 +28,4 @@ public record StoreInstruction(RegisterName destination) implements Instruction 
         return List.of(new RegisterOperand(destination));
     }
 
-    /** Devuelve el peso estático en CPU ticks de STORE, sin almacenar progreso. */
-    @Override
-    public ExecutionWeight executionWeight() {
-        return EXECUTION_WEIGHT;
-    }
 }

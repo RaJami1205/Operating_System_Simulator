@@ -1,4 +1,5 @@
 package io.github.rajami1205.osimulator.application.simulator;
+import io.github.rajami1205.osimulator.application.process.PageInService;
 
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorLifecycle;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
@@ -7,25 +8,24 @@ import io.github.rajami1205.osimulator.application.job.JobSubmissionService;
 import io.github.rajami1205.osimulator.application.job.JobScheduler;
 import io.github.rajami1205.osimulator.application.process.AdmissionResult;
 import io.github.rajami1205.osimulator.application.process.Dispatcher;
-import io.github.rajami1205.osimulator.application.process.KeyboardCompletionService;
 import io.github.rajami1205.osimulator.application.process.ProcessCompletionService;
 import io.github.rajami1205.osimulator.application.process.CompletedProcessRecord;
-import io.github.rajami1205.osimulator.application.process.PendingKeyboardRequest;
-import io.github.rajami1205.osimulator.model.scheduling.SuspendedReadyQueue;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.application.process.ProcessSwapService;
 import io.github.rajami1205.osimulator.application.process.SwapResult;
 import io.github.rajami1205.osimulator.application.process.ProcessAdmissionService;
 import io.github.rajami1205.osimulator.model.process.ProcessTable;
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
+import io.github.rajami1205.osimulator.model.execution.SimulationClock;
 import io.github.rajami1205.osimulator.model.scheduling.ProcessScheduler;
-import io.github.rajami1205.osimulator.model.scheduling.FcfsProcessScheduler;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.job.JobList;
 import io.github.rajami1205.osimulator.model.program.ProgramImage;
 import io.github.rajami1205.osimulator.model.cpu.CpuRegisters;
 import io.github.rajami1205.osimulator.model.execution.ExecutionEngine;
-import io.github.rajami1205.osimulator.model.execution.ExecutionProgress;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.Instruction;
 import io.github.rajami1205.osimulator.model.memory.MainMemory;
@@ -33,10 +33,12 @@ import io.github.rajami1205.osimulator.model.memory.MemoryContent;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.storage.SecondaryStorage;
 import io.github.rajami1205.osimulator.model.io.ScreenDevice;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.filesystem.SimulatedFileSystem;
+import java.util.ArrayList;
 import java.util.List;
 import java.time.Clock;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
+import io.github.rajami1205.osimulator.application.statistics.StatisticsCalculator;
 import io.github.rajami1205.osimulator.model.execution.CpuTickCounter;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramLoadException;
@@ -47,6 +49,8 @@ import io.github.rajami1205.osimulator.model.memory.exception.InvalidMemoryAddre
 import java.util.OptionalLong;
 import java.util.Objects;
 import java.util.Optional;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Facade de Application entre Presentation y la sesión multiproceso. Compone servicios, controla lifecycle
@@ -69,18 +73,21 @@ public final class SimulatorOrchestrator {
     private ReadyQueue readyQueue;
     private ProcessScheduler processScheduler;
     private CpuRegisters<Instruction> cpu;
-    private ExecutionProgress executionProgress;
+    private CpuTopology cpuTopology;
     private ScreenDevice screen;
-    private KeyboardDevice keyboard;
     private Dispatcher dispatcher;
-    private KeyboardCompletionService keyboardCompletion;
     private ProcessCompletionService processCompletion;
     private MultiprocessRuntime runtime;
     private long compatibilitySequence;
     private SimulatorConfiguration configuration;
 
     private CpuTickCounter tickCounter;
+    private SimulationClock simulationClock;
     private final Clock realClock;
+    /** Ejecuciones terminadas de esta instancia de la app; Reset no las borra (resultados acumulativos). */
+    private final List<RunStatistics> runHistory = new ArrayList<>();
+    /** Estadísticas congeladas de la ejecución actual una vez que llegó a FINISHED. */
+    private RunStatistics finishedRun;
 
     /** Recibe loader y engine; usa Clock del sistema por defecto o el Clock inyectado para accounting real. */
     public SimulatorOrchestrator(
@@ -104,30 +111,33 @@ public final class SimulatorOrchestrator {
     public void initialize(SimulatorConfiguration configuration) {
         requireState("initialize", SimulatorState.CONFIGURING);
         Objects.requireNonNull(configuration, "configuration must not be null");
-        MainMemory newMemory = new MainMemory(configuration.mainMemory());
-        CpuRegisters<Instruction> newCpu = new CpuRegisters<>();
-        ExecutionProgress newProgress = new ExecutionProgress();
+        configuration = resolveLotterySeed(configuration);
+        MainMemory newMemory = new MainMemory(configuration.mainMemory(), configuration.userAllocationStrategy(),
+                configuration.memoryMode(), configuration.fixedPartitions(), configuration.paging());
         ScreenDevice newScreen = new ScreenDevice();
-        KeyboardDevice newKeyboard = new KeyboardDevice();
         SecondaryStorage newStorage = new SecondaryStorage(
                 configuration.secondaryStoragePositions(), configuration.virtualMemoryPositions());
         JobList newJobs = new JobList();
-        JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs);
-        ProcessTable newProcesses = new ProcessTable();
-        ReadyQueue newReadyQueue = new ReadyQueue();
+        JobSubmissionService newSubmissionService = new JobSubmissionService(newStorage, newJobs, newMemory);
+        ProcessTable newProcesses = new ProcessTable(configuration.maxProcesses());
         ProcessResourceRegistry newResources = new ProcessResourceRegistry();
-        ProcessSwapService newSwap = new ProcessSwapService(newMemory, newStorage, newProcesses, newResources, newReadyQueue);
+        CpuTopology newTopology = new CpuTopology(configuration.cpuCount(), newProcesses, newMemory, newResources,
+                configuration.schedulingPolicy(), configuration.quantum(), configuration.priority(),
+                configuration.lottery(), configuration.mlfq());
+        var node = newTopology.node(CpuId.ZERO);
+        ReadyQueue newReadyQueue = node.readyQueue();
+        ProcessSwapService newSwap = new ProcessSwapService(newTopology, newMemory, newStorage, newProcesses, newResources);
         ProcessAdmissionService newAdmission = new ProcessAdmissionService(
-                newJobs, newStorage, newMemory, newProcesses, programLoader, newReadyQueue, newResources);
+                newTopology, newJobs, newStorage, newMemory, newProcesses, programLoader, newResources);
         JobScheduler newScheduler = new JobScheduler(newJobs, newAdmission);
-        ProcessScheduler newProcessScheduler = new FcfsProcessScheduler(newReadyQueue, newProcesses);
+        ProcessScheduler newProcessScheduler = node.scheduler();
         lifecycle.initialize();
         memory = newMemory;
-        cpu = newCpu;
-        executionProgress = newProgress;
-        tickCounter = new CpuTickCounter();
+        cpuTopology = newTopology;
+        cpu = node.registers();
+        tickCounter = node.tickCounter();
+        simulationClock = new SimulationClock();
         screen = newScreen;
-        keyboard = newKeyboard;
         secondaryStorage = newStorage;
         filesystem = new SimulatedFileSystem(newStorage);
         jobList = newJobs;
@@ -139,15 +149,24 @@ public final class SimulatorOrchestrator {
         jobScheduler = newScheduler;
         readyQueue = newReadyQueue;
         processScheduler = newProcessScheduler;
-        var suspended = new SuspendedReadyQueue();
-        dispatcher = new Dispatcher(cpu, processTable, readyQueue, processResources, memory);
-        keyboardCompletion = new KeyboardCompletionService(keyboard, processTable, processResources, readyQueue, suspended);
-        processCompletion = new ProcessCompletionService(memory, secondaryStorage, processTable, processResources,
-                readyQueue, suspended, keyboardCompletion, dispatcher, realClock);
-        runtime = new MultiprocessRuntime(dispatcher, executionEngine, executionProgress, cpu, memory, filesystem,
-                screen, keyboard, keyboardCompletion, processCompletion, processSwapService, jobScheduler,
-                jobList, processTable, processResources, readyQueue, suspended, processScheduler, tickCounter, realClock);
+        dispatcher = node.dispatcher();
+        processCompletion = new ProcessCompletionService(cpuTopology, memory, secondaryStorage, processTable, processResources, realClock);
+        runtime = new MultiprocessRuntime(cpuTopology, executionEngine, memory, filesystem,
+                screen, processCompletion, processSwapService, jobScheduler, jobList, processTable,
+                processResources, simulationClock, realClock, new PageInService(memory, secondaryStorage, processResources));
         this.configuration = configuration;
+    }
+
+    /**
+     * Con Lottery y semilla vacía ("aleatoria") fija una semilla concreta una sola vez, para que la
+     * configuración publicada muestre la semilla usada y la corrida pueda repetirse.
+     */
+    private static SimulatorConfiguration resolveLotterySeed(SimulatorConfiguration configuration) {
+        boolean lottery = configuration.schedulingPolicy() == SchedulingPolicyId.LOTTERY;
+        if (!lottery || configuration.lottery().seed().isPresent()) return configuration;
+        long seedRange = LotteryConfiguration.MAX_SEED - LotteryConfiguration.MIN_SEED + 1;
+        long seed = LotteryConfiguration.MIN_SEED + new java.security.SecureRandom().nextLong(seedRange);
+        return configuration.withLottery(LotteryConfiguration.withSeed(seed));
     }
 
     /** Configuración inmutable de la sesión, ausente antes de Initialize y después de Reset. */
@@ -157,8 +176,22 @@ public final class SimulatorOrchestrator {
 
     /** Presenta trabajo y prepara el workload sin crear todavía un proceso. */
     public Job submitProgram(ProgramImage program) {
+        return submitProgram(program, 0);
+    }
+
+    public Job submitProgram(ProgramImage program, long arrivalTime) {
+        return submitProgram(program, arrivalTime, ProcessControlBlock.DEFAULT_PRIORITY);
+    }
+
+    /** Presenta trabajo con Arrival y prioridad de planificación (0..9, menor = más prioridad). */
+    public Job submitProgram(ProgramImage program, long arrivalTime, int priority) {
+        return submitProgram(program, arrivalTime, priority, ProcessControlBlock.DEFAULT_TICKETS);
+    }
+
+    /** Presenta trabajo con Arrival, prioridad (0..9) y tickets de Lottery (1..100). */
+    public Job submitProgram(ProgramImage program, long arrivalTime, int priority, int tickets) {
         requirePreparedState("submitProgram");
-        var job = jobSubmissionService.submit(program);
+        var job = jobSubmissionService.submit(program, arrivalTime, priority, tickets);
         if (lifecycle.state() == SimulatorState.INITIALIZED) lifecycle.markProgramLoaded();
         return job;
     }
@@ -168,21 +201,31 @@ public final class SimulatorOrchestrator {
         return jobList == null ? List.of() : jobList.entries();
     }
 
+    public void updateJobArrival(int jobId, long arrivalTime) {
+        requireState("updateJobArrival", SimulatorState.PROGRAM_LOADED);
+        jobList.updatePendingArrival(jobId, arrivalTime);
+    }
+
     /**
      * Intenta admitir el primer Job en estado preparado; convierte fallos internos de admisión en ERROR de
      * sesión.
      */
     public Optional<AdmissionResult> attemptNextAdmission() {
         requirePreparedState("attemptNextAdmission");
-        try { return jobScheduler.attemptNextAdmission(); }
+        try { return jobScheduler.attemptNextAdmission(simulationClock.current()); }
         catch (IllegalStateException | ProgramLoadException | StorageException | MemoryProtectionException
                 | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
     }
 
     /** Consulta el próximo candidato sin consumir READY ni activar la CPU. */
     public Optional<Integer> selectNextReadyProcess() {
+        return selectNextReadyProcess(CpuId.ZERO);
+    }
+
+    /** Consulta FCFS local sin dispatch; el overload sin ID representa CPU0. */
+    public Optional<Integer> selectNextReadyProcess(CpuId cpuId) {
         requirePreparedState("selectNextReadyProcess");
-        return processScheduler.selectNext();
+        return cpuTopology.node(cpuId).scheduler().selectNext();
     }
 
     /**
@@ -200,7 +243,6 @@ public final class SimulatorOrchestrator {
             try { runtime.retryAdmissionAfterRelease(); }
             catch (RuntimeException failure) { throw runtimeFailure(failure); }
         }
-        completePendingKeyboardInput();
         return result;
     }
 
@@ -215,7 +257,6 @@ public final class SimulatorOrchestrator {
         try { result = runtime.swapIn(processId); }
         catch (IllegalStateException | StorageException | MemoryProtectionException
                 | InvalidMemoryReleaseException | InvalidMemoryAddressException failure) { throw runtimeFailure(failure); }
-        completePendingKeyboardInput();
         return result;
     }
 
@@ -225,9 +266,11 @@ public final class SimulatorOrchestrator {
      */
     private void requireSwapCandidate(int pid, boolean out) {
         var pcb = processTable.find(pid).orElseThrow(() -> new IllegalArgumentException("Unknown process: " + pid));
+        if (out && memory.isDemandPaging() && pcb.state() == ProcessState.BLOCKED)
+            throw new IllegalStateException("Demand BLOCKED suspension is unsupported; inspect or Reset");
         boolean eligible = out ? pcb.state() == ProcessState.READY || pcb.state() == ProcessState.BLOCKED
                 : pcb.state() == ProcessState.READY_SUSPENDED || pcb.state() == ProcessState.BLOCKED_SUSPENDED;
-        if (!eligible || dispatcher.owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
+        if (!eligible || cpuTopology.node(pcb.cpuAffinity()).dispatcher().owner().orElse(null) == pcb) throw new IllegalStateException("Process is not eligible for requested swap");
     }
 
     /** Exige sesión preparada, RUNNING o PAUSED para permitir transferencias explícitas. */
@@ -267,7 +310,7 @@ public final class SimulatorOrchestrator {
     }
 
     /**
-     * Desde RUNNING ejecuta como máximo un tick a través del runtime y finaliza lifecycle sólo al agotar
+     * Desde RUNNING ejecuta como máximo un tick por CPU y finaliza lifecycle sólo al agotar
      * todo el workload.
      */
     public RuntimeStepResult step() {
@@ -289,9 +332,37 @@ public final class SimulatorOrchestrator {
         catch (RuntimeException failure) { throw runtimeFailure(failure); }
     }
 
-    /** Marca FINISHED únicamente si el runtime agotó el workload y lifecycle sigue RUNNING. */
+    /**
+     * Marca FINISHED únicamente si el runtime agotó el workload y lifecycle sigue RUNNING; en esa transición
+     * congela las estadísticas de la ejecución y las agrega al historial acumulado.
+     */
     private void finishIfComplete(RuntimeStatus status) {
-        if (status == RuntimeStatus.FINISHED && lifecycle.state() == SimulatorState.RUNNING) lifecycle.finishExecution();
+        if (status == RuntimeStatus.FINISHED && lifecycle.state() == SimulatorState.RUNNING) {
+            lifecycle.finishExecution();
+            int runNumber = runHistory.size() + 1;
+            finishedRun = computeStatistics(true).withRunNumber(runNumber);
+            runHistory.add(finishedRun);
+        }
+    }
+
+    /**
+     * Estadísticas de la ejecución actual: parciales (sólo procesos terminados) mientras corre y congeladas
+     * al llegar a FINISHED. Vacío sin sesión inicializada.
+     */
+    public Optional<RunStatistics> statistics() {
+        if (finishedRun != null) return Optional.of(finishedRun);
+        if (runtime == null || configuration == null || simulationClock == null) return Optional.empty();
+        return Optional.of(computeStatistics(false));
+    }
+
+    /** Ejecuciones terminadas desde que se abrió la app, en orden; sobreviven a Reset. */
+    public List<RunStatistics> runHistory() {
+        return List.copyOf(runHistory);
+    }
+
+    private RunStatistics computeStatistics(boolean complete) {
+        return StatisticsCalculator.compute(configuration.schedulingPolicy(), simulationClock.current(), complete,
+                completedProcesses(), runtime.timeline());
     }
 
     /** Marca ERROR global y conserva el error de ejecución o envuelve la causa de coordinación. */
@@ -306,43 +377,8 @@ public final class SimulatorOrchestrator {
         return processCompletion == null ? List.of() : processCompletion.completed();
     }
 
-    /** Expone solicitudes FIFO inmutables sin entregar el dispositivo ni PCBs a Presentation. */
-    public List<PendingKeyboardRequest> pendingKeyboardRequests() {
-        return keyboardCompletion == null ? List.of() : keyboardCompletion.pending();
-    }
-
     /** Devuelve salidas numéricas inmutables o una lista vacía cuando no hay sesión. */
     public List<Integer> screenOutput() { return screen == null ? List.of() : screen.outputs(); }
-
-    /** Indica espera global de input, no simplemente la existencia de un proceso BLOCKED. */
-    public boolean waitingForInput() { return runtimeStatus() == RuntimeStatus.WAITING_FOR_INPUT; }
-
-    /**
-     * Valida lifecycle activo y encola input; completa solicitudes sólo en RUNNING, conservando la cola
-     * durante Pause.
-     */
-    public void submitKeyboardInput(int value) {
-        var state = lifecycle.state();
-        if (state != SimulatorState.INITIALIZED && state != SimulatorState.PROGRAM_LOADED
-                && state != SimulatorState.RUNNING && state != SimulatorState.PAUSED) {
-            throw new IllegalStateException("Keyboard input requires an active session");
-        }
-        keyboard.submit(value);
-        completePendingKeyboardInput();
-    }
-
-    /**
-     * Drena eventos sólo en RUNNING, sin ticks de CPU, y actualiza FINISHED o ERROR global cuando
-     * corresponda.
-     */
-    private void completePendingKeyboardInput() {
-        if (lifecycle.state() == SimulatorState.RUNNING) {
-            try {
-                runtime.drainInput();
-                finishIfComplete(runtime.status());
-            } catch (RuntimeException failure) { throw runtimeFailure(failure); }
-        }
-    }
 
     /** Pausa la sesión sin modificar el estado del proceso. */
     public void pause() {
@@ -352,12 +388,18 @@ public final class SimulatorOrchestrator {
     /** Devuelve la sesión pausada al estado RUNNING. */
     public void resume() {
         lifecycle.resumeExecution();
-        completePendingKeyboardInput();
+        try {
+            runtime.settle();
+            finishIfComplete(runtime.status());
+        } catch (RuntimeException failure) { throw runtimeFailure(failure); }
     }
 
     /** Descarta los recursos de sesión y devuelve la sesión a CONFIGURING. */
     public void reset() {
         lifecycle.reset();
+        if (memory != null) memory.reset();
+        if (secondaryStorage != null) secondaryStorage.reset();
+        if (processResources != null) processResources.clear();
         memory = null;
         secondaryStorage = null;
         filesystem = null;
@@ -371,16 +413,16 @@ public final class SimulatorOrchestrator {
         readyQueue = null;
         processScheduler = null;
         cpu = null;
-        executionProgress = null;
+        cpuTopology = null;
         screen = null;
-        keyboard = null;
         dispatcher = null;
-        keyboardCompletion = null;
         processCompletion = null;
         runtime = null;
         tickCounter = null;
+        simulationClock = null;
         compatibilitySequence = 0;
         configuration = null;
+        finishedRun = null;
     }
 
     /**
@@ -394,11 +436,12 @@ public final class SimulatorOrchestrator {
             try { status = Optional.of(runtime.status()); }
             catch (RuntimeException failure) { lifecycle.markError(); }
         }
-        return SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpu,
-                dispatcher == null ? Optional.empty() : dispatcher.owner(), memory, secondaryStorage,
-                jobs(), processTable, processResources, readyQueue == null ? List.of() : readyQueue.entries(),
-                runtime == null ? List.of() : runtime.suspendedReadyProcessIds(), pendingKeyboardRequests(),
-                completedProcesses(), screenOutput(), tickCounter == null ? OptionalLong.empty() : OptionalLong.of(tickCounter.current()));
+        var snapshot = SimulatorSnapshotMapper.map(lifecycle.state(), status, configuration, cpuTopology,
+                memory, secondaryStorage, jobs(), processTable, processResources, completedProcesses(), screenOutput(),
+                simulationClock == null ? OptionalLong.empty() : OptionalLong.of(simulationClock.current()),
+                runtime == null ? List.of() : runtime.lastCpuResults());
+        if (snapshot.simulatorState() == SimulatorState.ERROR) lifecycle.markError();
+        return snapshot.withStatistics(statistics(), runHistory());
     }
 
     /** Delega el texto descriptivo de memoria al mapper sin exponer entidades mutables. */

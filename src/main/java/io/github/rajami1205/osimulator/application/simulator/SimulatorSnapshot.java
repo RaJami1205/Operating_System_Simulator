@@ -1,15 +1,20 @@
 package io.github.rajami1205.osimulator.application.simulator;
 
+import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
+
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
+import io.github.rajami1205.osimulator.application.statistics.RunStatistics;
 import io.github.rajami1205.osimulator.model.cpu.RegisterValue;
 import io.github.rajami1205.osimulator.model.cpu.NumericRegisterValue;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.ConditionFlags;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.job.Job;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
+import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
+import io.github.rajami1205.osimulator.model.job.JobState;
 import io.github.rajami1205.osimulator.model.storage.StorageRegion;
-import io.github.rajami1205.osimulator.application.process.PendingKeyboardRequest;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,21 +35,195 @@ public record SimulatorSnapshot(
         List<ProcessDetails> processes,
         List<Integer> readyQueue,
         List<Integer> suspendedReadyQueue,
-        List<PendingKeyboardRequest> pendingKeyboardRequests,
         List<CompletedProcess> completedProcesses,
         List<StorageEntry> storage,
         List<Integer> screenOutput,
-        OptionalLong cpuTicks
+        OptionalLong cpuTicks,
+        Optional<Integer> nextInstructionPhysicalAddress,
+        Optional<String> addressTranslationError,
+        OptionalLong simulationTimeSeconds,
+        List<CpuView> cpus,
+        List<RuntimeStepResult.CpuResult> lastCpuResults,
+        List<PartitionView> partitions,
+        PagingView paging,
+        Optional<RunStatistics> statistics,
+        List<RunStatistics> runHistory
 ) {
+    /** Compatibilidad con snapshots previos a las estadísticas: sin estadísticas ni historial. */
+    public SimulatorSnapshot(SimulatorState simulatorState, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> currentInstruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults, List<PartitionView> partitions,
+            PagingView paging) {
+        this(simulatorState, cpu, currentInstruction, process, program, memory, runtimeStatus, ownerPid,
+                configuration, jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage,
+                screenOutput, cpuTicks, nextInstructionPhysicalAddress, addressTranslationError,
+                simulationTimeSeconds, cpus, lastCpuResults, partitions, paging, Optional.empty(), List.of());
+    }
+
+    /** Copia con las estadísticas de la ejecución en curso y el historial acumulado. */
+    public SimulatorSnapshot withStatistics(Optional<RunStatistics> currentStatistics, List<RunStatistics> history) {
+        return new SimulatorSnapshot(simulatorState, cpu, currentInstruction, process, program, memory,
+                runtimeStatus, ownerPid, configuration, jobs, processes, readyQueue, suspendedReadyQueue,
+                completedProcesses, storage, screenOutput, cpuTicks, nextInstructionPhysicalAddress,
+                addressTranslationError, simulationTimeSeconds, cpus, lastCpuResults, partitions, paging,
+                currentStatistics, history);
+    }
+
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults, List<PartitionView> partitions) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds,
+                cpus, lastCpuResults, partitions, new PagingView(List.of(), List.of(), 0));
+    }
+    public record FrameView(int frameId, int base, int capacity, boolean occupied,
+            Optional<Integer> ownerPid, Optional<Integer> pageNumber, Optional<Boolean> referenced) {
+        public FrameView(int frameId, int base, int capacity, boolean occupied, Optional<Integer> ownerPid, Optional<Integer> pageNumber) {
+            this(frameId, base, capacity, occupied, ownerPid, pageNumber, Optional.empty());
+        }
+        public FrameView { Objects.requireNonNull(ownerPid); Objects.requireNonNull(pageNumber); Objects.requireNonNull(referenced); }
+    }
+    public record PageMapping(int pageNumber, Optional<Integer> frame, Optional<Integer> base, int usedLength) {
+        public PageMapping(int pageNumber, int frameId, int physicalBase, int usedLength) {
+            this(pageNumber, Optional.of(frameId), Optional.of(physicalBase), usedLength);
+        }
+        public PageMapping { Objects.requireNonNull(frame); Objects.requireNonNull(base); }
+        public int frameId() { return frame.orElseThrow(); }
+        public int physicalBase() { return base.orElseThrow(); }
+    }
+    public record BackingView(int base, int length) { }
+    public record PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages,
+            io.github.rajami1205.osimulator.model.memory.PagingLoadMode loadMode, long revision,
+            Optional<BackingView> backing, boolean suspended) {
+        public PageTableView(int processId, int programLength, int pageSize, List<PageMapping> pages) {
+            this(processId, programLength, pageSize, pages, io.github.rajami1205.osimulator.model.memory.PagingLoadMode.FULLY_RESIDENT, 0, Optional.empty(), false);
+        }
+        public PageTableView { pages = List.copyOf(pages); Objects.requireNonNull(loadMode); Objects.requireNonNull(backing); }
+    }
+    public record PendingPageView(int processId, int pageNumber, int logicalPc) { }
+    public record PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells,
+            List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending,
+            Optional<Integer> clockHand) {
+        public PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells,
+                List<io.github.rajami1205.osimulator.application.process.PageFaultEvent> events, List<PendingPageView> pending) {
+            this(frames, pageTables, unassignableCells, events, pending, Optional.empty());
+        }
+        public PagingView(List<FrameView> frames, List<PageTableView> pageTables, int unassignableCells) {
+            this(frames, pageTables, unassignableCells, List.of(), List.of());
+        }
+        public PagingView {
+            Objects.requireNonNull(clockHand);
+            events = List.copyOf(events); pending = List.copyOf(pending);
+            frames = List.copyOf(frames); pageTables = List.copyOf(pageTables);
+            if (unassignableCells < 0) throw new IllegalArgumentException("Negative USER remainder");
+        }
+    }
+    /** Compatibilidad con snapshots multi-CPU previos a las particiones fijas. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds,
+            List<CpuView> cpus, List<RuntimeStepResult.CpuResult> lastCpuResults) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds,
+                cpus, lastCpuResults, List.of());
+    }
+
+    /** Valores capturados; no expone handles ni referencias al registry/allocator. */
+    public record PartitionView(int partitionId, int base, int capacity, boolean occupied,
+            Optional<Integer> ownerPid, int usedLength, int internalFragmentation) {
+        public PartitionView {
+            Objects.requireNonNull(ownerPid);
+            if (partitionId <= 0 || base < 0 || capacity <= 0 || (long) base + capacity > Integer.MAX_VALUE
+                    || usedLength < 0 || usedLength > capacity
+                    || occupied != (usedLength > 0)
+                    || internalFragmentation != (occupied ? capacity - usedLength : 0)
+                    || ownerPid.isPresent() && (!occupied || ownerPid.orElseThrow() <= 0)) {
+                throw new IllegalArgumentException("Invalid partition snapshot");
+            }
+        }
+    }
+    /** Campos singulares legacy: vista explícita CPU0, nunca agregados globales. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses, List<StorageEntry> storage, List<Integer> screenOutput,
+            OptionalLong cpuTicks, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError, OptionalLong simulationTimeSeconds) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses, storage, screenOutput,
+                cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, simulationTimeSeconds, List.of(), List.of());
+    }
+
+    /** Observación coherente de un nodo; PC en registros es lógico, dirección física es derivada. */
+    public record CpuView(CpuId id, CpuSnapshot cpu, Optional<Integer> ownerPid,
+            Optional<InstructionSnapshot> currentInstruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, long cpuTicks, List<Integer> readyQueue,
+            List<Integer> suspendedReadyQueue, Optional<Integer> nextInstructionPhysicalAddress,
+            Optional<String> addressTranslationError) {
+        public CpuView {
+            Objects.requireNonNull(id); Objects.requireNonNull(cpu); Objects.requireNonNull(ownerPid);
+            Objects.requireNonNull(currentInstruction); Objects.requireNonNull(process);
+            Objects.requireNonNull(nextInstructionPhysicalAddress); Objects.requireNonNull(addressTranslationError);
+            program = List.copyOf(program); readyQueue = List.copyOf(readyQueue);
+            suspendedReadyQueue = List.copyOf(suspendedReadyQueue);
+            if (cpuTicks < 0) throw new IllegalArgumentException("Negative CPU ticks");
+        }
+    }
+    /** Deriva el próximo evento sólo de valores capturados, sin consultar el Runtime vivo. */
+    public OptionalLong nextArrivalTime() {
+        if (simulationTimeSeconds.isEmpty()) return OptionalLong.empty();
+        return jobs.stream().filter(job -> job.state() == JobState.PENDING
+                && job.arrivalTime() > simulationTimeSeconds.getAsLong()).mapToLong(Job::arrivalTime).min();
+    }
+    /** Compatibilidad con snapshots anteriores sin observación del reloj lógico. */
+    public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
+            Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
+            List<ProgramEntry> program, List<MemoryEntry> memory, Optional<RuntimeStatus> runtimeStatus,
+            Optional<Integer> ownerPid, Optional<SimulatorConfiguration> configuration, List<Job> jobs,
+            List<ProcessDetails> processes, List<Integer> readyQueue, List<Integer> suspendedReadyQueue,
+            List<CompletedProcess> completedProcesses,
+            List<StorageEntry> storage, List<Integer> screenOutput, OptionalLong cpuTicks,
+            Optional<Integer> nextInstructionPhysicalAddress, Optional<String> addressTranslationError) {
+        this(state, cpu, instruction, process, program, memory, runtimeStatus, ownerPid, configuration,
+                jobs, processes, readyQueue, suspendedReadyQueue, completedProcesses,
+                storage, screenOutput, cpuTicks, nextInstructionPhysicalAddress, addressTranslationError, OptionalLong.empty());
+    }
     /** Conserva la construcción de las vistas originales y deja vacías las vistas adicionales de la sesión. */
     public SimulatorSnapshot(SimulatorState state, Optional<CpuSnapshot> cpu,
             Optional<InstructionSnapshot> instruction, Optional<ProcessSnapshot> process,
             List<ProgramEntry> program, List<MemoryEntry> memory) {
         this(state, cpu, instruction, process, program, memory, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty());
+                Optional.empty(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), OptionalLong.empty(), Optional.empty(), Optional.empty());
     }
     /** Exige referencias no nulas, copia las colecciones y rechaza un contador de ticks negativo. */
     public SimulatorSnapshot {
+        Objects.requireNonNull(paging);
+        Objects.requireNonNull(statistics, "statistics must not be null");
+        runHistory = List.copyOf(runHistory);
+        partitions = List.copyOf(partitions);
+        cpus = List.copyOf(cpus);
+        lastCpuResults = List.copyOf(lastCpuResults);
         Objects.requireNonNull(simulatorState, "simulatorState must not be null");
         Objects.requireNonNull(cpu, "cpu must not be null");
         Objects.requireNonNull(currentInstruction, "currentInstruction must not be null");
@@ -58,16 +237,21 @@ public record SimulatorSnapshot(
         processes = List.copyOf(processes);
         readyQueue = List.copyOf(readyQueue);
         suspendedReadyQueue = List.copyOf(suspendedReadyQueue);
-        pendingKeyboardRequests = List.copyOf(pendingKeyboardRequests);
         completedProcesses = List.copyOf(completedProcesses);
         storage = List.copyOf(storage);
         screenOutput = List.copyOf(screenOutput);
         Objects.requireNonNull(cpuTicks);
+        Objects.requireNonNull(nextInstructionPhysicalAddress);
+        Objects.requireNonNull(addressTranslationError);
+        Objects.requireNonNull(simulationTimeSeconds);
+        if (simulationTimeSeconds.isPresent() && simulationTimeSeconds.getAsLong() < 0) {
+            throw new IllegalArgumentException("Negative simulation time");
+        }
         if (cpuTicks.isPresent() && cpuTicks.getAsLong() < 0) throw new IllegalArgumentException("Negative CPU ticks");
     }
     /**
      * Valores inmutables de CPU y representación semántica de IR; DX/AL conservan su tipo numérico o
-     * textual.
+     * textual. El PC es lógico; cero sólo representa un CPU genérico sin proceso.
      */
     public record CpuSnapshot(
             int programCounter, int accumulator, int ax, int bx, int cx, RegisterValue dxValue,
@@ -126,9 +310,14 @@ public record SimulatorSnapshot(
         }
     }
     /** Fila de programa activo con dirección física y texto de instrucción. */
-    public record ProgramEntry(int address, String instruction) {
+    public record ProgramEntry(Optional<Integer> physicalAddress, String instruction, Optional<Integer> logicalAddress) {
+        public ProgramEntry(int address, String instruction, Optional<Integer> logicalAddress) { this(Optional.of(address), instruction, logicalAddress); }
+        public int address() { return physicalAddress.orElseThrow(); }
+        public ProgramEntry(int address, String instruction) { this(address, instruction, Optional.empty()); }
         /** Exige representación textual no nula para la instrucción de la fila. */
         public ProgramEntry {
+            Objects.requireNonNull(physicalAddress);
+            Objects.requireNonNull(logicalAddress);
             Objects.requireNonNull(instruction, "instruction must not be null");
         }
     }
@@ -149,18 +338,55 @@ public record SimulatorSnapshot(
     public record ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
             Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
             List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
-            ProcessAccounting accounting) {
+            ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity, int tickets) {
+        /** Compatibilidad: tickets de Lottery por defecto (1). */
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting, LogicalProcessTimes logicalTimes, CpuId cpuAffinity) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, logicalTimes, cpuAffinity,
+                    ProcessControlBlock.DEFAULT_TICKETS);
+        }
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting, LogicalProcessTimes logicalTimes) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, logicalTimes, CpuId.ZERO);
+        }
+        /** Compatibilidad con vistas de procesos admitidos al inicio de la sesión. */
+        public ProcessDetails(int processId, ProcessState state, int savedProgramCounter,
+                Residency residency, Optional<Integer> base, int limit, int priority, CpuSnapshot savedContext,
+                List<Integer> stack, List<String> openFiles, int kernelAddress, Optional<Integer> nextPcbAddress,
+                ProcessAccounting accounting) {
+            this(processId, state, savedProgramCounter, residency, base, limit, priority, savedContext,
+                    stack, openFiles, kernelAddress, nextPcbAddress, accounting, LogicalProcessTimes.admitted(0, 0));
+        }
+        /** En memoria contigua, la longitud parseada coincide con Limit; no implica servicio efectivo. */
+        public int declaredBurst() { return limit; }
         /** Exige referencias no nulas y copia stack/open files para aislar la vista del PCB mutable. */
         public ProcessDetails {
+            Objects.requireNonNull(cpuAffinity);
+            Objects.requireNonNull(logicalTimes);
             Objects.requireNonNull(state); Objects.requireNonNull(residency); Objects.requireNonNull(base);
             Objects.requireNonNull(savedContext); Objects.requireNonNull(nextPcbAddress); Objects.requireNonNull(accounting);
             stack = List.copyOf(stack); openFiles = List.copyOf(openFiles);
         }
     }
     /** Contexto final y accounting de un proceso retirado, sin recursos activos. */
-    public record CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting) {
+    public record CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting,
+            LogicalProcessTimes logicalTimes, int declaredBurst, CpuId cpuAffinity) {
+        public CompletedProcess(int processId, CpuSnapshot finalContext, ProcessAccounting accounting,
+                LogicalProcessTimes logicalTimes, int declaredBurst) {
+            this(processId, finalContext, accounting, logicalTimes, declaredBurst, CpuId.ZERO);
+        }
         /** Exige contexto y accounting no nulos para la vista histórica. */
-        public CompletedProcess { Objects.requireNonNull(finalContext); Objects.requireNonNull(accounting); }
+        public CompletedProcess {
+            Objects.requireNonNull(cpuAffinity);
+            Objects.requireNonNull(finalContext); Objects.requireNonNull(accounting); Objects.requireNonNull(logicalTimes);
+            if (declaredBurst <= 0) throw new IllegalArgumentException("Declared Burst must be positive");
+        }
     }
     /** Fila de SecondaryStorage con región, dirección y texto descriptivo seguro. */
     public record StorageEntry(int address, StorageRegion region, String content) {

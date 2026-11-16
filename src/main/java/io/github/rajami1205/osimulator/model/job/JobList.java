@@ -28,12 +28,21 @@ public final class JobList {
     /** Devuelve una copia inmutable en orden de submission, incluidos Jobs ya admitidos. */
     public List<Job> entries() { return List.copyOf(jobs.values()); }
 
+    public void updatePendingArrival(int jobId, long arrivalTime) {
+        Job job = find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
+        if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
+        Job replacement = new Job(jobId, job.programName(), job.state(), arrivalTime, job.priority(), job.tickets());
+        var updated = new LinkedHashMap<>(jobs);
+        updated.put(jobId, replacement);
+        jobs = updated;
+    }
+
     /** Publica la transición completa sin alterar el orden ni las vistas anteriores. */
     public void markAdmitted(int jobId) {
         Job job = find(jobId).orElseThrow(() -> new IllegalArgumentException("Unknown Job ID: " + jobId));
         if (job.state() != JobState.PENDING) throw new IllegalStateException("Job is already admitted: " + jobId);
         var updated = new LinkedHashMap<>(jobs);
-        updated.put(jobId, new Job(jobId, job.programName(), JobState.ADMITTED));
+        updated.put(jobId, new Job(jobId, job.programName(), JobState.ADMITTED, job.arrivalTime(), job.priority(), job.tickets()));
         jobs = updated;
     }
 

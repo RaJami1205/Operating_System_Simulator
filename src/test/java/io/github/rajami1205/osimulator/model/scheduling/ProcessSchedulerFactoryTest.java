@@ -1,0 +1,82 @@
+package io.github.rajami1205.osimulator.model.scheduling;
+
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
+import io.github.rajami1205.osimulator.model.process.*;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class ProcessSchedulerFactoryTest {
+    @Test void createsIndependentObservationalSchedulersBoundToLocalQueues() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var one = new ReadyQueue(new CpuId(1), table);
+        for (int pid = 1; pid <= 4; pid++) {
+            var pcb = new ProcessControlBlock(pid, 280, 3, LogicalProcessTimes.admitted(0, 0), new CpuId(pid % 2));
+            pcb.changeState(ProcessState.READY); table.register(pcb);
+        }
+        zero.enqueue(4); zero.enqueue(2); one.enqueue(3); one.enqueue(1);
+        var a = ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, CpuId.ZERO, zero, table);
+        var b = ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, new CpuId(1), one, table);
+        assertNotSame(a, b);
+        for (int i = 0; i < 3; i++) {
+            assertEquals(Optional.of(4), a.selectNext()); assertEquals(Optional.of(3), b.selectNext());
+        }
+        assertEquals(List.of(4, 2), zero.entries()); assertEquals(List.of(3, 1), one.entries());
+        assertTrue(table.entries().stream().allMatch(p -> p.state() == ProcessState.READY));
+        table.find(4).orElseThrow().changeState(ProcessState.BLOCKED);
+        assertThrows(IllegalStateException.class, a::selectNext);
+        assertEquals(List.of(4, 2), zero.entries()); assertEquals(Optional.of(3), b.selectNext());
+        assertThrows(IllegalArgumentException.class,
+                () -> ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, CpuId.ZERO, one, table));
+    }
+
+    @Test void createsSpnSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var pcbs = List.of(new ProcessControlBlock(1, 280, 5, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO),
+                new ProcessControlBlock(2, 280, 2, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO));
+        for (var pcb : pcbs) { pcb.changeState(ProcessState.READY); table.register(pcb); zero.enqueue(pcb.processId()); }
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.SPN, CpuId.ZERO, zero, table);
+        assertInstanceOf(SpnProcessScheduler.class, scheduler);
+        assertEquals(Optional.of(2), scheduler.selectNext());
+        assertEquals(List.of(1, 2), zero.entries());
+    }
+
+    @Test void createsGuaranteedSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var pcb = new ProcessControlBlock(1, 280, 3, LogicalProcessTimes.admitted(0, 0), CpuId.ZERO);
+        pcb.changeState(ProcessState.READY);
+        table.register(pcb);
+        zero.enqueue(1);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.GUARANTEED, CpuId.ZERO, zero, table);
+        assertInstanceOf(GuaranteedProcessScheduler.class, scheduler);
+        assertEquals(Optional.of(1), scheduler.selectNext());
+        assertEquals(List.of(1), zero.entries());
+    }
+
+    @Test void createsSelfishRoundRobinSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.SELFISH_RR, CpuId.ZERO, zero, table, 3);
+        assertInstanceOf(SelfishRoundRobinProcessScheduler.class, scheduler);
+        assertEquals(Optional.empty(), scheduler.selectNext());
+    }
+
+    @Test void createsMlfqSchedulerPerCpu() {
+        var table = new ProcessTable(10);
+        var zero = new ReadyQueue(CpuId.ZERO, table);
+        var scheduler = ProcessSchedulerFactory.create(SchedulingPolicyId.MLFQ, CpuId.ZERO, zero, table);
+        assertInstanceOf(MlfqProcessScheduler.class, scheduler);
+        assertEquals(Optional.empty(), scheduler.selectNext());
+    }
+
+    @Test void rejectsMissingDependencies() {
+        var table = new ProcessTable(); var queue = new ReadyQueue(CpuId.ZERO, table);
+        assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(null, CpuId.ZERO, queue, table));
+        assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, null, queue, table));
+        assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, CpuId.ZERO, null, table));
+        assertThrows(NullPointerException.class, () -> ProcessSchedulerFactory.create(SchedulingPolicyId.FCFS, CpuId.ZERO, queue, null));
+    }
+}

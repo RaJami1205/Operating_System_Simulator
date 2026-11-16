@@ -7,26 +7,44 @@ import io.github.rajami1205.osimulator.model.scheduling.ReadyQueue;
 import io.github.rajami1205.osimulator.model.storage.*;
 import io.github.rajami1205.osimulator.model.storage.exception.StorageAllocationException;
 import java.util.Objects;
+import io.github.rajami1205.osimulator.application.cpu.CpuTopology;
+import io.github.rajami1205.osimulator.model.cpu.CpuId;
 
 /**
  * Transfiere imágenes completas entre USER y VIRTUAL_MEMORY sin paging ni selección automática de víctimas. Conserva
  * el PCB Kernel y su contexto; el caller excluye al owner activo.
  */
 public final class ProcessSwapService {
+    private final PcbKernelSynchronizer pcbSynchronizer;
     private final MainMemory memory;
     private final SecondaryStorage storage;
     private final ProcessTable processes;
     private final ProcessResourceRegistry resources;
     private final ReadyQueue queue;
+    private final CpuTopology topology;
 
     /** Asocia memoria, storage, PCBs, registry y ReadyQueue no nulos de una misma sesión. */
     public ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
             ProcessResourceRegistry resources, ReadyQueue queue) {
+        this(memory, storage, processes, resources, queue, null);
+    }
+
+    public ProcessSwapService(CpuTopology topology, MainMemory memory, SecondaryStorage storage,
+            ProcessTable processes, ProcessResourceRegistry resources) {
+        this(memory, storage, processes, resources, Objects.requireNonNull(topology).node(CpuId.ZERO).readyQueue(), topology);
+    }
+
+    private ProcessSwapService(MainMemory memory, SecondaryStorage storage, ProcessTable processes,
+            ProcessResourceRegistry resources, ReadyQueue queue, CpuTopology topology) {
+        this.topology = topology;
+        if (topology != null) topology.requireSharedResources(processes, memory, resources);
         this.memory = Objects.requireNonNull(memory);
+        this.pcbSynchronizer = new PcbKernelSynchronizer(memory, resources);
         this.storage = Objects.requireNonNull(storage);
         this.processes = Objects.requireNonNull(processes);
         this.resources = Objects.requireNonNull(resources);
         this.queue = Objects.requireNonNull(queue);
+        queue.requireBinding(CpuId.ZERO, processes);
     }
 
     /**
@@ -35,18 +53,32 @@ public final class ProcessSwapService {
      */
     public SwapResult swapOut(int processId) {
         var pcb = process(processId);
+        var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
-        if (!(original.residence() instanceof UserImageResidence.Resident resident)
+        if (original.residence().suspended()
                 || (pcb.state() != ProcessState.READY && pcb.state() != ProcessState.BLOCKED)) {
             throw new IllegalStateException("Swap-out requires an eligible resident READY/BLOCKED process");
         }
         boolean ready = pcb.state() == ProcessState.READY;
         validateQueue(processId, ready);
-        var user = resident.allocation();
-        if (user.base() != pcb.memoryBounds().base() || user.size() != pcb.instructionCount()) {
-            throw new IllegalStateException("Resident image and PCB bounds disagree");
+        if (original.residence() instanceof UserImageResidence.Demand demand) {
+            // BLOCKED suspension is intentionally unsupported until its pending-request lifecycle is defined.
+            if (!ready) throw new IllegalStateException("Demand suspension requires READY; pending page requests remain active");
+            memory.validateImage(demand.table(), pcb); demand.backing().validate(demand.table());
+            storage.readSwapBlock(demand.backing().allocation());
+            validateCommit(pcb, original, true);
+            memory.emptyDemandMapping(demand.table(), replacement -> resources.replace(processId, original,
+                    original.withResidence(new UserImageResidence.DemandSuspended(replacement, demand.backing()))),
+                    replacement -> resources.rollbackReplacement(processId, original,
+                            original.withResidence(new UserImageResidence.DemandSuspended(replacement, demand.backing()))));
+            pcb.changeState(ProcessState.READY_SUSPENDED); queue.remove(processId);
+            if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().enqueue(processId);
+            pcbSynchronizer.sync(pcb);
+            return new SwapResult.Completed();
         }
-        var image = memory.readUserBlock(user);
+        var user = original.residence().residentImage();
+        memory.validateImage(user, pcb);
+        var image = memory.readImage(user);
         StorageAllocation swap;
         try {
             swap = storage.allocateSwap(image.size());
@@ -67,16 +99,33 @@ public final class ProcessSwapService {
         resources.replace(processId, original, replacement);
         pcb.changeState(ready ? ProcessState.READY_SUSPENDED : ProcessState.BLOCKED_SUSPENDED);
         if (ready) queue.remove(processId);
+        if (ready && topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().enqueue(processId);
+        pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
     }
 
     /**
-     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY; conserva PC
-     * lógico y devuelve Waiting por capacidad.
+     * Carga la imagen suspended en una nueva reserva USER, relocaliza Base y libera VIRTUAL_MEMORY;
+     * conserva el contexto lógico completo y devuelve Waiting por capacidad.
      */
     public SwapResult swapIn(int processId) {
         var pcb = process(processId);
+        var queue = queueFor(pcb);
         var original = canonicalResources(pcb);
+        if (original.residence() instanceof UserImageResidence.DemandSuspended demand) {
+            if (pcb.state() != ProcessState.READY_SUSPENDED) throw new IllegalStateException("Invalid suspended demand state");
+            validateQueue(processId, false); memory.validateImage(demand.table(), pcb);
+            demand.backing().validate(demand.table()); storage.readSwapBlock(demand.backing().allocation());
+            validateCommit(pcb, original, false);
+            memory.emptyDemandMapping(demand.table(), replacement -> resources.replace(processId, original,
+                    original.withResidence(new UserImageResidence.Demand(replacement, demand.backing()))),
+                    replacement -> resources.rollbackReplacement(processId, original,
+                            original.withResidence(new UserImageResidence.Demand(replacement, demand.backing()))));
+            pcb.changeState(ProcessState.READY);
+            if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().remove(processId);
+            queue.enqueue(processId); pcbSynchronizer.sync(pcb);
+            return new SwapResult.Completed();
+        }
         if (!(original.residence() instanceof UserImageResidence.Suspended suspended)
                 || (pcb.state() != ProcessState.READY_SUSPENDED && pcb.state() != ProcessState.BLOCKED_SUSPENDED)) {
             throw new IllegalStateException("Swap-in requires a suspended process");
@@ -85,31 +134,39 @@ public final class ProcessSwapService {
         var swap = suspended.allocation();
         var image = storage.readSwapBlock(swap);
         if (image.size() != pcb.instructionCount()) throw new IllegalStateException("VIRTUAL_MEMORY image length mismatch");
-        MemoryAllocation user;
+        MainMemory.UserReservation reservation;
         try {
-            user = memory.allocateUser(image.size());
+            reservation = memory.reserveImage(processId, image.size());
         } catch (MemoryAllocationException shortage) {
             return new SwapResult.Waiting(SwapResult.Reason.INSUFFICIENT_USER_MEMORY);
         }
-        ProcessMemoryBounds bounds;
+        var user = reservation.image();
         ProcessResources replacement;
         boolean ready = pcb.state() == ProcessState.READY_SUSPENDED;
         try {
-            memory.writeUserBlock(user, image);
-            bounds = new ProcessMemoryBounds(user.base(), user.size());
-            replacement = original.withResidence(new UserImageResidence.Resident(user));
+            memory.writeImage(user, image);
+            replacement = original.withResidence(UserImageResidence.resident(user));
             validateCommit(pcb, original, false);
             storage.readSwapBlock(swap); // Valida identidad y contenido de origen antes del commit irreversible.
+            if (user instanceof MemoryAllocation allocation) {
+                pcb.relocateSuspended(new ProcessMemoryBounds(allocation.base(), allocation.size()));
+            } else {
+                memory.validateImage(user, pcb);
+                if (!pcb.hasExecutableProgramCounter() && !pcb.hasTerminalProgramCounter()) throw new IllegalStateException("Invalid suspended Logical PC");
+            }
         } catch (RuntimeException | Error failure) {
-            cleanup(failure, () -> memory.release(user));
+            cleanup(failure, () -> memory.cancelUser(reservation));
             throw failure;
         }
         // Las precondiciones controladas ya se validaron; estos objetos de sesión no se usan concurrentemente.
-        pcb.relocateSuspended(bounds);
         resources.replace(processId, original, replacement);
+        // La residencia canónica ya posee el handle; desde aquí su liberación es ordinaria.
+        memory.confirmUser(reservation);
         storage.releaseSwap(swap);
         pcb.changeState(ready ? ProcessState.READY : ProcessState.BLOCKED);
+        if (topology != null) topology.node(pcb.cpuAffinity()).suspendedReadyQueue().remove(processId);
         if (ready) queue.enqueue(processId);
+        pcbSynchronizer.sync(pcb);
         return new SwapResult.Completed();
     }
 
@@ -127,7 +184,18 @@ public final class ProcessSwapService {
 
     /** Exige la membresía READY esperada para la transición, sin corregir silenciosamente la cola. */
     private void validateQueue(int pid, boolean expected) {
-        if (queue.entries().contains(pid) != expected) throw new IllegalStateException("Inconsistent READY membership");
+        var pcb = process(pid);
+        if (queueFor(pcb).entries().contains(pid) != expected) throw new IllegalStateException("Inconsistent READY membership");
+        if (topology != null && topology.node(pcb.cpuAffinity()).suspendedReadyQueue().entries().contains(pid)
+                != (pcb.state() == ProcessState.READY_SUSPENDED)) {
+            throw new IllegalStateException("Inconsistent suspended READY membership");
+        }
+    }
+
+    private ReadyQueue queueFor(ProcessControlBlock pcb) {
+        if (topology != null) return topology.node(pcb.cpuAffinity()).readyQueue();
+        if (!pcb.cpuAffinity().equals(CpuId.ZERO)) throw new IllegalStateException("Legacy swap service requires CPU 0 affinity");
+        return queue;
     }
 
     /** Revalida identidad de PCB/recursos y membresía READY antes de publicar la transferencia. */

@@ -2,7 +2,7 @@ package io.github.rajami1205.osimulator.model.memory;
 
 import java.util.Objects;
 
-/** Vista inmutable de una celda; PcbContent conserva el PCB canónico mutable. */
+/** Vista inmutable de una celda; PcbContent conserva valores capturados inmutables. */
 public record MemoryCell(int address, MemoryRegion region, MemoryContent content) {
     /** Exige dirección no negativa y región/contenido no nulos; no verifica ownership de una allocation. */
     public MemoryCell {

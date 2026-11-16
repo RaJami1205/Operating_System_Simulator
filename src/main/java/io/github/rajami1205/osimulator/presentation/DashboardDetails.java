@@ -2,6 +2,8 @@ package io.github.rajami1205.osimulator.presentation;
 
 import io.github.rajami1205.osimulator.application.simulator.SimulatorSnapshot.*;
 import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
+import io.github.rajami1205.osimulator.model.process.LogicalProcessTimes;
+import java.util.OptionalLong;
 
 /**
  * Formatea contexto y accounting de snapshots inmutables. Convierte timestamps a hora local y elapsed a
@@ -10,9 +12,16 @@ import io.github.rajami1205.osimulator.model.process.ProcessAccounting;
 final class DashboardDetails {
     /** Impide instanciar el helper de formatting de detalles. */
     private DashboardDetails() {}
+    static String logical(LogicalProcessTimes times, int declaredBurst) {
+        return "\nLogical seconds — Arrival: " + times.arrivalTime() + "   Admission: " + seconds(times.admissionTime())
+                + "\nFirst Dispatch: " + seconds(times.firstDispatchTime()) + "   Finish: " + seconds(times.finishTime())
+                + "\nDeclared Burst (parsed instructions): " + declaredBurst;
+    }
+
+    private static String seconds(OptionalLong time) { return time.isPresent() ? Long.toString(time.getAsLong()) : "—"; }
     /** Formatea registros y flags de una vista CPU, conservando valores tipados y marcadores de ausencia. */
     static String context(CpuSnapshot cpu) {
-        return "PC: " + cpu.programCounter() + "   IR: " + cpu.instructionRegister().orElse("\u2014")
+        return "Logical PC: " + cpu.programCounter() + "   IR: " + cpu.instructionRegister().orElse("\u2014")
                 + "\nAC: " + cpu.accumulator() + "   AX: " + cpu.ax() + "   BX: " + cpu.bx() + "   CX: " + cpu.cx()
                 + "\nDX: " + cpu.dxText() + "   AH: " + cpu.ah() + "   AL: " + cpu.alText()
                 + "\nEqual: " + cpu.flags().equal() + "   Overflow: " + cpu.flags().overflow();
@@ -41,11 +50,18 @@ final class DashboardDetails {
     }
     /** Compone el detalle de PCB guardado, residencia, recursos y accounting del snapshot seleccionado. */
     static String process(ProcessDetails value) {
+        return process(value, false);
+    }
+    /** Con Lottery agrega los tickets del proceso junto a la prioridad. */
+    static String process(ProcessDetails value, boolean showTickets) {
         return "PID " + value.processId() + " | " + value.state() + " | " + value.residency()
+                + "\nCPU Affinity: " + value.cpuAffinity().value()
                 + "\nBase: " + value.base().map(Object::toString).orElse("\u2014") + "   Limit: " + value.limit()
-                + "   Priority: " + value.priority() + "\nKernel PCB: " + value.kernelAddress()
+                + "   Priority: " + value.priority() + (showTickets ? "   Tickets: " + value.tickets() : "")
+                + "\nKernel PCB: " + value.kernelAddress()
                 + "   Next PCB: " + value.nextPcbAddress().map(Object::toString).orElse("\u2014")
                 + "\nSaved context (distinct from active CPU):\n" + context(value.savedContext())
-                + "\nStack (bottom to top): " + value.stack() + "\nOpen files: " + value.openFiles() + accounting(value.accounting());
+                + "\nStack (bottom to top): " + value.stack() + "\nOpen files: " + value.openFiles()
+                + logical(value.logicalTimes(), value.declaredBurst()) + accounting(value.accounting());
     }
 }

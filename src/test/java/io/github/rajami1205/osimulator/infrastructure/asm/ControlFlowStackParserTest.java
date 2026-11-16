@@ -10,6 +10,17 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ControlFlowStackParserTest {
+    @Test void optionalPositiveSignPreservesDisplacementForEveryBranch() {
+        var parser = new AsmParser();
+        for (String opcode : List.of("JMP", "JE", "JNE")) {
+            var signed = parser.parse(List.of(opcode + " +3")).getFirst();
+            var unsigned = parser.parse(List.of(opcode + " 3")).getFirst();
+            var negative = parser.parse(List.of(opcode + " -3")).getFirst();
+            assertEquals(signed, unsigned);
+            assertEquals(List.of(new BranchDisplacement(3)), signed.operands());
+            assertEquals(List.of(new BranchDisplacement(-3)), negative.operands());
+        }
+    }
     @Test void parsesCasingWhitespaceCommentsAndFullDisplacementRange() {
         var result=new AsmParser().parse(List.of("; header","", " cMp ax , BX ; comment", "jmp +2", "JMP -2", "jmp 0",
                 "jE +2147483647", "jne -2147483648", "push\tAX", "pop bx", "PARAM 1", "param -32768, +32767", "PARAM 1, 2, 3"));

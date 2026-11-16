@@ -9,7 +9,6 @@ import io.github.rajami1205.osimulator.model.cpu.*;
 import io.github.rajami1205.osimulator.model.execution.*;
 import io.github.rajami1205.osimulator.model.execution.exception.ExecutionEngineException;
 import io.github.rajami1205.osimulator.model.instruction.*;
-import io.github.rajami1205.osimulator.model.io.KeyboardDevice;
 import io.github.rajami1205.osimulator.model.memory.*;
 import io.github.rajami1205.osimulator.model.memory.exception.MemoryProtectionException;
 import io.github.rajami1205.osimulator.model.process.*;
@@ -40,47 +39,34 @@ class StatisticsSecurityTest {
         assertEquals(OptionalInt.of(0), actual.cpuId()); assertEquals(Optional.of(T0.plusSeconds(start)), actual.startTime()); assertEquals(used, actual.cpuTicks());
         assertEquals(finish == null ? Optional.empty() : Optional.of(T0.plusSeconds(finish)), actual.finishTime());
     }
-    @Test void weightedTicksPauseAndContextSwitchHaveExactTimesAndResetStartsFresh() throws Exception {
+    @Test void instructionTicksPauseAndContextSwitchHaveExactTimesAndResetStartsFresh() throws Exception {
         assertTrue(simulator.snapshot().cpuTicks().isEmpty()); init(); assertEquals(0, clock());
         submit("one", "MOV AX, 3", "ADD AX", "INC"); submit("two", "INT 20H");
         simulator.attemptNextAdmission(); assertEquals(0, clock()); assertEquals(ProcessAccounting.initial(), pcb(1).accounting());
         simulator.start(); assertEquals(0, clock());
         field("dispatcher", Dispatcher.class).dispatch(1); assertEquals(0, clock()); assertEquals(ProcessAccounting.initial(), pcb(1).accounting());
-        for (int tick=1; tick<=5; tick++) {
+        for (int tick=1; tick<=3; tick++) {
             simulator.step(); assertEquals(tick, clock());
-            if (tick<5) assertAccounting(pcb(1).accounting(), 0, tick, null);
+            if (tick<3) assertAccounting(pcb(1).accounting(), 0, tick, null);
             if (tick==2) { simulator.pause(); realClock.advance(Duration.ofSeconds(600)); simulator.snapshot(); assertEquals(2, clock()); simulator.resume(); assertEquals(2, clock()); }
         }
         var first = simulator.completedProcesses().getFirst();
-        assertEquals(Duration.ofSeconds(600), first.accounting().elapsedTime().orElseThrow()); assertAccounting(first.accounting(), 0, 5, 600L);
-        simulator.step(); assertAccounting(pcb(2).accounting(), 600, 1, null); realClock.advance(Duration.ofSeconds(300)); simulator.step();
-        assertAccounting(simulator.completedProcesses().getLast().accounting(), 600, 2, 900L); assertEquals(7, clock());
+        assertEquals(Duration.ofSeconds(600), first.accounting().elapsedTime().orElseThrow()); assertAccounting(first.accounting(), 0, 3, 600L);
+        realClock.advance(Duration.ofSeconds(300)); simulator.step();
+        assertAccounting(simulator.completedProcesses().getLast().accounting(), 900, 1, 900L); assertEquals(4, clock());
         simulator.reset(); assertTrue(simulator.snapshot().cpuTicks().isEmpty()); init(); assertEquals(0, clock());
         assertTrue(simulator.completedProcesses().isEmpty()); submit("fresh", "INC"); simulator.attemptNextAdmission();
-        assertEquals(ProcessAccounting.initial(), pcb(1).accounting()); assertAccounting(first.accounting(), 0, 5, 600L);
+        assertEquals(ProcessAccounting.initial(), pcb(1).accounting()); assertAccounting(first.accounting(), 0, 3, 600L);
     }
-    @ParameterizedTest @ValueSource(booleans={false,true})
-    void terminalKeyboardCompletionCostsZeroEvenWhenSuspended(boolean swapped) throws Exception {
-        init(); submit("input", "INT 09H"); submit("other", "INC"); simulator.start(); simulator.step(); simulator.step();
-        assertAccounting(pcb(1).accounting(), 0, 2, null); assertEquals(2, clock());
-        if (swapped) { simulator.swapOut(1); assertEquals(2, clock()); }
-        simulator.step(); assertEquals(3, clock()); assertAccounting(simulator.completedProcesses().getFirst().accounting(), 0, 1, 0L);
-        assertInstanceOf(RuntimeStepResult.Idle.class, simulator.step()); assertEquals(3, clock());
-        simulator.pause(); realClock.advance(Duration.ofHours(26)); simulator.submitKeyboardInput(42); assertEquals(3, clock()); assertEquals(1, simulator.pendingKeyboardRequests().size());
-        simulator.resume(); assertEquals(3, clock()); assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
-        assertAccounting(simulator.completedProcesses().getLast().accounting(), 0, 2, 93600L);
-        assertEquals(Duration.ofHours(26), simulator.completedProcesses().getLast().accounting().elapsedTime().orElseThrow());
-        assertEquals(42, simulator.completedProcesses().getLast().finalContext().dx());
-    }
-    @Test void engineFailureCountsNeitherFirstFailedTickNorLaterFailedFinalTick() throws Exception {
+    @Test void engineFailureCountsNeitherFirstNorLaterFailedInstruction() throws Exception {
         init(); submit("bad", "INC DX"); simulator.start(); pcb(1).replaceCpuContext(pcb(1).cpuContext().withDx(new TextRegisterValue("text")));
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(0, clock()); assertEquals(ProcessAccounting.initial(), pcb(1).accounting());
         simulator.reset(); init(); submit("overflow", "MOV AX, 32767", "LOAD AX", "ADD AX"); simulator.start();
-        for(int i=0;i<5;i++) simulator.step();
-        assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(5, clock()); assertAccounting(pcb(1).accounting(),0,5,null);
+        for(int i=0;i<2;i++) simulator.step();
+        assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(2, clock()); assertAccounting(pcb(1).accounting(),0,2,null);
     }
     @Test void terminalPcAndOverflowPreflightConsumeNoTick() throws Exception {
-        init(); submit("one", "ADD AX"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(1);
+        init(); submit("one", "ADD AX", "INC"); simulator.start(); simulator.step(); pcb(1).setProgramCounter(pcb(1).logicalCodeRange().endExclusive().value());
         assertThrows(ExecutionEngineException.class, simulator::step); assertEquals(1, clock()); assertEquals(1, pcb(1).accounting().cpuTicks());
         simulator.reset(); init(); submit("one", "INC"); simulator.start();
         var counter = field("tickCounter", CpuTickCounter.class); var ticks = CpuTickCounter.class.getDeclaredField("ticks"); ticks.setAccessible(true); ticks.setLong(counter, Long.MAX_VALUE);
@@ -99,10 +85,10 @@ class StatisticsSecurityTest {
     }
     @ParameterizedTest @ValueSource(booleans={false,true})
     void reusedStaleUserHandleNeverExecutesBeforeOrAfterDispatch(boolean alreadyRunning) throws Exception {
-        init(); submit("one", "ADD AX"); simulator.start(); if(alreadyRunning) simulator.step();
+        init(); submit("one", "ADD AX", "INC"); simulator.start(); if(alreadyRunning) simulator.step();
         var memory = field("memory", MainMemory.class); var old = ((UserImageResidence.Resident)resources(1).residence()).allocation();
         var cpu = simulator.snapshot().cpu();
-        memory.release(old); var replacement = memory.allocateUser(old.size()); memory.writeUserBlock(replacement,List.of(new IncInstruction()));
+        memory.release(old); var replacement = memory.allocateUser(old.size()); memory.writeUserBlock(replacement,List.of(new IncInstruction(), new IncInstruction()));
         assertEquals(old.base(),replacement.base());
         assertThrows(ExecutionEngineException.class,simulator::step); assertEquals(alreadyRunning?1:0,clock()); assertEquals(cpu,simulator.snapshot().cpu());
         assertEquals(alreadyRunning?1:0,pcb(1).accounting().cpuTicks());
@@ -110,7 +96,7 @@ class StatisticsSecurityTest {
     }
     @Test void wrongCanonicalKernelOrMismatchedUserExtentFailsBeforeDispatch() throws Exception {
         init(); submit("one","INC"); simulator.start(); var memory = field("memory",MainMemory.class);
-        memory.writePcb(resources(1).kernel(),0,new ProcessControlBlock(1,32,1));
+        io.github.rajami1205.osimulator.support.PcbImages.corrupt(memory,resources(1).kernel(),new ProcessControlBlock(1,32,1));
         assertThrows(ExecutionEngineException.class,simulator::step); assertEquals(0,clock()); assertEquals(List.of(1),simulator.snapshot().readyQueue());
         simulator.reset(); init(); submit("one","INC"); simulator.start(); memory=field("memory",MainMemory.class);
         var original=resources(1); var different=memory.allocateUser(2); var registry=field("processResources",ProcessResourceRegistry.class);
@@ -126,7 +112,7 @@ class StatisticsSecurityTest {
         field("memory",MainMemory.class).release(resources(1).kernel());
         var swapError=assertThrows(ExecutionEngineException.class,()->simulator.swapOut(1));
         assertInstanceOf(MemoryProtectionException.class,swapError.getCause()); assertEquals(SimulatorState.ERROR,simulator.snapshot().simulatorState());
-        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128,127),128,64));
+        simulator.reset(); simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 255),128,64));
         submit("large","INC","INC"); assertInstanceOf(AdmissionResult.Waiting.class,simulator.attemptNextAdmission().orElseThrow());
         assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState()); assertEquals(0,clock());
         simulator.reset(); init(); submit("one","INC"); simulator.attemptNextAdmission();
@@ -135,7 +121,7 @@ class StatisticsSecurityTest {
         assertEquals(0,clock());
     }
     @Test void swapInStaleSourceWhilePausedIsErrorAndValidRoundTripCostsZero() throws Exception {
-        init(); submit("one","ADD AX"); submit("two","INC"); simulator.start(); simulator.step(); simulator.pause();
+        init(); submit("one","ADD AX","INC"); submit("two","INC"); simulator.start(); simulator.step(); simulator.pause();
         assertThrows(IllegalStateException.class,()->simulator.swapOut(1)); assertEquals(SimulatorState.PAUSED,simulator.snapshot().simulatorState());
         simulator.swapOut(2); simulator.swapIn(2); assertEquals(1,clock()); simulator.swapOut(2);
         var handle=((UserImageResidence.Suspended)resources(2).residence()).allocation(); field("secondaryStorage",SecondaryStorage.class).releaseSwap(handle);
@@ -144,7 +130,7 @@ class StatisticsSecurityTest {
     }
     @Test void swapInCapacityWaitAndAdmissionIntegrityTaxonomyRemainDistinct() throws Exception {
         init(); submit("one","INC"); simulator.attemptNextAdmission(); simulator.swapOut(1);
-        field("memory",MainMemory.class).allocateUser(224);
+        field("memory",MainMemory.class).allocateUser(116);
         assertInstanceOf(SwapResult.Waiting.class,simulator.swapIn(1));
         assertEquals(SimulatorState.PROGRAM_LOADED,simulator.snapshot().simulatorState()); assertEquals(0,clock());
         simulator.reset(); init(); submit("one","INC"); simulator.attemptNextAdmission(); submit("two","INC");
@@ -155,16 +141,5 @@ class StatisticsSecurityTest {
         simulator.reset();
         assertThrows(IllegalStateException.class,simulator::attemptNextAdmission);
         assertEquals(SimulatorState.CONFIGURING,simulator.snapshot().simulatorState());
-    }
-    @Test void keyboardLifecycleRejectsBeforeMutationAndRetainsPrequeue() throws Exception {
-        assertThrows(IllegalStateException.class,()->simulator.submitKeyboardInput(1)); init(); simulator.submitKeyboardInput(3);
-        submit("input","INT 09H","INT 09H"); simulator.submitKeyboardInput(4); simulator.start();
-        for(int i=0;i<4;i++) simulator.step(); assertEquals(4,simulator.completedProcesses().getFirst().finalContext().dx());
-        var keyboard=field("keyboard",KeyboardDevice.class); assertFalse(keyboard.hasInput()); var finished=simulator.snapshot();
-        assertThrows(IllegalStateException.class,()->simulator.submitKeyboardInput(5)); assertFalse(keyboard.hasInput()); assertEquals(finished,simulator.snapshot());
-        simulator.reset(); init(); submit("bad","POP AX"); simulator.start();
-        while(simulator.snapshot().simulatorState()!=SimulatorState.ERROR) { try { simulator.step(); } catch(ExecutionEngineException expected) { } }
-        var error=simulator.snapshot(); keyboard=field("keyboard",KeyboardDevice.class);
-        assertThrows(IllegalStateException.class,()->simulator.submitKeyboardInput(6)); assertFalse(keyboard.hasInput()); assertEquals(error,simulator.snapshot());
     }
 }

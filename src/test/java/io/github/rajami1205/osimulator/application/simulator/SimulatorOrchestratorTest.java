@@ -37,10 +37,26 @@ class SimulatorOrchestratorTest {
                 new ProgramLoader(), null));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2, 3, 4, 5})
+    void initializesConfiguredTopologyAndResetAllowsSingleCpu(int cpus) {
+        var configuration = new SimulatorConfiguration(new MemoryConfiguration(1024, 700), 512, 64, cpus);
+        simulator.initialize(configuration);
+        assertEquals(cpus, simulator.snapshot().cpus().size());
+        assertEquals(configuration, simulator.configuration().orElseThrow());
+        assertEquals(0, simulator.snapshot().simulationTimeSeconds().orElseThrow());
+        assertTrue(simulator.snapshot().cpus().stream().allMatch(cpu -> cpu.ownerPid().isEmpty() && cpu.cpuTicks() == 0));
+        simulator.reset();
+        assertTrue(simulator.snapshot().cpus().isEmpty());
+        simulator.initialize(SimulatorConfiguration.defaults());
+        assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
+        assertEquals(1, simulator.configuration().orElseThrow().cpuCount());
+    }
+
     @Test
     void startsWithoutSessionAndInitializesRealCpuAndMemory() {
         assertEmptySession(simulator.snapshot());
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         var snapshot = simulator.snapshot();
         assertEquals(SimulatorState.INITIALIZED, snapshot.simulatorState());
         assertEquals(new SimulatorSnapshot.CpuSnapshot(0, 0, 0, 0, 0, 0, Optional.empty()),
@@ -48,11 +64,11 @@ class SimulatorOrchestratorTest {
         assertTrue(snapshot.process().isEmpty());
         assertTrue(snapshot.currentInstruction().isEmpty());
         assertTrue(snapshot.program().isEmpty());
-        assertEquals(128, snapshot.memory().size());
-        for (int address = 0; address < 128; address++) {
+        assertEquals(256, snapshot.memory().size());
+        for (int address = 0; address < 256; address++) {
             var row = snapshot.memory().get(address);
             assertEquals(address, row.address());
-            assertEquals(address < 32 ? "KERNEL" : "USER", row.region());
+            assertEquals(address < 140 ? "KERNEL" : "USER", row.region());
             assertTrue(row.content().isEmpty());
         }
     }
@@ -67,13 +83,13 @@ class SimulatorOrchestratorTest {
         assertEquals(before, simulator.snapshot());
         assertThrows(InvalidMemoryConfigurationException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 0), 512, 64)));
         assertEquals(before, simulator.snapshot());
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         assertEquals(SimulatorState.INITIALIZED, simulator.snapshot().simulatorState());
     }
 
     @Test
     void loadsAtUserStartAndDefensivelyAcceptsProgram() {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         List<Instruction> input = new ArrayList<>(List.of(
                 new MovInstruction(RegisterName.AX, 5), new LoadInstruction(RegisterName.AX)));
         simulator.loadProgram(input);
@@ -87,19 +103,19 @@ class SimulatorOrchestratorTest {
         assertTrue(simulator.snapshot().process().isEmpty());
         simulator.step();
         snapshot = simulator.snapshot();
-        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "RUNNING", 32, 2, 34, 1),
+        assertEquals(new SimulatorSnapshot.ProcessSnapshot(1, "RUNNING", 140, 2, 142, 4097),
                 snapshot.process().orElseThrow());
-        assertEquals(List.of(new SimulatorSnapshot.ProgramEntry(32, "MOV AX, 5"),
-                new SimulatorSnapshot.ProgramEntry(33, "LOAD AX")), snapshot.program());
-        assertEquals(Optional.of("MOV AX, 5"), snapshot.memory().get(32).content());
-        assertEquals(Optional.of("LOAD AX"), snapshot.memory().get(33).content());
-        assertTrue(snapshot.memory().get(34).content().isEmpty());
-        assertEquals(128, snapshot.memory().size());
+        assertEquals(List.of(new SimulatorSnapshot.ProgramEntry(140, "MOV AX, 5"),
+                new SimulatorSnapshot.ProgramEntry(141, "LOAD AX")), snapshot.program());
+        assertEquals(Optional.of("MOV AX, 5"), snapshot.memory().get(140).content());
+        assertEquals(Optional.of("LOAD AX"), snapshot.memory().get(141).content());
+        assertTrue(snapshot.memory().get(142).content().isEmpty());
+        assertEquals(256, snapshot.memory().size());
     }
 
     @Test
     void rejectedLoadsPreserveInitializedSessionAndAllowRetry() {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 127), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 255), 512, 64));
         var before = simulator.snapshot();
         assertThrows(NullPointerException.class, () -> simulator.loadProgram(null));
         assertEquals(before, simulator.snapshot());
@@ -131,8 +147,8 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.RUNNING, first.simulatorState());
         assertEquals(5, first.cpu().orElseThrow().ax());
         assertEquals(0, first.cpu().orElseThrow().accumulator());
-        assertEquals(1, first.cpu().orElseThrow().programCounter());
-        assertEquals(1, first.process().orElseThrow().savedProgramCounter());
+        assertEquals(4097, first.cpu().orElseThrow().programCounter());
+        assertEquals(4097, first.process().orElseThrow().savedProgramCounter());
         assertEquals("RUNNING", first.process().orElseThrow().processState());
         assertEquals(Optional.of("MOV AX, 5"), first.cpu().orElseThrow().instructionRegister());
         assertEquals(new SimulatorSnapshot.InstructionSnapshot(
@@ -144,8 +160,8 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.FINISHED, last.simulatorState());
         assertTrue(last.process().isEmpty());
         assertTrue(last.program().isEmpty());
-        assertEquals(2, last.cpu().orElseThrow().programCounter());
-        assertEquals(2, simulator.completedProcesses().getFirst().finalContext().programCounter());
+        assertEquals(4098, last.cpu().orElseThrow().programCounter());
+        assertEquals(4098, simulator.completedProcesses().getFirst().finalContext().programCounter());
         assertEquals(5, last.cpu().orElseThrow().accumulator());
         assertTrue(last.currentInstruction().isEmpty());
         assertEquals(Optional.of("LOAD AX"), last.cpu().orElseThrow().instructionRegister());
@@ -169,7 +185,7 @@ class SimulatorOrchestratorTest {
             assertEquals(expected.get(index), instruction.semanticInstruction());
             assertEquals(Optional.of(expected.get(index)), snapshot.cpu().orElseThrow().instructionRegister());
             assertEquals(expected.get(index), snapshot.program().get(index).instruction());
-            assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(32 + index).content());
+            assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(140 + index).content());
             assertEquals(opcodes.get(index), instruction.opcode());
             assertEquals(operands.get(index), instruction.operand());
         }
@@ -203,7 +219,7 @@ class SimulatorOrchestratorTest {
         assertEquals(configuring, simulator.snapshot());
         load(List.of(new LoadInstruction(RegisterName.AX)));
         var loaded = simulator.snapshot();
-        assertThrows(IllegalStateException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 32), 512, 64)));
+        assertThrows(IllegalStateException.class, () -> simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64)));
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(loaded, simulator.snapshot());
         simulator.start();
@@ -221,20 +237,20 @@ class SimulatorOrchestratorTest {
         completeInstruction();
         completeInstruction();
         var before = simulator.snapshot();
-        assertThrows(ExecutionEngineException.class, this::completeInstruction);
+        assertThrows(ExecutionEngineException.class, simulator::step);
         var failed = simulator.snapshot();
         assertEquals(SimulatorState.ERROR, failed.simulatorState());
         assertEquals(before.memory(), failed.memory());
         assertEquals(before.program(), failed.program());
         assertEquals(before.process(), failed.process());
         assertEquals(32767, failed.cpu().orElseThrow().accumulator());
-        assertEquals(2, failed.cpu().orElseThrow().programCounter());
+        assertEquals(4098, failed.cpu().orElseThrow().programCounter());
         assertEquals("ADD AX", failed.currentInstruction().orElseThrow().semanticInstruction());
         assertThrows(IllegalStateException.class, simulator::step);
         assertEquals(failed, simulator.snapshot());
         simulator.reset();
         assertEmptySession(simulator.snapshot());
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         assertTrue(simulator.snapshot().memory().stream().allMatch(row -> row.content().isEmpty()));
     }
 
@@ -252,7 +268,7 @@ class SimulatorOrchestratorTest {
         assertEquals(SimulatorState.RUNNING, historical.simulatorState());
         assertEquals(5, historical.cpu().orElseThrow().ax());
         assertEquals("RUNNING", historical.process().orElseThrow().processState());
-        assertEquals(Optional.of("MOV AX, 5"), historical.memory().get(32).content());
+        assertEquals(Optional.of("MOV AX, 5"), historical.memory().get(140).content());
         simulator.reset();
         assertEmptySession(simulator.snapshot());
     }
@@ -290,7 +306,7 @@ class SimulatorOrchestratorTest {
         var first = SimulatorConfiguration.defaults();
         simulator.initialize(first);
         assertEquals(first, simulator.configuration().orElseThrow());
-        var second = new SimulatorConfiguration(new MemoryConfiguration(512, 64), 1024, 128);
+        var second = new SimulatorConfiguration(new MemoryConfiguration(512, 140), 1024, 128);
         var before = simulator.snapshot();
         assertThrows(IllegalStateException.class, () -> simulator.initialize(second));
         assertEquals(first, simulator.configuration().orElseThrow());
@@ -300,17 +316,17 @@ class SimulatorOrchestratorTest {
         simulator.initialize(second);
         assertEquals(second, simulator.configuration().orElseThrow());
         assertEquals(512, simulator.snapshot().memory().size());
-        assertEquals("KERNEL", simulator.snapshot().memory().get(63).region());
-        assertEquals("USER", simulator.snapshot().memory().get(64).region());
+        assertEquals("KERNEL", simulator.snapshot().memory().get(139).region());
+        assertEquals("USER", simulator.snapshot().memory().get(140).region());
     }
 
     @Test
     void formatsKernelPcbAsImmutableDescriptiveText() {
         var pcb = new io.github.rajami1205.osimulator.model.process.ProcessControlBlock(7, 32, 1);
-        var text = simulator.contentText(new io.github.rajami1205.osimulator.model.memory.PcbContent(pcb));
-        assertEquals(Optional.of("PCB PID=7"), text);
+        var text = simulator.contentText(io.github.rajami1205.osimulator.model.memory.PcbMemoryImage.capture(pcb).cells().getFirst());
+        assertEquals(Optional.of("PCB 7 · PID: 7"), text);
         pcb.changeState(io.github.rajami1205.osimulator.model.process.ProcessState.TERMINATED);
-        assertEquals(Optional.of("PCB PID=7"), text);
+        assertEquals(Optional.of("PCB 7 · PID: 7"), text);
     }
 
     @Test
@@ -333,7 +349,7 @@ class SimulatorOrchestratorTest {
         assertNull(field.get(simulator));
         simulator.reset();
         assertNull(field.get(simulator));
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 128, 127));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 128, 127));
         var second = assertInstanceOf(
                 io.github.rajami1205.osimulator.model.storage.SecondaryStorage.class, field.get(simulator));
         assertNotSame(first, second);
@@ -368,7 +384,7 @@ class SimulatorOrchestratorTest {
         simulator.pause();
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         simulator.resume();
-        for (int i = 0; i < 6; i++) simulator.step();
+        for (int i = 0; i < 3; i++) simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
         assertThrows(IllegalStateException.class, () -> simulator.submitProgram(image));
         assertTrue(history.stream().allMatch(job -> job.state() == JobState.PENDING));
@@ -395,15 +411,15 @@ class SimulatorOrchestratorTest {
         assertEquals(before.currentInstruction(), after.currentInstruction());
         assertTrue(after.process().isEmpty());
         assertTrue(after.program().isEmpty());
-        assertEquals(Optional.of("PCB PID=1"), after.memory().getFirst().content());
-        assertEquals(Optional.of("LOAD AX"), after.memory().get(32).content());
+        assertEquals(Optional.of("PCB 1 · PID: 1"), after.memory().getFirst().content());
+        assertEquals(Optional.of("LOAD AX"), after.memory().get(140).content());
         assertEquals(JobState.ADMITTED, simulator.jobs().getFirst().state());
         assertEquals(JobState.PENDING, history.getFirst().state());
         assertThrows(IllegalStateException.class, simulator::step);
         simulator.loadProgram(program.instructions());
         assertEquals(Optional.of(new AdmissionResult.Admitted(2)), simulator.attemptNextAdmission());
         simulator.start();
-        for (int i = 0; i < 4; i++) simulator.step();
+        for (int i = 0; i < 2; i++) simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
         simulator.reset();
         assertEmptySession(simulator.snapshot());
@@ -419,8 +435,8 @@ class SimulatorOrchestratorTest {
 
     @Test
     void waitingAdmissionDoesNotBypassHeadThroughCompatibilityLoad() {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
-        simulator.submitProgram(new ProgramImage("tooLarge", Collections.nCopies(97, new LoadInstruction(RegisterName.AX))));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
+        simulator.submitProgram(new ProgramImage("tooLarge", Collections.nCopies(117, new LoadInstruction(RegisterName.AX))));
         var before = simulator.snapshot();
         assertEquals(Optional.of(new AdmissionResult.Waiting(AdmissionResult.Reason.INSUFFICIENT_USER_MEMORY)),
                 simulator.attemptNextAdmission());
@@ -468,39 +484,32 @@ class SimulatorOrchestratorTest {
     }
 
     @Test
-    void pauseResumeAndResetPreserveOrDiscardPartialTicks() {
-        load(List.of(new MovInstruction(RegisterName.AX, 5), new AddInstruction(RegisterName.AX)));
+    void pauseResumePreservesCompletedInstructionsAndResetStartsFresh() {
+        load(List.of(new MovInstruction(RegisterName.AX, 5), new AddInstruction(RegisterName.AX),
+                new io.github.rajami1205.osimulator.model.instruction.IncInstruction()));
         simulator.start();
         simulator.step();
-        simulator.step(); // ADD 1/3
-        var partial = simulator.snapshot();
-        assertEquals(1, partial.cpu().orElseThrow().programCounter());
-        assertEquals(0, partial.cpu().orElseThrow().accumulator());
-        assertEquals("ADD AX", partial.currentInstruction().orElseThrow().semanticInstruction());
+        simulator.step();
+        var completed = simulator.snapshot();
+        assertEquals(4098, completed.cpu().orElseThrow().programCounter());
+        assertEquals(5, completed.cpu().orElseThrow().accumulator());
+        assertEquals("ADD AX", completed.currentInstruction().orElseThrow().semanticInstruction());
+        assertEquals(2, completed.cpuTicks().orElseThrow());
         simulator.pause();
         assertThrows(IllegalStateException.class, simulator::step);
         simulator.resume();
-        assertEquals(partial, simulator.snapshot());
-        simulator.step(); // ADD 2/3: semantics stay atomic, successful CPU usage advances.
-        assertEquals(partial.cpu(), simulator.snapshot().cpu());
-        assertEquals(partial.currentInstruction(), simulator.snapshot().currentInstruction());
-        assertEquals(partial.cpuTicks().orElseThrow() + 1, simulator.snapshot().cpuTicks().orElseThrow());
-        assertEquals(3, simulator.snapshot().processes().getFirst().accounting().cpuTicks());
-        simulator.step(); // ADD 3/3
+        assertEquals(completed, simulator.snapshot());
+        simulator.step();
         assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
-        assertEquals(5, simulator.snapshot().cpu().orElseThrow().accumulator());
+        assertEquals(6, simulator.snapshot().cpu().orElseThrow().accumulator());
+        assertEquals(3, simulator.snapshot().cpuTicks().orElseThrow());
         simulator.reset();
         load(List.of(new AddInstruction(RegisterName.AX)));
         simulator.start();
         simulator.step();
-        simulator.reset();
-        load(List.of(new AddInstruction(RegisterName.AX)));
-        simulator.start();
-        for (int tick = 1; tick <= 3; tick++) {
-            simulator.step(); // Same entry point used by each Automatic callback.
-            assertEquals(tick == 3 ? SimulatorState.FINISHED : SimulatorState.RUNNING,
-                    simulator.snapshot().simulatorState());
-        }
+        assertEquals(SimulatorState.FINISHED, simulator.snapshot().simulatorState());
+        assertEquals(1, simulator.snapshot().cpuTicks().orElseThrow());
+        assertEquals(1, simulator.snapshot().simulationTimeSeconds().orElseThrow());
     }
 
     @Test
@@ -517,12 +526,12 @@ class SimulatorOrchestratorTest {
             assertEquals(Optional.of(expected.get(index)), snapshot.cpu().orElseThrow().instructionRegister());
             if (index < expected.size() - 1) {
                 assertEquals(expected.get(index), snapshot.program().get(index).instruction());
-                assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(32 + index).content());
+                assertEquals(Optional.of(expected.get(index)), snapshot.memory().get(140 + index).content());
             } else {
                 assertTrue(snapshot.program().isEmpty());
                 assertTrue(snapshot.memory().stream().allMatch(row -> row.content().isEmpty()));
             }
-            assertEquals(index + 1, snapshot.cpu().orElseThrow().programCounter());
+            assertEquals(4096 + index + 1, snapshot.cpu().orElseThrow().programCounter());
             if (index == 2 || index == 4) assertEquals("", snapshot.currentInstruction().orElseThrow().operand());
             assertEquals(index == expected.size() - 1 ? SimulatorState.FINISHED : SimulatorState.RUNNING, snapshot.simulatorState());
         }
@@ -539,8 +548,8 @@ class SimulatorOrchestratorTest {
             simulator.reset();
             load(parser.parse(List.of(text)));
             simulator.start();
-            assertEquals(Optional.of(text), simulator.snapshot().memory().get(32).content());
-            if (text.equals("POP BX")) assertThrows(ExecutionEngineException.class, simulator::step);
+            assertEquals(Optional.of(text), simulator.snapshot().memory().get(140).content());
+            if (List.of("POP BX", "JMP +2", "JMP -2", "JNE -1").contains(text)) assertThrows(ExecutionEngineException.class, simulator::step);
             else simulator.step();
             if (simulator.snapshot().ownerPid().isPresent()) assertEquals(text, simulator.snapshot().currentInstruction().orElseThrow().semanticInstruction());
             else assertTrue(simulator.snapshot().currentInstruction().isEmpty());
@@ -549,14 +558,11 @@ class SimulatorOrchestratorTest {
     }
 
     private void completeInstruction() {
-        int pc = simulator.snapshot().cpu().orElseThrow().programCounter();
-        do { simulator.step(); }
-        while (simulator.snapshot().simulatorState() == SimulatorState.RUNNING
-                && simulator.snapshot().cpu().orElseThrow().programCounter() == pc);
+        simulator.step();
     }
 
     private void load(List<Instruction> instructions) {
-        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(128, 32), 512, 64));
+        simulator.initialize(new SimulatorConfiguration(new MemoryConfiguration(256, 140), 512, 64));
         simulator.loadProgram(instructions);
     }
 

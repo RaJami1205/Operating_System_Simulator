@@ -5,6 +5,28 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class JobListTest {
+    @Test void replacesOnlyPendingArrivalAndPreservesHistory() {
+        var jobs = new JobList();
+        jobs.add(new Job(7, "first", JobState.PENDING));
+        jobs.add(new Job(2, "second", JobState.PENDING, 0, 3, 7));
+        var before = jobs.entries();
+        jobs.updatePendingArrival(2, Long.MAX_VALUE);
+        var updated = jobs.entries();
+        assertEquals(List.of(before.getFirst(), new Job(2, "second", JobState.PENDING, Long.MAX_VALUE, 3, 7)), updated);
+        assertSame(before.getFirst(), updated.getFirst());
+        assertEquals(0, before.getLast().arrivalTime());
+        for (int invalid : List.of(0, 99))
+            assertThrows(IllegalArgumentException.class, () -> jobs.updatePendingArrival(invalid, 0));
+        assertThrows(IllegalArgumentException.class, () -> jobs.updatePendingArrival(2, -1));
+        assertSame(updated.getLast(), jobs.entries().getLast());
+        jobs.updatePendingArrival(2, 0);
+        assertEquals(before, jobs.entries());
+        jobs.markAdmitted(2);
+        var admitted = jobs.entries();
+        assertThrows(IllegalStateException.class, () -> jobs.updatePendingArrival(2, 10));
+        assertEquals(admitted, jobs.entries());
+    }
+
     @Test
     void admissionReplacesImmutableJobWithoutChangingSubmissionOrder() {
         var jobs = new JobList();

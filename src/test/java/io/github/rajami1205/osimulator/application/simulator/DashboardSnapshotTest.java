@@ -34,7 +34,7 @@ class DashboardSnapshotTest {
         assertTrue(simulator.snapshot().runtimeStatus().isEmpty());
         simulator.start(); assertEquals(Optional.of(RuntimeStatus.RUNNABLE), simulator.snapshot().runtimeStatus());
         assertTrue(simulator.snapshot().ownerPid().isEmpty());
-        simulator.step(); simulator.step(); simulator.step(); simulator.step(); simulator.step();
+        simulator.step(); simulator.step(); simulator.step(); simulator.step();
         var active = simulator.snapshot(); var cpu = active.cpu().orElseThrow();
         assertEquals(Optional.of(1), active.ownerPid()); assertEquals("file.txt", cpu.dxText()); assertEquals("hello", cpu.alText());
         assertEquals(64, cpu.ah()); assertEquals(0, cpu.ax()); assertEquals(0, cpu.bx()); assertEquals(0, cpu.cx());
@@ -54,55 +54,51 @@ class DashboardSnapshotTest {
         simulator.attemptNextAdmission(); simulator.attemptNextAdmission();
         var pcb = field(simulator, "processTable", ProcessTable.class).find(1).orElseThrow();
         pcb.stack().pushAll(List.of(8, 3)); pcb.openFiles().open("z"); pcb.openFiles().open("a"); pcb.setPriority(9);
-        var context = new CpuContext<Instruction>(0, Optional.of(new IncInstruction()), 1, 2, 3, 4,
+        var context = new CpuContext<Instruction>(4096, Optional.of(new IncInstruction()), 1, 2, 3, 4,
                 new TextRegisterValue("path"), 5, new TextRegisterValue("text"), new ConditionFlags(true, true));
         pcb.replaceCpuContext(context);
         var old = simulator.snapshot(); var row = old.processes().getFirst();
         assertEquals(List.of("one", "two"), old.jobs().stream().map(j -> j.programName()).toList());
         assertEquals(List.of(1, 2), old.processes().stream().map(SimulatorSnapshot.ProcessDetails::processId).toList());
-        assertEquals(List.of(1, 2), old.readyQueue()); assertEquals(Optional.of(32), row.base());
+        assertEquals(List.of(1, 2), old.readyQueue()); assertEquals(Optional.of(140), row.base());
         assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(List.of(8, 3), row.stack());
-        assertEquals(9, row.priority()); assertEquals(0, row.kernelAddress()); assertEquals(Optional.of(1), row.nextPcbAddress());
+        assertEquals(9, row.priority()); assertEquals(0, row.kernelAddress()); assertEquals(Optional.of(28), row.nextPcbAddress());
         assertEquals("path", row.savedContext().dxText()); assertEquals("text", row.savedContext().alText());
-        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.initial());
+        pcb.stack().pop(); pcb.openFiles().close("a"); pcb.setPriority(0); pcb.replaceCpuContext(CpuContext.<Instruction>initial().withProgramCounter(4096));
         assertEquals(List.of(8, 3), row.stack()); assertEquals(List.of("a", "z"), row.openFiles()); assertEquals(9, row.priority());
         assertThrows(UnsupportedOperationException.class, () -> row.stack().add(1));
         assertThrows(UnsupportedOperationException.class, () -> row.openFiles().clear());
         simulator.swapOut(1); var suspended = simulator.snapshot().processes().getFirst();
         assertEquals(SimulatorSnapshot.Residency.SUSPENDED, suspended.residency()); assertTrue(suspended.base().isEmpty());
-        assertEquals(2, suspended.limit()); assertEquals(Optional.of(32), row.base());
+        assertEquals(2, suspended.limit()); assertEquals(Optional.of(140), row.base());
         assertEquals(List.of(2), simulator.snapshot().readyQueue());
     }
     @Test void fifoScreenAndResetAreImmutableObservations() {
-        initialize(); submit("one", "INT 09H", "INT 10H"); submit("two", "INT 09H", "INC"); simulator.start();
-        for (int i = 0; i < 4; i++) simulator.step();
+        initialize(); submit("one", "MOV DX, 7", "INT 10H"); submit("two", "MOV DX, 8", "INC");
+        simulator.start(); simulator.swapOut(2);
         var waiting = simulator.snapshot();
-        assertEquals(List.of(new PendingKeyboardRequest(1, 0), new PendingKeyboardRequest(2, 0)), waiting.pendingKeyboardRequests());
-        assertEquals(Optional.of(RuntimeStatus.WAITING_FOR_INPUT), waiting.runtimeStatus());
-        simulator.swapOut(1); simulator.swapOut(2); simulator.submitKeyboardInput(7); simulator.submitKeyboardInput(8);
-        assertEquals(List.of(2), simulator.snapshot().suspendedReadyQueue());
-        assertEquals(List.of(1), simulator.snapshot().readyQueue());
-        assertEquals(2, waiting.pendingKeyboardRequests().size());
+        assertEquals(List.of(2), waiting.suspendedReadyQueue());
+        assertEquals(List.of(1), waiting.readyQueue());
         for (int i = 0; i < 10 && simulator.snapshot().simulatorState() != SimulatorState.FINISHED; i++) simulator.step();
         var done = simulator.snapshot(); assertEquals(List.of(7), done.screenOutput());
         assertEquals(List.of(1, 2), done.completedProcesses().stream().map(SimulatorSnapshot.CompletedProcess::processId).toList());
         for (List<?> list : List.of(done.jobs(), done.processes(), done.readyQueue(), done.suspendedReadyQueue(),
-                done.pendingKeyboardRequests(), done.completedProcesses(), done.memory(), done.storage(), done.screenOutput())) {
+                done.completedProcesses(), done.memory(), done.storage(), done.screenOutput())) {
             assertThrows(UnsupportedOperationException.class, list::clear);
         }
         simulator.reset(); var reset = simulator.snapshot();
         assertEquals(SimulatorState.CONFIGURING, reset.simulatorState());
         for (List<?> list : List.of(reset.jobs(), reset.processes(), reset.readyQueue(), reset.suspendedReadyQueue(),
-                reset.pendingKeyboardRequests(), reset.completedProcesses(), reset.memory(), reset.storage(), reset.screenOutput())) assertTrue(list.isEmpty());
+                reset.completedProcesses(), reset.memory(), reset.storage(), reset.screenOutput())) assertTrue(list.isEmpty());
         assertEquals(List.of(7), done.screenOutput());
     }
     @Test void allPhysicalRowsAndCanonicalContentArePresent() {
         initialize(); submit("test.asm", "MOV AX, 7"); simulator.attemptNextAdmission();
         var snapshot = simulator.snapshot();
         assertEquals(256, snapshot.memory().size()); assertEquals(512, snapshot.storage().size());
-        assertEquals(Optional.of("PCB PID=1"), snapshot.memory().getFirst().content());
-        assertEquals(Optional.of("MOV AX, 7"), snapshot.memory().get(32).content());
-        assertEquals("KERNEL", snapshot.memory().get(31).region()); assertEquals("USER", snapshot.memory().get(32).region());
+        assertEquals(Optional.of("PCB 1 · PID: 1"), snapshot.memory().getFirst().content());
+        assertEquals(Optional.of("MOV AX, 7"), snapshot.memory().get(140).content());
+        assertEquals("KERNEL", snapshot.memory().get(139).region()); assertEquals("USER", snapshot.memory().get(140).region());
         assertEquals(StorageRegion.FILE_INDEX, snapshot.storage().getFirst().region());
         assertEquals(StorageRegion.VIRTUAL_MEMORY, snapshot.storage().get(448).region());
         assertTrue(snapshot.storage().getFirst().content().startsWith("PROGRAM name=\"test.asm\" start="));
@@ -120,16 +116,15 @@ class DashboardSnapshotTest {
         var value = simulator.snapshot();
         var jobs = new ArrayList<>(value.jobs()); var processes = new ArrayList<>(value.processes());
         var ready = new ArrayList<>(List.of(1)); var suspended = new ArrayList<>(List.of(2));
-        var pending = new ArrayList<>(List.of(new PendingKeyboardRequest(3, 0)));
         var completed = new ArrayList<>(value.completedProcesses()); var memory = new ArrayList<>(value.memory());
         var storage = new ArrayList<>(value.storage()); var screen = new ArrayList<>(List.of(7));
         var program = new ArrayList<>(List.of(new SimulatorSnapshot.ProgramEntry(32, "INC")));
         var copy = new SimulatorSnapshot(value.simulatorState(), value.cpu(), value.currentInstruction(), value.process(),
                 program, memory, value.runtimeStatus(), value.ownerPid(), value.configuration(), jobs, processes,
-                ready, suspended, pending, completed, storage, screen, value.cpuTicks());
-        for (List<?> input : List.of(jobs, processes, ready, suspended, pending, completed, memory, storage, screen, program)) input.clear();
+                ready, suspended, completed, storage, screen, value.cpuTicks(), value.nextInstructionPhysicalAddress(), value.addressTranslationError());
+        for (List<?> input : List.of(jobs, processes, ready, suspended, completed, memory, storage, screen, program)) input.clear();
         assertEquals(1, copy.jobs().size()); assertEquals(List.of(1), copy.readyQueue()); assertEquals(List.of(2), copy.suspendedReadyQueue());
-        assertEquals(1, copy.pendingKeyboardRequests().size()); assertEquals(1, copy.completedProcesses().size());
+        assertEquals(1, copy.completedProcesses().size());
         assertEquals(256, copy.memory().size()); assertEquals(512, copy.storage().size()); assertEquals(List.of(7), copy.screenOutput());
         assertEquals(1, copy.program().size());
         var stack = new ArrayList<>(List.of(9)); var files = new ArrayList<>(List.of("a"));
@@ -139,10 +134,30 @@ class DashboardSnapshotTest {
     }
     @Test void errorSnapshotDoesNotRepeatFailedRuntimeValidation() throws Exception {
         initialize(); submit("one", "INC"); simulator.start();
-        field(simulator, "readyQueue", ReadyQueue.class).enqueue(999);
+        var queue = field(simulator, "readyQueue", ReadyQueue.class);
+        assertThrows(IllegalStateException.class, () -> queue.enqueue(999));
+        // La cola local ahora impide esta corrupción por API; se inyecta para probar la frontera ERROR.
+        @SuppressWarnings("unchecked")
+        var corrupted = (Set<Integer>) field(queue, "processes", Set.class);
+        corrupted.add(999);
         var error = assertDoesNotThrow(simulator::snapshot);
         assertEquals(SimulatorState.ERROR, error.simulatorState()); assertTrue(error.runtimeStatus().isEmpty());
         assertEquals(256, error.memory().size()); assertEquals(512, error.storage().size());
         assertEquals(error, assertDoesNotThrow(simulator::snapshot));
+    }
+
+    @Test void affinityIsVisibleBeforeExecutionAndRemainsInImmutableHistoryAfterReset() {
+        initialize(); submit("one", "INC"); simulator.start();
+        var before = simulator.snapshot();
+        assertEquals(CpuId.ZERO, before.processes().getFirst().cpuAffinity());
+        assertTrue(before.processes().getFirst().accounting().cpuId().isEmpty());
+        simulator.step(); var done = simulator.snapshot();
+        assertEquals(CpuId.ZERO, done.completedProcesses().getFirst().cpuAffinity());
+        assertEquals(OptionalInt.of(0), done.completedProcesses().getFirst().accounting().cpuId());
+        simulator.reset();
+        assertEquals(CpuId.ZERO, before.processes().getFirst().cpuAffinity());
+        assertTrue(before.processes().getFirst().accounting().cpuId().isEmpty());
+        assertEquals(CpuId.ZERO, done.completedProcesses().getFirst().cpuAffinity());
+        assertTrue(simulator.snapshot().processes().isEmpty());
     }
 }

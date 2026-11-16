@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /** Reserva identificada independientemente de la reutilización de su rango físico. */
-public record MemoryAllocation(UUID allocationId, MemoryRegion region, int base, int size) {
+public record MemoryAllocation(UUID allocationId, MemoryRegion region, int base, int size) implements ResidentImage {
     /** Exige identidad/región no nulas y un rango positivo sin overflow de dirección. */
     public MemoryAllocation {
         Objects.requireNonNull(allocationId, "allocationId must not be null");

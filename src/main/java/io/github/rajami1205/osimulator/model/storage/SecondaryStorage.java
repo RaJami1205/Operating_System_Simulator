@@ -251,6 +251,21 @@ public final class SecondaryStorage {
 
     /** Reserva un bloque contiguo dentro del allocator VIRTUAL_MEMORY separado del área de programas y archivos. */
     public StorageAllocation allocateSwap(int size) { return virtualMemoryAllocator.allocate(size); }
+    public void validateBacking(PageBacking backing) { validateSwap(Objects.requireNonNull(backing).allocation()); }
+
+    /** Lee sólo el segmento solicitado, conservando identidad y bounds de la reserva completa. */
+    public List<Instruction> readSwapSegment(StorageAllocation allocation, int offset, int length) {
+        validateSwap(allocation);
+        if (offset < 0 || length <= 0 || (long) offset + length > allocation.size())
+            throw new StorageException("Invalid backing segment");
+        var result = new ArrayList<Instruction>(length);
+        for (int i = 0; i < length; i++) {
+            if (!(virtualMemory[allocation.base() - virtualMemoryStart + offset + i] instanceof StoredInstructionContent content))
+                throw new StorageException("Invalid backing content");
+            result.add(content.instruction());
+        }
+        return List.copyOf(result);
+    }
 
     /** Exige handle original activo dentro de VIRTUAL_MEMORY; rechaza stale/foreign antes de acceder al contenido. */
     private void validateSwap(StorageAllocation allocation) {

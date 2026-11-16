@@ -12,6 +12,16 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SrtProcessSchedulerTest {
+    @Test void longServiceKeepsRemainingAtZero() {
+        var loop = addReady(2, 2, 0);
+        addReady(1, 1, 0);
+        for (long ticks : List.of((long) Integer.MAX_VALUE, 1L << 31, 1L << 32, Long.MAX_VALUE)) {
+            loop.replaceAccounting(new ProcessAccounting(OptionalInt.of(0), Optional.of(Instant.EPOCH),
+                    ticks, Optional.empty()));
+            assertEquals(Optional.of(2), scheduler.selectNext());
+        }
+    }
+
 
     private final ProcessTable table = new ProcessTable(10);
     private final ReadyQueue queue = new ReadyQueue(CpuId.ZERO, table);

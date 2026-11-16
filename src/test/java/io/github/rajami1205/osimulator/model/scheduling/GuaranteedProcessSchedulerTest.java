@@ -10,6 +10,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GuaranteedProcessSchedulerTest {
+    @Test void smallerServiceWinsAcrossProductOverflow() {
+        scheduler.onSchedulingPoint(1L << 62);
+        addReady(1, 0, 2);
+        addReady(2, 0, 1);
+        assertEquals(Optional.of(2), scheduler.selectNext());
+    }
+
+    @Test void equivalentLargeRatiosKeepOwner() {
+        long elapsed = 1L << 62;
+        scheduler.onSchedulingPoint(elapsed);
+        var owner = addRunning(1, 0, 4);
+        addReady(2, elapsed / 2, 2);
+        assertFalse(scheduler.shouldPreempt(owner));
+    }
+
 
     private final ProcessTable table = new ProcessTable(10);
     private final ReadyQueue queue = new ReadyQueue(CpuId.ZERO, table);

@@ -15,7 +15,7 @@ import java.util.Optional;
 public final class SrtProcessScheduler implements ProcessScheduler {
 
     private static final Comparator<ProcessControlBlock> SELECTION_ORDER =
-            Comparator.comparingInt(SrtProcessScheduler::remaining)
+            Comparator.comparingLong(SrtProcessScheduler::remaining)
                       .thenComparingLong(pcb -> pcb.logicalTimes().arrivalTime())
                       .thenComparingInt(ProcessControlBlock::processId);
 
@@ -50,7 +50,7 @@ public final class SrtProcessScheduler implements ProcessScheduler {
             return false;
         }
 
-        int ownerRemaining = remaining(owner);
+        long ownerRemaining = remaining(owner);
 
         Optional<Integer> bestCandidatePid = selectNext();
         if (bestCandidatePid.isEmpty()) {
@@ -59,14 +59,14 @@ public final class SrtProcessScheduler implements ProcessScheduler {
 
         ProcessControlBlock bestCandidate = processes.find(bestCandidatePid.get()).orElseThrow(
                 () -> new IllegalStateException("Selected candidate not found: " + bestCandidatePid.get()));
-        int candidateRemaining = remaining(bestCandidate);
+        long candidateRemaining = remaining(bestCandidate);
 
         return candidateRemaining < ownerRemaining;
     }
 
-    private static int remaining(ProcessControlBlock pcb) {
+    private static long remaining(ProcessControlBlock pcb) {
         int burst = pcb.instructionCount();
-        int service = (int) pcb.accounting().cpuTicks();
+        long service = pcb.accounting().cpuTicks();
         return Math.max(burst - service, 0);
     }
 

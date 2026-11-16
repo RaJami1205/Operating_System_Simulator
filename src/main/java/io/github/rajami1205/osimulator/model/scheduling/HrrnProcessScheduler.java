@@ -39,12 +39,9 @@ public final class HrrnProcessScheduler implements ProcessScheduler {
 
     /** Menor resultado = mejor candidato: mayor ratio, luego menor Arrival y menor PID. */
     private int compare(ProcessControlBlock first, ProcessControlBlock second) {
-        // (Wa + Sa) / Sa  vs  (Wb + Sb) / Sb  <=>  (Wa + Sa) * Sb  vs  (Wb + Sb) * Sa
-        long firstNumerator = waiting(first) + first.instructionCount();
-        long secondNumerator = waiting(second) + second.instructionCount();
-        long firstScaled = firstNumerator * second.instructionCount();
-        long secondScaled = secondNumerator * first.instructionCount();
-        int byRatio = Long.compare(secondScaled, firstScaled);
+        // El término común 1 de (1 + W/S) se cancela. Mayor ratio primero.
+        int byRatio = ExactProducts.compare(waiting(second), first.instructionCount(),
+                waiting(first), second.instructionCount());
         if (byRatio != 0) return byRatio;
         int byArrival = Long.compare(first.logicalTimes().arrivalTime(), second.logicalTimes().arrivalTime());
         if (byArrival != 0) return byArrival;

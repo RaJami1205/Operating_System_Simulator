@@ -58,6 +58,8 @@ filesystem, scheduling y context switching de una minicomputadora simulada.
 | **Asignación** | Proyecto #1 — Gestor de Multiprocesos |
 | **Estudiante** | Raúl Alfaro Rodríguez |
 | **Carnet** | 2023060456 |
+| **Estudiante** | Diego Araya Ureña |
+| **Carnet** | 2023071310 |
 | **Estado** | ✅ Desarrollo completado |
 | **Video demostrativo** | https://youtu.be/doSFTdcYQJQ |
 

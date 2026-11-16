@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.model.scheduling;
 
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.process.ProcessControlBlock;
 import io.github.rajami1205.osimulator.model.process.ProcessState;
@@ -15,8 +16,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
- * Multilevel Feedback Queue (Stallings "Feedback", q = 2^i) con parámetros fijos: 3 niveles con quantum
- * 1, 2 y 4 (nivel 0 = mayor prioridad) y sin priority boost.
+ * Multilevel Feedback Queue con quanta configurables (nivel 0 = mayor prioridad) y sin priority boost.
  *
  * <ul>
  *   <li>Un proceso nuevo entra al final del nivel 0. Corre la cabeza del nivel más alto no vacío.</li>
@@ -35,9 +35,9 @@ import java.util.OptionalInt;
 public final class MlfqProcessScheduler implements ProcessScheduler {
 
     /** Quantum de cada nivel; el índice es el nivel (0 = mayor prioridad). */
-    public static final List<Integer> LEVEL_QUANTA = List.of(1, 2, 4);
+    public static final List<Integer> LEVEL_QUANTA = MlfqConfiguration.defaults().levelQuanta();
 
-    private static final int LAST_LEVEL = LEVEL_QUANTA.size() - 1;
+    private final List<Integer> levelQuanta;
 
     private final CpuId cpuId;
     private final ReadyQueue readyQueue;
@@ -50,11 +50,17 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
     private int completedInQuantum;
 
     public MlfqProcessScheduler(CpuId cpuId, ReadyQueue readyQueue, ProcessTable processes) {
+        this(cpuId, readyQueue, processes, MlfqConfiguration.defaults());
+    }
+
+    public MlfqProcessScheduler(CpuId cpuId, ReadyQueue readyQueue, ProcessTable processes,
+            MlfqConfiguration configuration) {
+        levelQuanta = Objects.requireNonNull(configuration).levelQuanta();
         this.cpuId = Objects.requireNonNull(cpuId, "cpuId must not be null");
         this.readyQueue = Objects.requireNonNull(readyQueue, "readyQueue must not be null");
         this.processes = Objects.requireNonNull(processes, "processes must not be null");
         readyQueue.requireBinding(cpuId, processes);
-        for (int level = 0; level <= LAST_LEVEL; level++) {
+        for (int level = 0; level < levelQuanta.size(); level++) {
             levels.add(new ArrayDeque<>());
         }
     }
@@ -83,7 +89,7 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
         Objects.requireNonNull(owner, "owner must not be null");
         int ownerId = owner.processId();
         int ownerLevel = levelOf(ownerId);
-        int ownerQuantum = LEVEL_QUANTA.get(ownerLevel);
+        int ownerQuantum = levelQuanta.get(ownerLevel);
         if (completedInQuantum < ownerQuantum) {
             return false;
         }
@@ -95,7 +101,7 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
             return false;
         }
 
-        int demotedLevel = Math.min(ownerLevel + 1, LAST_LEVEL);
+        int demotedLevel = demotedLevel(ownerLevel);
         boolean someoneWaitsAtSameOrHigherLevel = bestWaitingLevel.getAsInt() <= demotedLevel;
         if (!someoneWaitsAtSameOrHigherLevel) {
             levelByPid.put(ownerId, demotedLevel);
@@ -110,7 +116,7 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
     @Override
     public Runnable preparePreemptionCommit(ProcessControlBlock owner) {
         int pid = owner.processId();
-        int destination = Math.min(levelOf(pid) + 1, LAST_LEVEL);
+        int destination = demotedLevel(levelOf(pid));
         var updated = new HashMap<>(levelByPid);
         updated.put(pid, destination);
         var queues = new ArrayList<>(levels);
@@ -137,8 +143,12 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
         completedInQuantum++;
     }
 
+    private int demotedLevel(int level) {
+        return Math.min(level + 1, levelQuanta.size() - 1);
+    }
+
     private OptionalInt highestWaitingLevel() {
-        for (int level = 0; level <= LAST_LEVEL; level++) {
+        for (int level = 0; level < levelQuanta.size(); level++) {
             if (!levels.get(level).isEmpty()) {
                 return OptionalInt.of(level);
             }

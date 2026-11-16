@@ -2,6 +2,7 @@ package io.github.rajami1205.osimulator.model.scheduling;
 
 import io.github.rajami1205.osimulator.model.cpu.CpuId;
 import io.github.rajami1205.osimulator.model.process.*;
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -29,8 +30,37 @@ class MlfqProcessSchedulerTest {
 
     private final ProcessTable table = new ProcessTable(10);
     private final ReadyQueue queue = new ReadyQueue(CpuId.ZERO, table);
-    private final MlfqProcessScheduler scheduler = new MlfqProcessScheduler(CpuId.ZERO, queue, table);
+    private MlfqProcessScheduler scheduler = new MlfqProcessScheduler(CpuId.ZERO, queue, table);
     private long now;
+
+    @Test void customLevelsDemoteOneAtATimeAndRotateAtLastLevel() {
+        for (var quanta : List.of(List.of(3, 1), List.of(2, 1, 4, 3, 5))) {
+            var fixture = new MlfqProcessSchedulerTest();
+            fixture.exerciseCustomLevels(quanta);
+        }
+    }
+
+    private void exerciseCustomLevels(List<Integer> quanta) {
+        scheduler = new MlfqProcessScheduler(CpuId.ZERO, queue, table, new MlfqConfiguration(quanta));
+        arrive(1);
+        arrive(2);
+        point();
+        for (int round = 0; round <= quanta.size(); round++) {
+            int quantum = quanta.get(Math.min(round, quanta.size() - 1));
+            for (int pid : List.of(1, 2)) {
+                assertEquals(Optional.of(pid), scheduler.selectNext());
+                dispatch(pid);
+                complete(pid, quantum - 1);
+                assertFalse(scheduler.shouldPreempt(pcb(pid)));
+                complete(pid, 1);
+                point();
+                assertTrue(scheduler.shouldPreempt(pcb(pid)));
+                scheduler.preparePreemptionCommit(pcb(pid)); // Discard the unconfirmed decision.
+                assertTrue(scheduler.shouldPreempt(pcb(pid)));
+                preempt(pid);
+            }
+        }
+    }
 
     // --- helpers: simulan lo que hacen Dispatcher y runtime alrededor del scheduler ---
 

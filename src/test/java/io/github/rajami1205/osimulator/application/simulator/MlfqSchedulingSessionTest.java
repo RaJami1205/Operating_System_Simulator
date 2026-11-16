@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,19 @@ class MlfqSchedulingSessionTest {
         run.initialize(new SimulatorConfiguration(new MemoryConfiguration(1024, cpus * 140), 2048, 256, cpus,
                 SchedulingPolicyId.MLFQ, UserAllocationStrategy.FIRST_FIT));
         return run;
+    }
+
+    @Test void customTwoLevelPolicyUsesLocalQuantaOnBothCpus() {
+        var run = new SimulatorOrchestrator(new ProgramLoader(), new ExecutionEngine(), new ControlledClock());
+        var base = new SimulatorConfiguration(new MemoryConfiguration(1024, 280), 2048, 256, 2);
+        run.initialize(new SimulatorConfiguration(base.mainMemory(), 2048, 256, 2, SchedulingPolicyId.MLFQ,
+                base.userAllocationStrategy(), base.memoryMode(), base.fixedPartitions(), base.paging(),
+                base.quantum(), base.priority(), base.lottery(), new MlfqConfiguration(List.of(2, 1))));
+        for (int i = 1; i <= 4; i++) run.submitProgram(program("P" + i, i == 2 ? 1 : 3), 0);
+        run.start();
+        assertEquals(List.of("AACCAC", "BDDD--"), runToCompletion(run, 2));
+        assertEquals(6, run.snapshot().simulationTimeSeconds().orElseThrow());
+        assertEquals(10, run.completedProcesses().stream().mapToLong(p -> p.accounting().cpuTicks()).sum());
     }
 
     private static ProgramImage program(String name, int length) {

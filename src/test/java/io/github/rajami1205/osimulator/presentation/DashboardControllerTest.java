@@ -31,6 +31,38 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DashboardControllerTest {
+    @Test void mlfqQuantaValidateFreezeAndReset() throws Exception { onFx(() -> {
+        var f = new Fixture();
+        var policy = f.widget("schedulingPolicyBox", ComboBox.class);
+        var row = f.widget("mlfqRow", javafx.scene.layout.HBox.class);
+        var field = f.widget("mlfqField", TextField.class);
+        assertFalse(row.isVisible());
+        assertFalse(row.isManaged());
+        policy.setValue(SchedulingPolicyId.MLFQ);
+        assertTrue(row.isVisible());
+        assertTrue(row.isManaged());
+        assertEquals("1,2,4", field.getText());
+        for (String invalid : List.of("", "1", "1,2,3,4,5,6", "0,2", "1,11", "-1,2", "x,2", "1,,2", "1,2147483648")) {
+            field.setText(invalid);
+            f.action("handleInitialize");
+            assertTrue(f.simulator.configuration().isEmpty());
+            assertTrue(f.widget("statusLabel", Label.class).getText().contains("MLFQ"));
+            f.closeAlerts();
+        }
+        field.setText(" 5, 3 ");
+        f.action("handleInitialize");
+        assertTrue(field.isDisabled());
+        assertEquals(List.of(5, 3), f.simulator.snapshot().configuration().orElseThrow().mlfq().levelQuanta());
+        assertEquals("5,3", field.getText());
+        f.action("handleReset");
+        policy.setValue(SchedulingPolicyId.MLFQ);
+        assertEquals("1,2,4", field.getText());
+        field.setText("invalid");
+        policy.setValue(SchedulingPolicyId.FCFS);
+        f.action("handleInitialize");
+        assertEquals(SchedulingPolicyId.FCFS, f.simulator.configuration().orElseThrow().schedulingPolicy());
+    }); }
+
     @SuppressWarnings("unchecked")
     private static TextField editArrival(Fixture f, int row) throws Exception {
         TableView<Job> table = f.widget("jobsTable", TableView.class);

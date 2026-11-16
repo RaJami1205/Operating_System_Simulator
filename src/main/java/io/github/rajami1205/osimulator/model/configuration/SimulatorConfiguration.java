@@ -24,7 +24,8 @@ public record SimulatorConfiguration(
         Optional<PagingConfiguration> paging,
         int quantum,
         PriorityConfiguration priority,
-        LotteryConfiguration lottery
+        LotteryConfiguration lottery,
+        MlfqConfiguration mlfq
 ) {
     public static final int MIN_CPU_COUNT = 1;
     public static final int MAX_CPU_COUNT = 5;
@@ -101,11 +102,21 @@ public record SimulatorConfiguration(
                 LotteryConfiguration.defaults());
     }
 
+    public SimulatorConfiguration(MemoryConfiguration mainMemory, int secondaryStoragePositions,
+            int virtualMemoryPositions, int cpuCount, SchedulingPolicyId schedulingPolicy,
+            UserAllocationStrategy userAllocationStrategy, MemoryMode memoryMode,
+            Optional<FixedPartitionConfiguration> fixedPartitions, Optional<PagingConfiguration> paging,
+            int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
+        this(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount, schedulingPolicy,
+                userAllocationStrategy, memoryMode, fixedPartitions, paging, quantum, priority, lottery,
+                MlfqConfiguration.defaults());
+    }
+
     /** Copia con otra configuración de Lottery (la sesión la usa para fijar la semilla resuelta). */
     public SimulatorConfiguration withLottery(LotteryConfiguration lottery) {
         return new SimulatorConfiguration(mainMemory, secondaryStoragePositions, virtualMemoryPositions, cpuCount,
                 schedulingPolicy, userAllocationStrategy, memoryMode, fixedPartitions, paging, quantum, priority,
-                lottery);
+                lottery, mlfq);
     }
 
     /**
@@ -116,6 +127,7 @@ public record SimulatorConfiguration(
         Objects.requireNonNull(userAllocationStrategy, "userAllocationStrategy must not be null");
         Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         Objects.requireNonNull(priority, "priority must not be null");
+        Objects.requireNonNull(mlfq, "mlfq must not be null");
         Objects.requireNonNull(lottery, "lottery must not be null");
         Objects.requireNonNull(mainMemory, "mainMemory must not be null");
         FixedPartitionConfiguration.validateMode(mainMemory, memoryMode, fixedPartitions);

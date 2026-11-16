@@ -19,6 +19,10 @@ public interface ProcessScheduler {
         return false;
     }
 
+    /** After an affirmative decision, prepare policy changes. Discard on failure;
+     * on success the action may only assign already prepared state. */
+    default Runnable preparePreemptionCommit(ProcessControlBlock owner) { return () -> {}; }
+
     /**
      * Informa el tiempo lógico vigente al inicio de la fase de scheduling, en todas las CPUs y antes de
      * shouldPreempt/selectNext. Default: sin efecto; las políticas que dependen del tiempo (HRRN, aging de

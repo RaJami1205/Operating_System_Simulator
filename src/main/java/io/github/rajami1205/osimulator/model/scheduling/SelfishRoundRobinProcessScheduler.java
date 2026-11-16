@@ -53,7 +53,7 @@ public final class SelfishRoundRobinProcessScheduler implements ProcessScheduler
 
     private final Map<Integer, AcceptedEntry> accepted = new HashMap<>();
     /** Aceptados READY en orden de la ronda RR (el owner no está aquí). */
-    private final Deque<Integer> acceptedWaiting = new ArrayDeque<>();
+    private Deque<Integer> acceptedWaiting = new ArrayDeque<>();
     private Integer ownerPid;
     private int completedInQuantum;
     private long now;
@@ -112,9 +112,17 @@ public final class SelfishRoundRobinProcessScheduler implements ProcessScheduler
             return false;
         }
         // El owner expulsado vuelve al final de la ronda de aceptados.
-        acceptedWaiting.addLast(owner.processId());
-        ownerPid = null;
         return true;
+    }
+
+    @Override
+    public Runnable preparePreemptionCommit(ProcessControlBlock owner) {
+        var rotated = new ArrayDeque<>(acceptedWaiting);
+        rotated.addLast(owner.processId());
+        return () -> {
+            acceptedWaiting = rotated;
+            ownerPid = null;
+        };
     }
 
     @Override

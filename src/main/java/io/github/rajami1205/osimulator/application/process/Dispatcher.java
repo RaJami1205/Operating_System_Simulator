@@ -110,10 +110,39 @@ public final class Dispatcher {
             throw new IllegalStateException("Only a running owner can be preempted");
         }
         ProcessControlBlock preempted = owner;
-        preempted.replaceCpuContext(cpu.snapshot());
-        preempted.changeState(ProcessState.READY);
-        pcbSynchronizer.sync(preempted);
-        ready.enqueue(preempted.processId());
+        int pid = preempted.processId();
+        if (table.find(pid).orElse(null) != preempted || !preempted.cpuAffinity().equals(cpuId)
+                || ready.entries().contains(pid) || !preempted.hasExecutableProgramCounter()
+                || table.entries().stream().anyMatch(other -> other != preempted
+                        && other.cpuAffinity().equals(cpuId) && other.state() == ProcessState.RUNNING)) {
+            throw new IllegalStateException("Inconsistent preemption owner or queue");
+        }
+        pcbSynchronizer.validate(preempted);
+        var saved = preempted.cpuContext();
+        var active = cpu.snapshot();
+        var range = preempted.logicalCodeRange();
+        if (active.programCounter() < range.base().value() || active.programCounter() >= range.endExclusive().value()) {
+            throw new IllegalStateException("Preemption requires an executable CPU program counter");
+        }
+        ready.enqueue(pid);
+        try {
+            preempted.replaceCpuContext(active);
+            preempted.changeState(ProcessState.READY);
+            pcbSynchronizer.sync(preempted);
+        } catch (RuntimeException | Error failure) {
+            preempted.changeState(ProcessState.RUNNING);
+            try {
+                preempted.replaceCpuContext(saved);
+            } catch (RuntimeException | Error cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            try {
+                if (!ready.remove(pid)) throw new IllegalStateException("Provisional queue entry missing");
+            } catch (RuntimeException | Error cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
         owner = null;
     }
 }

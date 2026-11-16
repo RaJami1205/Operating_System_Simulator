@@ -32,6 +32,18 @@ public final class LotteryProcessScheduler implements ProcessScheduler {
     private final RandomGenerator random;
     private int completedInQuantum;
     private Optional<Integer> pendingWinner = Optional.empty();
+    private record Candidate(ProcessControlBlock pcb, int tickets) {}
+    private List<Candidate> drawnCandidates = List.of();
+    private long boundary;
+
+    @Override
+    public void onSchedulingPoint(long now) {
+        if (now != boundary && !drawnCandidates.isEmpty()) {
+            drawnCandidates = List.of();
+            pendingWinner = Optional.empty();
+        }
+        boundary = now;
+    }
 
     public LotteryProcessScheduler(CpuId cpuId, ReadyQueue readyQueue, ProcessTable processes, int quantum,
             RandomGenerator random) {
@@ -74,6 +86,8 @@ public final class LotteryProcessScheduler implements ProcessScheduler {
         }
         List<Integer> queued = readyQueue.entries();
         if (queued.isEmpty()) {
+            drawnCandidates = List.of();
+            pendingWinner = Optional.empty();
             completedInQuantum = 0;
             return false;
         }
@@ -82,23 +96,30 @@ public final class LotteryProcessScheduler implements ProcessScheduler {
         for (int pid : queued) {
             candidates.add(validated(pid));
         }
+        var electorate = candidates.stream().map(pcb -> new Candidate(pcb, pcb.tickets())).toList();
+        if (drawnCandidates.equals(electorate) && pendingWinner.isPresent()) return true;
+        drawnCandidates = List.of();
+        pendingWinner = Optional.empty();
         int winner = draw(candidates).orElseThrow();
         if (winner == owner.processId()) {
             completedInQuantum = 0;
             return false;
         }
         pendingWinner = Optional.of(winner);
+        drawnCandidates = electorate;
         return true;
     }
 
     @Override
     public void onDispatched(int pid) {
+        drawnCandidates = List.of();
         completedInQuantum = 0;
         pendingWinner = Optional.empty();
     }
 
     @Override
     public void onInstructionCompleted(int pid) {
+        drawnCandidates = List.of();
         completedInQuantum++;
     }
 

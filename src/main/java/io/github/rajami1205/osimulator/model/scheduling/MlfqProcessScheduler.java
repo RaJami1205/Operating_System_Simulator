@@ -43,9 +43,9 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
     private final ReadyQueue readyQueue;
     private final ProcessTable processes;
 
-    private final Map<Integer, Integer> levelByPid = new HashMap<>();
+    private Map<Integer, Integer> levelByPid = new HashMap<>();
     /** Procesos READY esperando, por nivel (el owner no está aquí). */
-    private final List<Deque<Integer>> levels = new ArrayList<>();
+    private List<Deque<Integer>> levels = new ArrayList<>();
     private Integer ownerPid;
     private int completedInQuantum;
 
@@ -96,17 +96,32 @@ public final class MlfqProcessScheduler implements ProcessScheduler {
         }
 
         int demotedLevel = Math.min(ownerLevel + 1, LAST_LEVEL);
-        levelByPid.put(ownerId, demotedLevel);
         boolean someoneWaitsAtSameOrHigherLevel = bestWaitingLevel.getAsInt() <= demotedLevel;
         if (!someoneWaitsAtSameOrHigherLevel) {
+            levelByPid.put(ownerId, demotedLevel);
             // Degradado, pero sigue siendo el mejor: continúa en su nuevo nivel.
             completedInQuantum = 0;
             return false;
         }
 
-        levels.get(demotedLevel).addLast(ownerId);
-        ownerPid = null;
         return true;
+    }
+
+    @Override
+    public Runnable preparePreemptionCommit(ProcessControlBlock owner) {
+        int pid = owner.processId();
+        int destination = Math.min(levelOf(pid) + 1, LAST_LEVEL);
+        var updated = new HashMap<>(levelByPid);
+        updated.put(pid, destination);
+        var queues = new ArrayList<>(levels);
+        var tail = new ArrayDeque<>(queues.get(destination));
+        tail.addLast(pid);
+        queues.set(destination, tail);
+        return () -> {
+            levelByPid = updated;
+            levels = queues;
+            ownerPid = null;
+        };
     }
 
     @Override

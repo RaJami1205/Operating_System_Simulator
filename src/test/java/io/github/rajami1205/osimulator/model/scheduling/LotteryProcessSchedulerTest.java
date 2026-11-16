@@ -55,6 +55,24 @@ class LotteryProcessSchedulerTest {
     }
 
     @Test
+    void failedTransitionKeepsDrawUntilElectorateChanges() {
+        var running = owner(1, 1);
+        var challenger = addReady(2, 1);
+        var random = new ScriptedRandom(1, 0);
+        var policy = scheduler(1, random);
+        policy.onDispatched(1);
+        policy.onInstructionCompleted(1);
+        assertTrue(policy.shouldPreempt(running));
+        policy.preparePreemptionCommit(running); // Dispatcher rejected the transition.
+        assertTrue(policy.shouldPreempt(running));
+        assertEquals(Optional.of(2), policy.selectNext());
+        assertEquals(List.of(2), random.drawnBounds);
+        challenger.setTickets(3);
+        assertFalse(policy.shouldPreempt(running));
+        assertEquals(List.of(2, 4), random.drawnBounds);
+    }
+
+    @Test
     void emptyQueueSelectsNothingWithoutDrawing() {
         var random = new ScriptedRandom();
         assertTrue(scheduler(2, random).selectNext().isEmpty());

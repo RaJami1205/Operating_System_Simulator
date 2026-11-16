@@ -8,6 +8,50 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SelfishRoundRobinProcessSchedulerTest {
+    @Test void acceptsNewPriorityAboveLongMaxAndCanRetryRotation() {
+        var policy = scheduler(1, 2, 1);
+        arrive(1, 0);
+        policy.onSchedulingPoint(0);
+        dispatch(policy, 1);
+        arrive(2, 1);
+        policy.onSchedulingPoint((1L << 62) + 1);
+        complete(policy, 1, 1);
+        assertTrue(policy.shouldPreempt(pcb(1)));
+        policy.preparePreemptionCommit(pcb(1)); // Dispatcher did not commit.
+        policy.onSchedulingPoint((1L << 62) + 1);
+        assertTrue(policy.shouldPreempt(pcb(1)));
+        preempt(policy, 1);
+        assertEquals(Optional.of(2), policy.selectNext());
+        dispatch(policy, 2);
+        assertEquals(Optional.of(1), policy.selectNext());
+    }
+
+    @Test void accumulatedPriorityAboveLongMaxAdmitsAnExactTieOnly() {
+        var policy = scheduler(1, 2, 1);
+        long acceptedAt = (1L << 62) - 1;
+        arrive(1, 0);
+        policy.onSchedulingPoint(acceptedAt);
+        dispatch(policy, 1);
+        long now = acceptedAt + 2;
+        arrive(2, now);
+        policy.onSchedulingPoint(now);
+        assertTrue(policy.selectNext().isEmpty());
+        arrive(3, 1);
+        policy.onSchedulingPoint(now);
+        assertEquals(Optional.of(3), policy.selectNext());
+    }
+
+    @Test void customAcceptedRateProductRetainsItsPositiveThreshold() {
+        var policy = scheduler(1, 3, 2);
+        arrive(1, 0);
+        policy.onSchedulingPoint(0);
+        dispatch(policy, 1);
+        long now = 1L << 62;
+        arrive(2, now);
+        policy.onSchedulingPoint(now);
+        assertTrue(policy.selectNext().isEmpty());
+    }
+
     @Test void discardedRotationLeavesAcceptedRoundAndOwnerUntouched() throws Exception {
         var policy = scheduler(1, 2, 1);
         arrive(1, 0);

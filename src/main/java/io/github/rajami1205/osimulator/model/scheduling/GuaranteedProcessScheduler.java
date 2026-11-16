@@ -99,9 +99,7 @@ public final class GuaranteedProcessScheduler implements ProcessScheduler {
         // Sa / Ea  vs  Sb / Eb  <=>  Sa * Eb  vs  Sb * Ea   (Ea, Eb > 0 cuando hay servicio)
         long firstElapsed = elapsed(first);
         long secondElapsed = elapsed(second);
-        long firstScaled = firstService * secondElapsed;
-        long secondScaled = secondService * firstElapsed;
-        return Long.compare(firstScaled, secondScaled);
+        return ExactProducts.compare(firstService, secondElapsed, secondService, firstElapsed);
     }
 
     private long elapsed(ProcessControlBlock pcb) {

@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalLong;
+import java.math.BigInteger;
 
 /**
  * Selfish Round Robin: sólo los procesos <em>aceptados</em> compiten por la CPU, en Round Robin con el
@@ -33,7 +33,7 @@ import java.util.OptionalLong;
 public final class SelfishRoundRobinProcessScheduler implements ProcessScheduler {
 
     /** Prioridad con la que el proceso fue aceptado y el instante de aceptación. */
-    private record AcceptedEntry(long priorityAtAcceptance, long acceptedAt) { }
+    private record AcceptedEntry(BigInteger priorityAtAcceptance, long acceptedAt) { }
 
     private static final Comparator<ProcessControlBlock> ARRIVAL_ORDER =
             Comparator.<ProcessControlBlock>comparingLong(pcb -> pcb.logicalTimes().arrivalTime())
@@ -180,9 +180,9 @@ public final class SelfishRoundRobinProcessScheduler implements ProcessScheduler
                 .sorted(ARRIVAL_ORDER)
                 .toList();
         for (ProcessControlBlock candidate : newProcesses) {
-            long candidatePriority = newPriority(candidate);
-            OptionalLong lowestAccepted = lowestCompetingAcceptedPriority();
-            boolean canJoin = lowestAccepted.isEmpty() || candidatePriority >= lowestAccepted.getAsLong();
+            BigInteger candidatePriority = newPriority(candidate);
+            Optional<BigInteger> lowestAccepted = lowestCompetingAcceptedPriority();
+            boolean canJoin = lowestAccepted.isEmpty() || candidatePriority.compareTo(lowestAccepted.orElseThrow()) >= 0;
             if (canJoin) {
                 int pid = candidate.processId();
                 accepted.put(pid, new AcceptedEntry(candidatePriority, now));
@@ -192,29 +192,30 @@ public final class SelfishRoundRobinProcessScheduler implements ProcessScheduler
     }
 
     /** Menor prioridad entre los aceptados READY (en la ronda) y el owner RUNNING. */
-    private OptionalLong lowestCompetingAcceptedPriority() {
-        OptionalLong lowest = acceptedWaiting.stream()
-                .mapToLong(this::acceptedPriority)
-                .min();
+    private Optional<BigInteger> lowestCompetingAcceptedPriority() {
+        Optional<BigInteger> lowest = acceptedWaiting.stream()
+                .map(this::acceptedPriority)
+                .min(BigInteger::compareTo);
         if (ownerPid == null || !accepted.containsKey(ownerPid)) {
             return lowest;
         }
-        long ownerPriority = acceptedPriority(ownerPid);
-        if (lowest.isEmpty() || ownerPriority < lowest.getAsLong()) {
-            return OptionalLong.of(ownerPriority);
+        BigInteger ownerPriority = acceptedPriority(ownerPid);
+        if (lowest.isEmpty() || ownerPriority.compareTo(lowest.orElseThrow()) < 0) {
+            return Optional.of(ownerPriority);
         }
         return lowest;
     }
 
-    private long newPriority(ProcessControlBlock pcb) {
+    private BigInteger newPriority(ProcessControlBlock pcb) {
         long waited = now - pcb.logicalTimes().arrivalTime();
-        return newRate * Math.max(waited, 0);
+        return BigInteger.valueOf(newRate).multiply(BigInteger.valueOf(Math.max(waited, 0)));
     }
 
-    private long acceptedPriority(int pid) {
+    private BigInteger acceptedPriority(int pid) {
         AcceptedEntry entry = accepted.get(pid);
         long sinceAcceptance = now - entry.acceptedAt();
-        return entry.priorityAtAcceptance() + acceptedRate * sinceAcceptance;
+        BigInteger increase = BigInteger.valueOf(acceptedRate).multiply(BigInteger.valueOf(sinceAcceptance));
+        return entry.priorityAtAcceptance().add(increase);
     }
 
     private ProcessControlBlock validated(int pid) {

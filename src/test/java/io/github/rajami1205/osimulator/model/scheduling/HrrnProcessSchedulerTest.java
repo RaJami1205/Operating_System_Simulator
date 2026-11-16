@@ -9,6 +9,22 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class HrrnProcessSchedulerTest {
+    @Test void numeratorWouldOverflowEvenBeforeScaling() {
+        long now = Long.MAX_VALUE - 1;
+        addReady(1, 2, 0);
+        addReady(2, 1, now);
+        scheduler.onSchedulingPoint(now);
+        assertEquals(Optional.of(1), scheduler.selectNext());
+    }
+
+    @Test void largestRatioWinsAcrossProductOverflow() {
+        long now = 1L << 62;
+        addReady(1, 1, 0);
+        addReady(2, 2, now);
+        scheduler.onSchedulingPoint(now);
+        assertEquals(Optional.of(1), scheduler.selectNext());
+    }
+
 
     private final ProcessTable table = new ProcessTable(10);
     private final ReadyQueue queue = new ReadyQueue(CpuId.ZERO, table);

@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.presentation;
 
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import io.github.rajami1205.osimulator.application.lifecycle.SimulatorState;
 import io.github.rajami1205.osimulator.application.program.ProgramImporter;
 import io.github.rajami1205.osimulator.application.program.exception.ProgramImportException;
@@ -58,6 +59,8 @@ public final class SimulatorController {
     @FXML private TextField partitionCountField;
     @FXML private TextField partitionCapacitiesField;
     @FXML private TextField pageSizeField;
+    @FXML private HBox mlfqRow;
+    @FXML private TextField mlfqField;
     @FXML private HBox quantumRow;
     @FXML private TextField quantumField;
     @FXML private VBox priorityRow;
@@ -237,6 +240,7 @@ public final class SimulatorController {
         // Sólo políticas implementadas: cada feature que extiende el enum aparece aquí sin otra lista.
         schedulingPolicyBox.getItems().setAll(SchedulingPolicyId.values());
         schedulingPolicyBox.setValue(SimulatorConfiguration.defaults().schedulingPolicy());
+        showMlfqQuanta(MlfqConfiguration.defaults());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
         restorePriorityConfigurationDefaults();
         seedField.clear();
@@ -384,7 +388,7 @@ public final class SimulatorController {
                 schedulingPolicyBox.getValue(), userAllocationBox.getValue(), memoryModeBox.getValue(), fixedConfiguration(),
                 memoryModeBox.getValue() == MemoryMode.PAGING
                         ? Optional.of(new PagingConfiguration(parsePartitionInteger(pageSizeField.getText()), pagingLoadModeBox.getValue())) : Optional.empty(),
-                parseQuantum(), parsePriorityConfiguration(), parseLotteryConfiguration())));
+                parseQuantum(), parsePriorityConfiguration(), parseLotteryConfiguration(), parseMlfqConfiguration())));
     }
 
     private Optional<FixedPartitionConfiguration> fixedConfiguration() {
@@ -417,6 +421,22 @@ public final class SimulatorController {
         var policy = schedulingPolicyBox.getValue();
         return policy == SchedulingPolicyId.RR || policy == SchedulingPolicyId.LOTTERY
                 || policy == SchedulingPolicyId.SELFISH_RR;
+    }
+
+    private MlfqConfiguration parseMlfqConfiguration() {
+        if (schedulingPolicyBox.getValue() != SchedulingPolicyId.MLFQ) return MlfqConfiguration.defaults();
+        List<Integer> quanta;
+        try {
+            quanta = parsePartitionCapacities(mlfqField.getText());
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("MLFQ requires comma-separated integer quanta.", invalid);
+        }
+        return new MlfqConfiguration(quanta);
+    }
+
+    private void showMlfqQuanta(MlfqConfiguration configuration) {
+        mlfqField.setText(configuration.levelQuanta().stream().map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(",")));
     }
 
     private int parseQuantum() {
@@ -511,6 +531,10 @@ public final class SimulatorController {
 
     private void updateQuantumControls() {
         boolean configuring = view == null || view.simulatorState() == SimulatorState.CONFIGURING;
+        boolean usesMlfq = schedulingPolicyBox.getValue() == SchedulingPolicyId.MLFQ;
+        mlfqRow.setVisible(usesMlfq);
+        mlfqRow.setManaged(usesMlfq);
+        mlfqRow.setDisable(!configuring || !usesMlfq);
         boolean usesQuantum = policyUsesQuantum();
         quantumRow.setVisible(usesQuantum);
         quantumRow.setManaged(usesQuantum);
@@ -985,6 +1009,7 @@ public final class SimulatorController {
                 .map(configuration -> configuration.schedulingPolicy().name()).orElse("—"));
         snapshot.configuration().ifPresent(configuration -> {
             schedulingPolicyBox.setValue(configuration.schedulingPolicy());
+            showMlfqQuanta(configuration.mlfq());
             quantumField.setText(Integer.toString(configuration.quantum()));
             preemptiveBox.setSelected(configuration.priority().preemptive());
             agingField.setText(Integer.toString(configuration.priority().agingInterval()));
@@ -1076,6 +1101,7 @@ public final class SimulatorController {
         updateCpuMemoryLimits();
         var defaults = SimulatorConfiguration.defaults();
         schedulingPolicyBox.setValue(defaults.schedulingPolicy());
+        showMlfqQuanta(MlfqConfiguration.defaults());
         quantumField.setText(Integer.toString(SimulatorConfiguration.DEFAULT_QUANTUM));
         restorePriorityConfigurationDefaults();
         seedField.clear();

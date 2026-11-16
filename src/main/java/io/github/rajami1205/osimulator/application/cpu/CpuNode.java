@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.application.cpu;
 
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import io.github.rajami1205.osimulator.application.process.Dispatcher;
 import io.github.rajami1205.osimulator.application.process.ProcessResourceRegistry;
 import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
@@ -48,13 +49,19 @@ public final class CpuNode {
 
     public CpuNode(CpuId id, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
             SchedulingPolicyId policy, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
+        this(id, processes, memory, resources, policy, quantum, priority, lottery, MlfqConfiguration.defaults());
+    }
+
+    public CpuNode(CpuId id, ProcessTable processes, MainMemory memory, ProcessResourceRegistry resources,
+            SchedulingPolicyId policy, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery,
+            MlfqConfiguration mlfq) {
         this.id = Objects.requireNonNull(id);
         this.processes = Objects.requireNonNull(processes);
         this.memory = Objects.requireNonNull(memory);
         this.resources = Objects.requireNonNull(resources);
         ready = new ReadyQueue(id, processes);
         suspended = new SuspendedReadyQueue(id, processes);
-        scheduler = ProcessSchedulerFactory.create(policy, id, ready, processes, quantum, priority, lottery);
+        scheduler = ProcessSchedulerFactory.create(policy, id, ready, processes, quantum, priority, lottery, mlfq);
         dispatcher = new Dispatcher(id, registers, processes, ready, resources, memory);
     }
 

@@ -2,12 +2,38 @@ package io.github.rajami1205.osimulator.model.configuration;
 
 import io.github.rajami1205.osimulator.model.memory.MemoryConfiguration;
 import io.github.rajami1205.osimulator.model.scheduling.SchedulingPolicyId;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulatorConfigurationTest {
+    @Test void mlfqValidatesAllLevelsAndFreezesInput() {
+        assertThrows(NullPointerException.class, () -> new MlfqConfiguration(null));
+        assertThrows(NullPointerException.class, () -> new MlfqConfiguration(Arrays.asList(1, null)));
+        for (var invalid : List.of(List.<Integer>of(), List.of(1), List.of(1,2,3,4,5,6),
+                List.of(0,1), List.of(-1,2), List.of(1,11)))
+            assertThrows(IllegalArgumentException.class, () -> new MlfqConfiguration(invalid));
+        var source = new ArrayList<>(List.of(10, 10, 5, 2, 1));
+        var config = new MlfqConfiguration(source);
+        source.clear();
+        assertEquals(List.of(10, 10, 5, 2, 1), config.levelQuanta());
+        assertThrows(UnsupportedOperationException.class, () -> config.levelQuanta().clear());
+    }
+
+    @Test void lotteryCopyPreservesCustomMlfq() {
+        var d = SimulatorConfiguration.defaults();
+        assertEquals(List.of(1, 2, 4), d.mlfq().levelQuanta());
+        var custom = new MlfqConfiguration(List.of(5, 3));
+        var config = new SimulatorConfiguration(d.mainMemory(), d.secondaryStoragePositions(), d.virtualMemoryPositions(),
+                d.cpuCount(), d.schedulingPolicy(), d.userAllocationStrategy(), d.memoryMode(), d.fixedPartitions(),
+                d.paging(), d.quantum(), d.priority(), d.lottery(), custom);
+        assertEquals(custom, config.withLottery(LotteryConfiguration.withSeed(7)).mlfq());
+    }
+
     @Test void fixedModesValidateBeforeInitializationAndAllHistoricalConstructorsStayDynamic() {
         var geometry = new MemoryConfiguration(256, 140);
         for (var legacy : java.util.List.of(new SimulatorConfiguration(geometry, 512, 64),

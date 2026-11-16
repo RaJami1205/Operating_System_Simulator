@@ -1,5 +1,6 @@
 package io.github.rajami1205.osimulator.model.scheduling;
 
+import io.github.rajami1205.osimulator.model.configuration.MlfqConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.LotteryConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.PriorityConfiguration;
 import io.github.rajami1205.osimulator.model.configuration.SimulatorConfiguration;
@@ -30,6 +31,12 @@ public final class ProcessSchedulerFactory {
 
     public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId, ReadyQueue ready,
             ProcessTable processes, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery) {
+        return create(policy, cpuId, ready, processes, quantum, priority, lottery, MlfqConfiguration.defaults());
+    }
+
+    public static ProcessScheduler create(SchedulingPolicyId policy, CpuId cpuId, ReadyQueue ready,
+            ProcessTable processes, int quantum, PriorityConfiguration priority, LotteryConfiguration lottery,
+            MlfqConfiguration mlfq) {
         return switch (Objects.requireNonNull(policy, "policy must not be null")) {
             case FCFS -> new FcfsProcessScheduler(cpuId, ready, processes);
             case SPN -> new SpnProcessScheduler(cpuId, ready, processes);
@@ -40,7 +47,7 @@ public final class ProcessSchedulerFactory {
             case RR -> new RoundRobinProcessScheduler(cpuId, ready, processes, quantum);
             case GUARANTEED -> new GuaranteedProcessScheduler(cpuId, ready, processes);
             case SELFISH_RR -> new SelfishRoundRobinProcessScheduler(cpuId, ready, processes, quantum);
-            case MLFQ -> new MlfqProcessScheduler(cpuId, ready, processes);
+            case MLFQ -> new MlfqProcessScheduler(cpuId, ready, processes, mlfq);
         };
     }
 

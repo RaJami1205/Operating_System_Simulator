@@ -47,6 +47,10 @@
                             <Label text="Algorithm" styleClass="configuration-label"/>
                             <ComboBox fx:id="schedulingPolicyBox" prefWidth="130"/>
                         </HBox>
+                        <HBox fx:id="mlfqRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
+                            <Label text="Quanta por nivel" styleClass="configuration-label"/>
+                            <TextField fx:id="mlfqField" prefWidth="100"/>
+                        </HBox>
                         <HBox fx:id="quantumRow" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false">
                             <Label text="Quantum" styleClass="configuration-label"/>
                             <TextField fx:id="quantumField" prefWidth="60"/>

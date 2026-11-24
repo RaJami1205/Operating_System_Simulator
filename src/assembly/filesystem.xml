@@ -1,0 +1,24 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0">
+    <id>filesystem</id>
+    <formats><format>zip</format></formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <fileSets>
+        <fileSet>
+            <directory>${project.build.outputDirectory}</directory>
+            <outputDirectory>/</outputDirectory>
+            <includes>
+                <include>myFileSystem.class</include>
+                <include>io/github/rajami1205/filesystem/**</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>src/assembly/distribution</directory>
+            <outputDirectory>/</outputDirectory>
+        </fileSet>
+    </fileSets>
+    <dependencySets><dependencySet>
+        <outputDirectory>lib</outputDirectory>
+        <useProjectArtifact>false</useProjectArtifact>
+        <includes><include>org.jline:*</include></includes>
+    </dependencySet></dependencySets>
+</assembly>

@@ -17,9 +17,16 @@
         <javafx.version>25.0.2</javafx.version>
         <junit.version>5.14.4</junit.version>
         <maven.surefire.version>3.5.6</maven.surefire.version>
+        <jline.version>3.30.6</jline.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal-ffm</artifactId>
+            <version>${jline.version}</version>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -42,6 +49,29 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <configuration>
+                    <descriptors><descriptor>src/assembly/filesystem.xml</descriptor></descriptors>
+                    <finalName>filesystem</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                </configuration>
+                <executions><execution>
+                    <id>filesystem-distribution</id>
+                    <phase>package</phase>
+                    <goals><goal>single</goal></goals>
+                </execution></executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${maven.surefire.version}</version>
+                <executions><execution>
+                    <goals><goal>integration-test</goal><goal>verify</goal></goals>
+                </execution></executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

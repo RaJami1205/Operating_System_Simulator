@@ -119,6 +119,8 @@ public final class VirtualDisk implements AutoCloseable {
 
     public DiskGeometry geometry() { return geometry; }
 
+    public void flush() throws IOException { channel.force(false); }
+
     public byte[] readBlock(int block) throws IOException {
         long offset = geometry.offset(block);
         byte[] bytes = new byte[geometry.blockSize()];

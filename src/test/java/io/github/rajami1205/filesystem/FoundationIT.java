@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -20,9 +21,14 @@ class FoundationIT {
     @TempDir Path dir;
 
     @Test void extractedLauncherWorksWithOnlyDistributedFiles() throws Exception {
-        Set<String> allowed = Set.of("myFileSystem.class", "README.md", "setup.ps1", "LICENSE-JLine.txt",
-                "io/github/rajami1205/filesystem/presentation/FileSystemApplication.class",
-                "lib/jline-terminal-3.30.6.jar", "lib/jline-terminal-ffm-3.30.6.jar", "lib/jline-native-3.30.6.jar");
+        Set<String> allowed = new HashSet<>(Set.of("myFileSystem.class", "README.md", "setup.ps1", "LICENSE-JLine.txt",
+                "lib/jline-terminal-3.30.6.jar", "lib/jline-terminal-ffm-3.30.6.jar", "lib/jline-native-3.30.6.jar"));
+        Path classes = Path.of("target/classes");
+        try (var files = Files.walk(classes.resolve("io/github/rajami1205/filesystem"))) {
+            files.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(".class"))
+                    .map(p -> classes.relativize(p).toString().replace(File.separatorChar, '/'))
+                    .forEach(allowed::add);
+        }
         try (ZipFile zip = new ZipFile("target/filesystem.zip")) {
             var entries = zip.stream().filter(e -> !e.isDirectory()).toList();
             assertEquals(allowed, entries.stream().map(e -> e.getName()).collect(java.util.stream.Collectors.toSet()));

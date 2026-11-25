@@ -1,6 +1,7 @@
 package io.github.rajami1205.filesystem.application;
 
 import io.github.rajami1205.filesystem.infrastructure.disk.IndexedLayout;
+import io.github.rajami1205.filesystem.infrastructure.disk.DirectoryCodec;
 import io.github.rajami1205.filesystem.infrastructure.disk.IndexedLayout.Chain;
 import io.github.rajami1205.filesystem.infrastructure.disk.StorageCodec;
 import io.github.rajami1205.filesystem.infrastructure.disk.VirtualDisk;
@@ -97,26 +98,35 @@ public final class IndexedStorage implements AutoCloseable {
         ready();
         if (slot == 0) throw new IllegalArgumentException("Permanent root slot");
         Fcb old = record(slot);
-        AllocationBitmap bitmap = disk.readBitmap();
-        Chain chain = layout.traverse(old, bitmap, new BitSet());
+        var tx = new Transaction();
+        prepareDelete(old, tx);
+        tx.commit();
+    }
+
+    private void prepareDelete(Fcb old, Transaction tx) throws IOException {
+        AllocationBitmap bitmap = tx.allocation();
+        Chain chain = tx.view.traverse(old, bitmap, new BitSet());
         var released = new ArrayList<>(chain.indices());
         released.addAll(chain.data());
-        var tx = new Transaction();
         tx.bitmap(bitmap.release(released), released);
-        tx.record(slot, null);
-        tx.commit();
+        tx.record(old.id(), null);
     }
 
     public synchronized void replace(int slot, byte[] content) throws IOException {
         Fcb old = record(slot);
+        var tx = new Transaction();
+        prepareReplacement(old, content, clock.millis(), tx);
+        tx.commit();
+    }
+
+    private void prepareReplacement(Fcb old, byte[] content, long time, Transaction tx) throws IOException {
         int size = g.blockSize();
         int perIndex = IndexBlock.capacity(g);
         int dataCount = Math.ceilDiv(content.length, size);
         int indexCount = Math.ceilDiv(dataCount, perIndex);
         // Replacement always stages every resulting data/index block and one FCB page.
         long requiredBlocks = Math.addExact(Math.addExact((long) dataCount, indexCount), 1L);
-        checkStagingBudget(requiredBlocks);
-        var tx = new Transaction();
+        checkStagingBudget(requiredBlocks, tx.retainedBytes);
         Chain chain = prepareAllocation(old, indexCount, dataCount, tx);
         for (int i = 0; i < indexCount; i++) {
             int from = i * perIndex;
@@ -132,13 +142,12 @@ public final class IndexedStorage implements AutoCloseable {
             Arrays.fill(target, length, size, (byte) 0);
         }
         int first = indexCount == 0 ? -1 : chain.indices().getFirst();
-        tx.record(slot, old.replace(first, content.length, clock.millis()));
-        tx.commit();
+        tx.record(old.id(), old.replace(first, content.length, time));
     }
 
     private Chain prepareAllocation(Fcb old, int indexCount, int dataCount, Transaction tx) throws IOException {
-        AllocationBitmap bitmap = disk.readBitmap();
-        Chain chain = layout.traverse(old, bitmap, new BitSet());
+        AllocationBitmap bitmap = tx.allocation();
+        Chain chain = tx.view.traverse(old, bitmap, new BitSet());
         int extraIndices = Math.max(0, indexCount - chain.indices().size());
         int extraData = Math.max(0, dataCount - chain.data().size());
         var reservation = bitmap.allocate(extraIndices + extraData);
@@ -163,18 +172,113 @@ public final class IndexedStorage implements AutoCloseable {
 
     private record Change(int id, byte[] before, byte[] after) {}
 
-    private void checkStagingBudget(long blocks) {
-        long cost = Math.multiplyExact(2L * g.blockSize(), blocks);
+    private DirectoryHierarchy hierarchy() throws IOException {
+        ready();
+        return new DirectoryHierarchy(layout, g, disk.readBitmap());
+    }
+
+    synchronized void inspectHierarchy() throws IOException { hierarchy(); }
+
+    synchronized DirectoryHierarchy.Resolution resolve(int cwd, String path, DirectoryHierarchy.Mode mode)
+            throws IOException {
+        return hierarchy().resolve(cwd, path, mode);
+    }
+
+    synchronized String absolutePath(int slot) throws IOException { return hierarchy().path(slot); }
+
+    synchronized void initializeRoot() throws IOException {
+        ready();
+        var tx = new Transaction();
+        prepareRoot(tx, clock.millis());
+        tx.commit();
+    }
+
+    private void prepareRoot(Transaction tx, long time) throws IOException {
+        for (Fcb record : tx.view.records())
+            if (record != null) throw new IllegalStateException("Root preparation requires an empty FCB table");
+        tx.record(0, new Fcb(Fcb.Type.DIRECTORY, 075, 0, 0, 1, 0, -1, 0, time, time));
+    }
+
+    synchronized Fcb linkChild(int parentId, String name, Fcb.Type type, int mode, int owner, int group,
+                               byte[] content) throws IOException {
+        DirectoryHierarchy tree = hierarchy();
+        Fcb parent = tree.active(parentId);
+        if (type == Fcb.Type.DIRECTORY && content.length != 0)
+            throw new IllegalArgumentException("New directory must be empty");
+        var tx = new Transaction();
+        int slot = tx.view.freeSlot();
+        long time = clock.millis();
+        Fcb child = new Fcb(type, mode, slot, owner, group, parentId, -1, 0, time, time);
+        child.validate(g, slot);
+        tree.add(child, new DirectoryEntry(slot, name));
+        var entries = tree.entries(parentId);
+        int parentSize = DirectoryCodec.encodedSize(entries);
+        int tablePages = layout.tableBlock(slot) == layout.tableBlock(parentId) ? 1 : 2;
+        long minimum = Math.addExact(Math.addExact(contentBlocks(parentSize), contentBlocks(content.length)), tablePages);
+        checkStagingBudget(minimum, 0);
+        prepareDirectory(parent, entries, time, tx);
+        prepareReplacement(child, content, time, tx);
+        tree.records[parentId] = tx.view.active(parentId);
+        tree.records[slot] = tx.view.active(slot);
+        tree.validateCandidate();
+        tx.commit();
+        return tree.records[slot];
+    }
+
+    synchronized void removeChild(int parentId, String name) throws IOException {
+        DirectoryHierarchy tree = hierarchy();
+        Fcb parent = tree.active(parentId);
+        DirectoryEntry entry = tree.lookup(parentId, name);
+        Fcb child = tree.active(entry.child());
+        tree.remove(parentId, entry);
+        var tx = new Transaction();
+        prepareDelete(child, tx);
+        prepareDirectory(parent, tree.entries(parentId), clock.millis(), tx);
+        tree.records[parentId] = tx.view.active(parentId);
+        tree.validateCandidate();
+        tx.commit();
+    }
+
+    private long contentBlocks(int bytes) {
+        long data = Math.ceilDiv((long) bytes, g.blockSize());
+        return Math.addExact(data, Math.ceilDiv(data, IndexBlock.capacity(g)));
+    }
+
+    private void prepareDirectory(Fcb parent, List<DirectoryEntry> entries, long time, Transaction tx)
+            throws IOException {
+        tx.retainedBytes = DirectoryCodec.encodedSize(entries);
+        checkStagingBudget(Math.max(tx.changes.size(), contentBlocks((int) tx.retainedBytes) + 1), tx.retainedBytes);
+        prepareReplacement(parent, DirectoryCodec.encode(entries, g), time, tx);
+        tx.retainedBytes = 0;
+    }
+
+    private void checkStagingBudget(long blocks, long retainedBytes) {
+        long cost = Math.addExact(Math.multiplyExact(2L * g.blockSize(), blocks), retainedBytes);
         if (cost > 32L * 1024 * 1024) throw new IllegalArgumentException("Transaction exceeds 32 MiB");
     }
 
     private final class Transaction {
         private final Map<Integer, Change> changes = new LinkedHashMap<>();
+        private final IndexedLayout view = new IndexedLayout(g, this::read);
+        private long retainedBytes;
+
+        private byte[] read(int id) throws IOException {
+            Change staged = changes.get(id);
+            return staged == null ? disk.readBlock(id) : staged.after();
+        }
+
+        AllocationBitmap allocation() throws IOException {
+            // Staged bitmap pages are the authoritative candidate across preparations.
+            byte[] bytes = new byte[Math.toIntExact(g.bitmapRegionBytes())];
+            for (int i = 0; i < g.bitmapBlocks(); i++)
+                System.arraycopy(read(DiskGeometry.BITMAP_START + i), 0, bytes, i * g.blockSize(), g.blockSize());
+            return AllocationBitmap.decode(g, bytes);
+        }
 
         byte[] edit(int id) throws IOException {
             Change existing = changes.get(id);
             if (existing != null) return existing.after();
-            checkStagingBudget(changes.size() + 1L);
+            checkStagingBudget(changes.size() + 1L, retainedBytes);
             byte[] before = disk.readBlock(id);
             Change change = new Change(id, before, before.clone());
             changes.put(id, change);

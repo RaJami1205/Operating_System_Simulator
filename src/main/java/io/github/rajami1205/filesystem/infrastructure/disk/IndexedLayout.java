@@ -8,12 +8,18 @@ import java.util.List;
 
 /** Physical addressing and read-only traversal on the owning channel. */
 public final class IndexedLayout {
-    private final VirtualDisk disk;
+    @FunctionalInterface
+    public interface BlockReader { byte[] read(int block) throws IOException; }
+    private final BlockReader reader;
     private final DiskGeometry g;
 
     public IndexedLayout(VirtualDisk disk) {
-        this.disk = disk;
-        g = disk.geometry();
+        this(disk.geometry(), disk::readBlock);
+    }
+
+    public IndexedLayout(DiskGeometry geometry, BlockReader reader) {
+        g = geometry;
+        this.reader = reader;
     }
 
     private long slotOffset(int slot) {
@@ -25,7 +31,7 @@ public final class IndexedLayout {
     public int position(int slot) { return (int) (slotOffset(slot) % g.blockSize()); }
 
     public Fcb active(int slot) throws IOException {
-        Fcb record = StorageCodec.readFcb(disk.readBlock(tableBlock(slot)), position(slot), g, slot);
+        Fcb record = StorageCodec.readFcb(reader.read(tableBlock(slot)), position(slot), g, slot);
         if (record == null) throw new IllegalArgumentException("Free FCB slot");
         return record;
     }
@@ -37,7 +43,7 @@ public final class IndexedLayout {
         byte[] block = null;
         for (int slot = 0; slot < g.fcbCapacity(); slot++) {
             int offset = position(slot);
-            if (offset == 0) block = disk.readBlock(tableBlock(slot));
+            if (offset == 0) block = reader.read(tableBlock(slot));
             if (visitor.visit(slot, StorageCodec.readFcb(block, offset, g, slot))) return slot;
         }
         return -1;
@@ -47,6 +53,15 @@ public final class IndexedLayout {
         int slot = scan((id, record) -> id > 0 && record == null);
         if (slot < 0) throw new IllegalArgumentException("FCB table full");
         return slot;
+    }
+
+    public Fcb[] records() throws IOException {
+        Fcb[] records = new Fcb[g.fcbCapacity()];
+        scan((slot, record) -> {
+            records[slot] = record;
+            return false;
+        });
+        return records;
     }
 
     public record Chain(List<Integer> indices, List<Integer> data) {}
@@ -59,7 +74,7 @@ public final class IndexedLayout {
         while (id != -1) {
             claim(id, bitmap, owners);
             indices.add(id);
-            IndexBlock index = StorageCodec.readIndex(disk.readBlock(id), g);
+            IndexBlock index = StorageCodec.readIndex(reader.read(id), g);
             if (index.references().size() > expected - data.size())
                 throw new IllegalArgumentException("Index chain exceeds logical size");
             for (int ref : index.references()) claim(ref, bitmap, owners);
@@ -100,7 +115,7 @@ public final class IndexedLayout {
             long at = offset + copied;
             int within = (int) (at % g.blockSize());
             int chunk = Math.min(length - copied, g.blockSize() - within);
-            byte[] block = disk.readBlock(chain.data().get(Math.toIntExact(at / g.blockSize())));
+            byte[] block = reader.read(chain.data().get(Math.toIntExact(at / g.blockSize())));
             System.arraycopy(block, within, result, copied, chunk);
             copied += chunk;
         }

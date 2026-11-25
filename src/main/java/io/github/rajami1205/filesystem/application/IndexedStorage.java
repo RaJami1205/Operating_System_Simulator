@@ -6,6 +6,10 @@ import io.github.rajami1205.filesystem.infrastructure.disk.IndexedLayout.Chain;
 import io.github.rajami1205.filesystem.infrastructure.disk.StorageCodec;
 import io.github.rajami1205.filesystem.infrastructure.disk.VirtualDisk;
 import io.github.rajami1205.filesystem.model.disk.*;
+import io.github.rajami1205.filesystem.infrastructure.disk.IdentityCodec;
+import io.github.rajami1205.filesystem.model.identity.Credential;
+import io.github.rajami1205.filesystem.model.identity.Identity.Group;
+import io.github.rajami1205.filesystem.model.identity.Identity.User;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -21,7 +25,7 @@ public final class IndexedStorage implements AutoCloseable {
     private boolean faulted;
     private boolean closed;
 
-    enum Step { WRITE, FLUSH, RESTORE, RESTORE_FLUSH }
+    enum Step { WRITE, FLUSH, RESTORE, RESTORE_FLUSH, BOOTSTRAP_PERSISTED, CREDENTIAL_SNAPSHOT }
     @FunctionalInterface
     interface Completion { void after(Step step) throws IOException; }
 
@@ -41,6 +45,12 @@ public final class IndexedStorage implements AutoCloseable {
         }
     }
 
+    static IndexedStorage createIncomplete(Path path, DiskGeometry geometry, String volume, Completion completion)
+            throws IOException {
+        Objects.requireNonNull(completion);
+        return new IndexedStorage(VirtualDisk.create(path, geometry, volume), Clock.systemUTC(), completion);
+    }
+
     private IndexedStorage(VirtualDisk disk, Clock clock, Completion completion) {
         this.disk = disk;
         this.clock = Objects.requireNonNull(clock);
@@ -49,8 +59,30 @@ public final class IndexedStorage implements AutoCloseable {
         layout = new IndexedLayout(disk);
     }
 
-    private void ready() {
+    void ready() {
         if (closed || faulted) throw new IllegalStateException(closed ? "Closed" : "FAULTED");
+    }
+
+    long now() { return clock.millis(); }
+
+    void completed(Step step) throws IOException { completion.after(step); }
+
+    Transaction begin() {
+        ready();
+        return new Transaction();
+    }
+
+    boolean formatted() throws IOException { return disk.formatted(); }
+
+    void publishFormat() throws IOException {
+        try (var tx = begin()) {
+            VirtualDisk.prepareSuperblockPublication(tx.edit(1));
+            try { tx.commit(); }
+            catch (IOException | RuntimeException failure) {
+                if (faulted) failure.addSuppressed(new IOException("Persisted format status indeterminate"));
+                throw failure;
+            }
+        }
     }
 
     public synchronized IndexedLayout.DiskUsage inspect() throws IOException {
@@ -126,7 +158,7 @@ public final class IndexedStorage implements AutoCloseable {
         int indexCount = Math.ceilDiv(dataCount, perIndex);
         // Replacement always stages every resulting data/index block and one FCB page.
         long requiredBlocks = Math.addExact(Math.addExact((long) dataCount, indexCount), 1L);
-        checkStagingBudget(requiredBlocks, tx.retainedBytes);
+        tx.checkStagingBudget(requiredBlocks);
         Chain chain = prepareAllocation(old, indexCount, dataCount, tx);
         for (int i = 0; i < indexCount; i++) {
             int from = i * perIndex;
@@ -172,7 +204,7 @@ public final class IndexedStorage implements AutoCloseable {
 
     private record Change(int id, byte[] before, byte[] after) {}
 
-    private DirectoryHierarchy hierarchy() throws IOException {
+    DirectoryHierarchy hierarchy() throws IOException {
         ready();
         return new DirectoryHierarchy(layout, g, disk.readBitmap());
     }
@@ -193,7 +225,7 @@ public final class IndexedStorage implements AutoCloseable {
         tx.commit();
     }
 
-    private void prepareRoot(Transaction tx, long time) throws IOException {
+    void prepareRoot(Transaction tx, long time) throws IOException {
         for (Fcb record : tx.view.records())
             if (record != null) throw new IllegalStateException("Root preparation requires an empty FCB table");
         tx.record(0, new Fcb(Fcb.Type.DIRECTORY, 075, 0, 0, 1, 0, -1, 0, time, time));
@@ -202,12 +234,18 @@ public final class IndexedStorage implements AutoCloseable {
     synchronized Fcb linkChild(int parentId, String name, Fcb.Type type, int mode, int owner, int group,
                                byte[] content) throws IOException {
         DirectoryHierarchy tree = hierarchy();
+        var tx = new Transaction();
+        Fcb result = prepareChild(tx, tree, parentId, name, type, mode, owner, group, content, clock.millis());
+        tx.commit();
+        return result;
+    }
+
+    Fcb prepareChild(Transaction tx, DirectoryHierarchy tree, int parentId, String name, Fcb.Type type,
+                     int mode, int owner, int group, byte[] content, long time) throws IOException {
         Fcb parent = tree.active(parentId);
         if (type == Fcb.Type.DIRECTORY && content.length != 0)
             throw new IllegalArgumentException("New directory must be empty");
-        var tx = new Transaction();
         int slot = tx.view.freeSlot();
-        long time = clock.millis();
         Fcb child = new Fcb(type, mode, slot, owner, group, parentId, -1, 0, time, time);
         child.validate(g, slot);
         tree.add(child, new DirectoryEntry(slot, name));
@@ -215,13 +253,12 @@ public final class IndexedStorage implements AutoCloseable {
         int parentSize = DirectoryCodec.encodedSize(entries);
         int tablePages = layout.tableBlock(slot) == layout.tableBlock(parentId) ? 1 : 2;
         long minimum = Math.addExact(Math.addExact(contentBlocks(parentSize), contentBlocks(content.length)), tablePages);
-        checkStagingBudget(minimum, 0);
+        tx.checkStagingBudget(minimum);
         prepareDirectory(parent, entries, time, tx);
         prepareReplacement(child, content, time, tx);
         tree.records[parentId] = tx.view.active(parentId);
         tree.records[slot] = tx.view.active(slot);
         tree.validateCandidate();
-        tx.commit();
         return tree.records[slot];
     }
 
@@ -247,20 +284,79 @@ public final class IndexedStorage implements AutoCloseable {
     private void prepareDirectory(Fcb parent, List<DirectoryEntry> entries, long time, Transaction tx)
             throws IOException {
         tx.retainedBytes = DirectoryCodec.encodedSize(entries);
-        checkStagingBudget(Math.max(tx.changes.size(), contentBlocks((int) tx.retainedBytes) + 1), tx.retainedBytes);
+        tx.checkStagingBudget(Math.max(tx.changes.size(), contentBlocks((int) tx.retainedBytes) + 1));
         prepareReplacement(parent, DirectoryCodec.encode(entries, g), time, tx);
         tx.retainedBytes = 0;
     }
 
-    private void checkStagingBudget(long blocks, long retainedBytes) {
-        long cost = Math.addExact(Math.multiplyExact(2L * g.blockSize(), blocks), retainedBytes);
-        if (cost > 32L * 1024 * 1024) throw new IllegalArgumentException("Transaction exceeds 32 MiB");
-    }
-
-    private final class Transaction {
+    final class Transaction implements AutoCloseable {
         private final Map<Integer, Change> changes = new LinkedHashMap<>();
         private final IndexedLayout view = new IndexedLayout(g, this::read);
         private long retainedBytes;
+        private long credentialBytes;
+
+        void retainCredentials(int count) {
+            credentialBytes = Math.multiplyExact((long) count, Credential.SALT_BYTES + Credential.HASH_BYTES);
+        }
+
+        private void checkStagingBudget(long blocks) {
+            long extra = Math.addExact(retainedBytes, credentialBytes);
+            long cost = Math.addExact(Math.multiplyExact(2L * g.blockSize(), blocks), extra);
+            if (cost > 32L * 1024 * 1024) throw new IllegalArgumentException("Transaction exceeds 32 MiB");
+        }
+
+        DirectoryHierarchy hierarchy() throws IOException {
+            return new DirectoryHierarchy(view, g, allocation());
+        }
+
+        void validatePhysical() throws IOException { view.inspect(allocation()); }
+
+        IdentityCatalog identities() throws IOException {
+            var catalog = new IdentityCatalog();
+            for (var table : IdentityCodec.Table.values()) {
+                int slot = 0;
+                while (slot < table.capacity) {
+                    int block = table.block(g, slot);
+                    byte[] page = read(block);
+                    try {
+                        int end = Math.min(table.capacity, slot + g.blockSize() / table.width);
+                        while (slot < end) {
+                            if (table == IdentityCodec.Table.USERS) catalog.users[slot] = IdentityCodec.user(g, page, slot);
+                            else catalog.groups[slot] = IdentityCodec.group(g, page, slot);
+                            slot++;
+                        }
+                    } finally {
+                        if (table == IdentityCodec.Table.USERS && !changes.containsKey(block)) Arrays.fill(page, (byte) 0);
+                    }
+                }
+            }
+            return catalog;
+        }
+
+        Credential credential(int uid) throws IOException {
+            int block = IdentityCodec.Table.USERS.block(g, uid);
+            byte[] page = read(block);
+            try { return IdentityCodec.credential(g, page, uid); }
+            finally { if (!changes.containsKey(block)) Arrays.fill(page, (byte) 0); }
+        }
+
+        void user(User value, Credential credential) throws IOException {
+            IdentityCodec.writeUser(g, edit(IdentityCodec.Table.USERS.block(g, value.uid())), value, credential);
+        }
+
+        void group(Group value) throws IOException {
+            IdentityCodec.writeGroup(g, edit(IdentityCodec.Table.GROUPS.block(g, value.gid())), value);
+        }
+
+        @Override public void close() {
+            for (var change : changes.values()) {
+                if (change.id() >= g.userStart() && change.id() < g.groupStart()) {
+                    Arrays.fill(change.before(), (byte) 0);
+                    Arrays.fill(change.after(), (byte) 0);
+                }
+            }
+            changes.clear();
+        }
 
         private byte[] read(int id) throws IOException {
             Change staged = changes.get(id);
@@ -278,7 +374,7 @@ public final class IndexedStorage implements AutoCloseable {
         byte[] edit(int id) throws IOException {
             Change existing = changes.get(id);
             if (existing != null) return existing.after();
-            checkStagingBudget(changes.size() + 1L, retainedBytes);
+            checkStagingBudget(changes.size() + 1L);
             byte[] before = disk.readBlock(id);
             Change change = new Change(id, before, before.clone());
             changes.put(id, change);

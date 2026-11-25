@@ -119,6 +119,15 @@ public final class VirtualDisk implements AutoCloseable {
 
     public DiskGeometry geometry() { return geometry; }
 
+    public boolean formatted() throws IOException {
+        return DiskHeaderCodec.validate(geometry, readBlock(0), readBlock(1)).formatted();
+    }
+
+    /** Prepare only a private staged image; the format authority controls validation and persistence. */
+    public static void prepareSuperblockPublication(byte[] candidate) {
+        DiskHeaderCodec.preparePublication(candidate);
+    }
+
     public void flush() throws IOException { channel.force(false); }
 
     public byte[] readBlock(int block) throws IOException {

@@ -10,6 +10,13 @@ import java.util.Arrays;
 import java.util.UUID;
 
 final class DiskHeaderCodec {
+    private static final int STATUS = 208;
+
+    static void preparePublication(byte[] candidate) {
+        var b = ByteBuffer.wrap(candidate).order(ByteOrder.LITTLE_ENDIAN);
+        if (b.getInt(STATUS) != 0) throw new IllegalStateException("Expected INCOMPLETE image");
+        b.putInt(STATUS, 1);
+    }
     private DiskHeaderCodec() {}
 
     record Header(UUID uuid, String volume, long createdMillis, boolean formatted) {}
@@ -49,7 +56,7 @@ final class DiskHeaderCodec {
         b.putInt(g.fcbStart()).putInt(g.fcbBlocks()).putInt(DiskGeometry.FCB_BYTES).putInt(g.fcbCapacity());
         putUuid(b, 112, header.uuid());
         b.position(128).putShort((short) name.remaining()).put(name);
-        b.putLong(200, header.createdMillis()).putInt(208, header.formatted() ? 1 : 0);
+        b.putLong(200, header.createdMillis()).putInt(STATUS, header.formatted() ? 1 : 0);
         return b.array();
     }
 
@@ -63,7 +70,7 @@ final class DiskHeaderCodec {
         UUID uuid = new UUID(id.getLong(12), id.getLong(20));
         var b = ByteBuffer.wrap(superblock).order(ByteOrder.LITTLE_ENDIAN);
         int size = Short.toUnsignedInt(b.getShort(128));
-        int status = b.getInt(208);
+        int status = b.getInt(STATUS);
         if (size > 64 || (status != 0 && status != 1)) throw new IOException("Invalid volume name length or status");
         String name = StandardCharsets.UTF_8.newDecoder().decode(b.slice(130, size)).toString();
         Header header = new Header(uuid, name, b.getLong(200), status == 1);

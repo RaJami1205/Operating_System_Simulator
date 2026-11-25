@@ -3,6 +3,7 @@ package io.github.rajami1205.filesystem.application;
 import io.github.rajami1205.filesystem.infrastructure.disk.DirectoryCodec;
 import io.github.rajami1205.filesystem.infrastructure.disk.IndexedLayout;
 import io.github.rajami1205.filesystem.model.disk.*;
+import io.github.rajami1205.filesystem.model.identity.Identity.User;
 import java.io.IOException;
 import java.util.*;
 
@@ -18,7 +19,7 @@ final class DirectoryHierarchy {
     DirectoryHierarchy(IndexedLayout layout, DiskGeometry g, AllocationBitmap bitmap) throws IOException {
         records = layout.records();
         if (records[0] == null) throw new IllegalStateException("Directory hierarchy has no initialized root");
-        if (records[0].group() != 1 || records[0].mode() != 075)
+        if (records[0].group() != 1)
             throw new IllegalArgumentException("Invalid root attributes");
         // Decode only reachable directories. Even malformed trees cannot retain more than
         // one valid incoming entry per slot before a duplicate or invalid reference is found.
@@ -132,11 +133,30 @@ final class DirectoryHierarchy {
     }
 
     Resolution resolve(int cwd, String path, Mode mode) {
+        return traverse(cwd, path, mode, null);
+    }
+
+    Resolution resolveAuthorized(int cwd, String path, Mode mode, User actor) {
+        return traverse(cwd, path, mode, Objects.requireNonNull(actor));
+    }
+
+    private Resolution traverse(int cwd, String path, Mode mode, User actor) {
         Objects.requireNonNull(mode);
         if (DirectoryEntry.utf8Length(path, 4096) == 0) throw new IllegalArgumentException("Empty path");
         boolean trailing = path.endsWith("/");
         if (mode == Mode.RESOLVE_PARENT && trailing) throw new IllegalArgumentException("Expected final name");
-        Fcb current = active(path.startsWith("/") ? 0 : cwd);
+        boolean absolute = path.startsWith("/");
+        if (!absolute && actor != null && (cwd < 0 || cwd >= records.length || records[cwd] == null))
+            throw new SecurityException("Access denied");
+        Fcb current = active(absolute ? 0 : cwd);
+        if (actor != null) {
+            Fcb ancestor = current;
+            while (true) {
+                actor.require(ancestor, 1);
+                if (ancestor.id() == 0) break;
+                ancestor = active(ancestor.parent());
+            }
+        }
         requireDirectory(current);
         var lengths = new ArrayDeque<Integer>();
         lengths.push(1);
@@ -146,6 +166,7 @@ final class DirectoryHierarchy {
         for (int i = 0; i < parts.length; i++) {
             String part = parts[i];
             if (part.isEmpty()) continue;
+            if (actor != null) actor.require(current, 1);
             requireDirectory(current);
             if (mode == Mode.RESOLVE_PARENT && i == parts.length - 1) {
                 DirectoryEntry.validateName(part);
@@ -162,6 +183,7 @@ final class DirectoryHierarchy {
                 current = active(entry.child());
             }
         }
+        if (trailing && actor != null) actor.require(current, 1);
         if (trailing || mode == Mode.FOLLOW_FINAL_LINK && current.type() == Fcb.Type.SYMBOLIC_LINK)
             requireDirectory(current);
         return new Resolution(current, null);

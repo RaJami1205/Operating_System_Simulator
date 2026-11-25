@@ -203,11 +203,17 @@ class DirectoryHierarchyTest {
         if (violation.equals("rootMode") || violation.equals("rootGroup")) {
             try (var disk = VirtualDisk.open(path)) {
                 byte[] table = disk.readBlock(g.fcbStart());
-                table[violation.equals("rootMode") ? 2 : 12] = 0;
+                if (violation.equals("rootMode")) table[2] = 0100; // Invalid seventh permission bit.
+                else table[12] = 0;
                 disk.writeBlock(g.fcbStart(), table);
             }
         }
         byte[] before = Files.readAllBytes(path);
+        if (violation.equals("rootMode")) {
+            assertThrows(IllegalArgumentException.class, () -> IndexedStorage.open(path));
+            assertArrayEquals(before, Files.readAllBytes(path));
+            return;
+        }
         try (var s = IndexedStorage.open(path)) {
             var rejection = assertThrows(IllegalArgumentException.class, s::inspectHierarchy);
             if (violation.equals("oversize")) assertEquals("Invalid directory payload size", rejection.getMessage());

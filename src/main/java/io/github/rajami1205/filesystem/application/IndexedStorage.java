@@ -74,15 +74,22 @@ public final class IndexedStorage implements AutoCloseable {
 
     boolean formatted() throws IOException { return disk.formatted(); }
 
+    VirtualDisk.Owner owner() throws IOException { return disk.owner(); }
+    synchronized boolean faulted() { return faulted; }
+
     void publishFormat() throws IOException {
         try (var tx = begin()) {
             VirtualDisk.prepareSuperblockPublication(tx.edit(1));
             try { tx.commit(); }
             catch (IOException | RuntimeException failure) {
-                if (faulted) failure.addSuppressed(new IOException("Persisted format status indeterminate"));
+                if (faulted) failure.addSuppressed(new IndeterminateFormat("Persisted format status indeterminate", null));
                 throw failure;
             }
         }
+    }
+
+    static final class IndeterminateFormat extends IOException {
+        IndeterminateFormat(String message, Throwable cause) { super(message, cause); }
     }
 
     public synchronized IndexedLayout.DiskUsage inspect() throws IOException {

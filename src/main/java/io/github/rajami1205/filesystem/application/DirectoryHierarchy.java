@@ -81,7 +81,7 @@ final class DirectoryHierarchy {
     private static void requireDirectory(Fcb fcb) {
         if (fcb.type() == Fcb.Type.SYMBOLIC_LINK)
             throw new UnsupportedOperationException("Symbolic-link traversal is not implemented");
-        if (fcb.type() != Fcb.Type.DIRECTORY) throw new IllegalArgumentException("Expected directory");
+        if (fcb.type() != Fcb.Type.DIRECTORY) throw new InvalidType();
     }
 
     void add(Fcb child, DirectoryEntry entry) {
@@ -97,7 +97,14 @@ final class DirectoryHierarchy {
     DirectoryEntry lookup(int parent, String name) {
         DirectoryEntry.validateName(name);
         for (var entry : entries(parent)) if (entry.name().equals(name)) return entry;
-        throw new IllegalArgumentException("Missing directory entry");
+        throw new MissingEntry();
+    }
+
+    static final class MissingEntry extends IllegalArgumentException {
+        MissingEntry() { super("Missing directory entry"); }
+    }
+    static final class InvalidType extends IllegalArgumentException {
+        InvalidType() { super("Invalid resource type"); }
     }
 
     void remove(int parent, DirectoryEntry entry) {

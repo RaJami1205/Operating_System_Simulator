@@ -32,7 +32,13 @@ public final class VirtualDisk implements AutoCloseable {
     private final FileChannel channel;
     private final DiskGeometry geometry;
 
-    private VirtualDisk(PhysicalIdentity identity, FileChannel channel, DiskGeometry geometry) {
+    public record Owner(Path path, UUID uuid) {}
+    private final Owner owner;
+
+    public Owner owner() { return owner; }
+
+    private VirtualDisk(PhysicalIdentity identity, FileChannel channel, DiskGeometry geometry, Owner owner) {
+        this.owner = owner;
         this.identity = identity;
         this.channel = channel;
         this.geometry = geometry;
@@ -61,7 +67,7 @@ public final class VirtualDisk implements AutoCloseable {
             if (ch.size() != geometry.diskBytes()) throw new IOException("Unexpected image length");
             ch.force(true);
             if (!identity.equals(PhysicalIdentity.read(absolute))) throw new IOException("Image changed during creation");
-            VirtualDisk disk = new VirtualDisk(identity, ch, geometry);
+            VirtualDisk disk = new VirtualDisk(identity, ch, geometry, new Owner(absolute.toRealPath(), header.uuid()));
             OPEN.add(disk);
             return disk;
         } catch (IOException | RuntimeException | Error failure) {
@@ -89,8 +95,12 @@ public final class VirtualDisk implements AutoCloseable {
             byte[] sector = new byte[DiskGeometry.SECTOR_BYTES];
             transfer(ch, 0, ByteBuffer.wrap(sector), false);
             DiskGeometry geometry = DiskHeaderCodec.discover(sector, ch.size());
-            VirtualDisk disk = new VirtualDisk(identity, ch, geometry);
-            DiskHeaderCodec.validate(geometry, disk.readBlock(0), disk.readBlock(1));
+            var mbr = ByteBuffer.allocate(geometry.blockSize());
+            var superblock = ByteBuffer.allocate(geometry.blockSize());
+            transfer(ch, 0, mbr, false);
+            transfer(ch, geometry.offset(1), superblock, false);
+            var header = DiskHeaderCodec.validate(geometry, mbr.array(), superblock.array());
+            VirtualDisk disk = new VirtualDisk(identity, ch, geometry, new Owner(real, header.uuid()));
             disk.readBitmap();
             OPEN.add(disk);
             return disk;
@@ -120,7 +130,9 @@ public final class VirtualDisk implements AutoCloseable {
     public DiskGeometry geometry() { return geometry; }
 
     public boolean formatted() throws IOException {
-        return DiskHeaderCodec.validate(geometry, readBlock(0), readBlock(1)).formatted();
+        var header = DiskHeaderCodec.validate(geometry, readBlock(0), readBlock(1));
+        if (!owner.uuid().equals(header.uuid())) throw new IOException("Disk UUID changed under ownership");
+        return header.formatted();
     }
 
     /** Prepare only a private staged image; the format authority controls validation and persistence. */

@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.locks.Lock;
+import io.github.rajami1205.filesystem.infrastructure.disk.VirtualDisk;
 import static io.github.rajami1205.filesystem.application.DirectoryHierarchy.Mode.*;
 
 /** Operational client boundary. The exclusively owned storage and its actor-free primitives stay private. */
@@ -61,7 +63,7 @@ public final class OperationalFileSystem implements AutoCloseable {
                             try {
                                 storage.ready();
                             } catch (IllegalStateException faulted) {
-                                failure.addSuppressed(new IOException(
+                                failure.addSuppressed(new IndexedStorage.IndeterminateFormat(
                                         "Persisted bootstrap content indeterminate; format status remains INCOMPLETE", faulted));
                             }
                             throw failure;
@@ -135,19 +137,39 @@ public final class OperationalFileSystem implements AutoCloseable {
     }
 
     public Actor authenticate(String username, char[] password) throws IOException {
+        return authenticate(username, password, null, (actor, home) -> actor);
+    }
+
+    @FunctionalInterface
+    interface Publication<T> { T publish(Actor actor, int home) throws IOException; }
+
+    public VirtualDisk.Owner owner() throws IOException {
+        synchronized (storage) { storage.ready(); return storage.owner(); }
+    }
+
+    public boolean faulted() { return storage.faulted(); }
+
+    <T> T authenticate(String username, char[] password, Lock coordination, Publication<T> publication)
+            throws IOException {
         Snapshot captured;
-        synchronized (storage) {
-            try (var tx = storage.begin()) { captured = snapshot(tx.identities().user(username), tx); }
-        }
+        if (coordination != null) coordination.lock();
+        try {
+            synchronized (storage) {
+                try (var tx = storage.begin()) { captured = snapshot(tx.identities().user(username), tx); }
+            }
+        } finally { if (coordination != null) coordination.unlock(); }
         try (captured) {
             storage.completed(IndexedStorage.Step.CREDENTIAL_SNAPSHOT);
             boolean verified = Passwords.verify(captured.credential(), password);
-            synchronized (storage) {
-                try (var tx = storage.begin()) {
-                    if (!verified || !current(captured, tx.identities(), tx)) throw denied();
-                    return new Actor(this, captured.user().uid());
+            if (coordination != null) coordination.lock();
+            try {
+                synchronized (storage) {
+                    try (var tx = storage.begin()) {
+                        if (!verified || !current(captured, tx.identities(), tx)) throw denied();
+                        return publication.publish(new Actor(this, captured.user().uid()), captured.user().home());
+                    }
                 }
-            }
+            } finally { if (coordination != null) coordination.unlock(); }
         }
     }
 
@@ -258,11 +280,25 @@ public final class OperationalFileSystem implements AutoCloseable {
         }
     }
 
+    public int directory(Actor actor, int cwd, String path) throws IOException {
+        synchronized (storage) {
+            User user = activeActor(actor);
+            Fcb target = storage.hierarchy().resolveAuthorized(cwd, path, FOLLOW_FINAL_LINK, user).resource();
+            user.require(target, 1);
+            if (target.type() != Fcb.Type.DIRECTORY) throw new DirectoryHierarchy.InvalidType();
+            return target.id();
+        }
+    }
+
+    public int regularFile(Actor actor, int cwd, String path, boolean write) throws IOException {
+        synchronized (storage) { return file(actor, cwd, path, write ? 2 : 4).id(); }
+    }
+
     private Fcb file(Actor actor, int cwd, String path, int mask) throws IOException {
         User u = activeActor(actor);
         Fcb fcb = storage.hierarchy().resolveAuthorized(cwd, path, FOLLOW_FINAL_LINK, u).resource();
         u.require(fcb, mask);
-        if (fcb.type() != Fcb.Type.FILE) throw new IllegalArgumentException("Expected regular file");
+        if (fcb.type() != Fcb.Type.FILE) throw new DirectoryHierarchy.InvalidType();
         return fcb;
     }
 
